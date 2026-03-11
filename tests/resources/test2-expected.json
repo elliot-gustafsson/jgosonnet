@@ -1,0 +1,23 @@
+{
+   "base": {
+      "common_field": "base value"
+   },
+   "derived": {
+      "common_field": "overridden value",
+      "old_calc": 100,
+      "self_ref": "overridden value - suffixed"
+   },
+   "description": "This is a text block.\nIt preserves newlines.\n",
+   "map_kv": {
+      "k_a": "a",
+      "k_c": "c"
+   },
+   "quoted-key": true,
+   "single-quoted": 0.014999999999999999,
+   "squares_sliced": [
+      4,
+      9
+   ],
+   "status": "ok",
+   "unquoted_key": null
+}

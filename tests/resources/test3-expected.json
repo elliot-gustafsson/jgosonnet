@@ -1,0 +1,21 @@
+{
+   "caching_check": {
+      "len": 2000
+   },
+   "closures": {
+      "result": 15
+   },
+   "inheritance": {
+      "result": "I am Derived"
+   },
+   "lazy_check": {
+      "result": "I am safe",
+      "safe": "I am safe"
+   },
+   "recursion": {
+      "result": 5050
+   },
+   "super_chain": {
+      "final": 4
+   }
+}
