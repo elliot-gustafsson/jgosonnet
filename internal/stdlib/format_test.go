@@ -1,8 +1,11 @@
 package stdlib
 
 import (
+	"fmt"
 	"testing"
 
+	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
+	"github.com/google/go-jsonnet/ast"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -81,7 +84,6 @@ func TestFormat(t *testing.T) {
 			args:     []any{},
 			expected: "100% sure",
 		},
-
 		// --- Flags & Padding ---
 		{
 			name:     "Left Align",
@@ -125,7 +127,6 @@ func TestFormat(t *testing.T) {
 			args:     []any{255},
 			expected: "0xff",
 		},
-
 		// --- Width & Precision ---
 		{
 			name:     "Precision Float",
@@ -163,7 +164,49 @@ func TestFormat(t *testing.T) {
 			args:     []any{1234567.0},
 			expected: "1.2e+06", // Go fmt behavior for %g switches to sci notation here
 		},
-
+		// --- Width Tests ---
+		{
+			name:     "Static Width String",
+			format:   "|%10s|",
+			args:     []any{"test"},
+			expected: "|      test|",
+		},
+		{
+			name:     "Static Width String (Left Aligned)",
+			format:   "|%-10s|",
+			args:     []any{"test"},
+			expected: "|test      |",
+		},
+		{
+			name:     "Static Width Integer",
+			format:   "|%5d|",
+			args:     []any{42},
+			expected: "|   42|",
+		},
+		{
+			name:     "Static Width (Truncates nothing if string is longer)",
+			format:   "|%3s|",
+			args:     []any{"longstring"},
+			expected: "|longstring|",
+		},
+		{
+			name:     "Dynamic Width String",
+			format:   "|%*s|",
+			args:     []any{8, "test"},
+			expected: "|    test|",
+		},
+		{
+			name:     "Dynamic Width (Negative value implies left alignment)",
+			format:   "|%*s|",
+			args:     []any{-8, "test"},
+			expected: "|test    |",
+		},
+		{
+			name:     "Dynamic Width with Integer",
+			format:   "|%*d|",
+			args:     []any{6, 123},
+			expected: "|   123|",
+		},
 		// --- Dynamic Width/Precision (*) ---
 		{
 			name:     "Dynamic Width",
@@ -183,7 +226,6 @@ func TestFormat(t *testing.T) {
 			args:     []any{10, 2, 1.23456},
 			expected: "      1.23",
 		},
-
 		// --- Named Arguments (Python Style) ---
 		{
 			name:   "Named String",
@@ -216,7 +258,6 @@ func TestFormat(t *testing.T) {
 			args:     []any{"cccc", "dddd"},
 			expected: "aaaa cccc dddd bbbb",
 		},
-
 		// --- Type Coercion ---
 		{
 			name:     "Float to Int (%d)",
@@ -242,7 +283,6 @@ func TestFormat(t *testing.T) {
 			args:     []any{nil},
 			expected: "null",
 		},
-
 		// --- Single Value Wrapper ---
 		{
 			name:     "Single Value Input (Not Slice)",
@@ -250,7 +290,6 @@ func TestFormat(t *testing.T) {
 			args:     123, // Pass raw int, should be wrapped to [123]
 			expected: "Val: 123",
 		},
-
 		// --- Python/Jsonnet Specifics ---
 		{
 			name:     "Repr %r (Fallback to String)",
@@ -267,10 +306,9 @@ func TestFormat(t *testing.T) {
 		{
 			name:     "Complex Struct to String",
 			format:   "Struct: %s",
-			args:     []any{[]int{1, 2}}, // Should use fmt.Sprint
-			expected: "Struct: [1 2]",
+			args:     []any{[]int{1, 2}}, // Should use ManifestJson
+			expected: "Struct: [1,2]",
 		},
-
 		// --- Error Cases ---
 		{
 			name:        "Not Enough Arguments",
@@ -300,7 +338,13 @@ func TestFormat(t *testing.T) {
 			name:        "Invalid Dynamic Width Type",
 			format:      "%*d",
 			args:        []any{"NOT INT", 5},
-			expectedErr: "width requires integer",
+			expectedErr: "width requires integer, got string",
+		},
+		{
+			name:        "Invalid Dynamic Precision Type",
+			format:      "%.*f",
+			args:        []any{"NOT INT", 3.14},
+			expectedErr: "precision requires integer, got string",
 		},
 		{
 			name:        "Incomplete Format String",
@@ -315,18 +359,67 @@ func TestFormat(t *testing.T) {
 			expectedErr: "unsupported format character 'z'",
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := Format(tt.format, tt.args)
+			ctx := evaluator.Context{
+				Interner: evaluator.NewInterner(),
+				Arena:    evaluator.NewArena(),
+			}
+			val := toValue(tt.args, ctx)
+			got, err := formatString(tt.format, val, ctx)
 			if err != nil {
 				assert.EqualError(t, err, tt.expectedErr)
 				assert.Equal(t, "", got)
 				return
 			}
-
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expected, got)
 		})
+	}
+}
+
+// Helper to convert Go types to jsonnet evaluator.Value types
+func toValue(v any, ctx evaluator.Context) evaluator.Value {
+	if v == nil {
+		return evaluator.MakeNull()
+	}
+	switch val := v.(type) {
+	case string:
+		return evaluator.MakeString(val, ctx)
+	case int:
+		return evaluator.MakeNumber(float64(val))
+	case float64:
+		return evaluator.MakeNumber(val)
+	case bool:
+		return evaluator.MakeBool(val)
+	case []any:
+		arr := make([]evaluator.Value, len(val))
+		for i, item := range val {
+			arr[i] = toValue(item, ctx)
+		}
+		return evaluator.MakeArray(arr, ctx)
+	case []int:
+		arr := make([]evaluator.Value, len(val))
+		for i, item := range val {
+			arr[i] = evaluator.MakeNumber(float64(item))
+		}
+		return evaluator.MakeArray(arr, ctx)
+	case map[string]any:
+		layer := &evaluator.Layer{
+			Keys: make([]uint32, 0, len(val)),
+			Meta: make([]uint8, 0, len(val)),
+		}
+		values := make([]evaluator.Value, 0, len(val))
+		for k, item := range val {
+			keyId := ctx.Interner.Intern(k)
+			layer.Keys = append(layer.Keys, keyId)
+			layer.Meta = append(layer.Meta, evaluator.CreateFieldMeta(ast.ObjectFieldInherit, false))
+			values = append(values, toValue(item, ctx))
+		}
+		obj := evaluator.NewObject([]*evaluator.Layer{layer})
+		obj.Values = [][]evaluator.Value{values}
+		return evaluator.MakeObject(obj, ctx)
+	default:
+		panic(fmt.Sprintf("unhandled type %T", val))
 	}
 }

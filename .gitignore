@@ -1,4 +1,5 @@
 cmd/jgosonnet/jgosonnet
 cpu.prof
 mem.prof
+coverage.out
 benchmarks/out

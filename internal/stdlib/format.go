@@ -35,7 +35,7 @@ func std_format(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value,
 	// 	return evaluator.Value{}, err
 	// }
 
-	str, err := Format(format.String(ctx), arg, ctx)
+	str, err := formatString(format.String(ctx), arg, ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
@@ -48,7 +48,7 @@ func std_format(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value,
 // - Named args:      Sprintf("Value: %(val)d", map[string]any{"val": 10})
 // - Flags:           %#0- +
 // - Width/Prec:      %10.5f, %*.2f (dynamic width), %.*f (dynamic prec)
-func Format(str string, data evaluator.Value, ctx evaluator.Context) (string, error) {
+func formatString(str string, data evaluator.Value, ctx evaluator.Context) (string, error) {
 
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
@@ -158,10 +158,10 @@ func Format(str string, data evaluator.Value, ctx evaluator.Context) (string, er
 			if argIdx >= len(args) {
 				return "", fmt.Errorf("not enough arguments for format string")
 			}
-			if v := args[argIdx]; !v.IsNumber() {
+			if v := args[argIdx]; v.IsNumber() {
 				widthVal = int(v.Number())
 			} else {
-				return "", fmt.Errorf("width requires integer")
+				return "", fmt.Errorf("width requires integer, got %s", v.Type().String())
 			}
 			argIdx++
 			i++
@@ -190,10 +190,10 @@ func Format(str string, data evaluator.Value, ctx evaluator.Context) (string, er
 				if argIdx >= len(args) {
 					return "", fmt.Errorf("not enough arguments for format string")
 				}
-				if v := args[argIdx]; !v.IsNumber() {
+				if v := args[argIdx]; v.IsNumber() {
 					precVal = int(v.Number())
 				} else {
-					return "", fmt.Errorf("precision requires integer")
+					return "", fmt.Errorf("precision requires integer, got %s", v.Type().String())
 				}
 				argIdx++
 				i++

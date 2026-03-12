@@ -15,8 +15,12 @@ cpu-profile:
 # generate:
 # 	go generate main.go
 
-# test:
-# 	go test ./... -count=1 -cover
+test:
+	go test ./... -count=1 -cover
+
+test-coverage:
+	go test ./... -count=1 -coverprofile=coverage.out
+	go tool cover -func=coverage.out
 
 benchmark:
 	mkdir -p benchmarks/out

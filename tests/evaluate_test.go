@@ -42,8 +42,8 @@ func TestEvaluator(t *testing.T) {
 	infraDir := filepath.Join(filepath.Dir(filepath.Dir(cwd)), "infra", "jsonnet", "proact")
 	assert.NotEmpty(t, infraDir)
 
-	// file := filepath.Join("resources", "test.jsonnet")
-	file := filepath.Join(infraDir, "mimir-alerts-dashboards.jsonnet")
+	file := filepath.Join("resources", "test.jsonnet")
+	// file := filepath.Join(infraDir, "mimir-alerts-dashboards.jsonnet")
 
 	// data, err := json.Marshal(9223372036854774784)
 	// assert.NoError(t, err)
@@ -101,20 +101,6 @@ func TestEvaluator(t *testing.T) {
 	println(stuff)
 	// println("--- end ---")
 	// println()
-}
-
-func TestExpected(t *testing.T) {
-
-	slog.SetLogLoggerLevel(slog.LevelDebug)
-
-	file := filepath.Join("resources", "test", "test.jsonnet")
-
-	og, err := GetExpected(file)
-	assert.NoError(t, err)
-
-	println("Actual:")
-	println(string(og))
-	println("")
 }
 
 func GetExpected(file string, jpaths ...string) (string, error) {
@@ -222,7 +208,7 @@ func TestEvaluatorReal(t *testing.T) {
 	println()
 	println("jgosonnet:", jgosonnetDur.String())
 
-	dir := filepath.Join(infraDir, "manifests", "sto1-build001")
+	dir := filepath.Join(infraDir, "manifests", "sto1-prod001")
 	for k, v := range stuff {
 
 		// err := os.WriteFile(filepath.Join(dir, k), []byte(v), 0600)
