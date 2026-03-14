@@ -36,7 +36,13 @@ func std_manifestYamlDoc(args []evaluator.Value, ctx evaluator.Context) (evaluat
 	var b strings.Builder
 	b.Grow(1024)
 
-	err := evaluator.ManifestYaml(&b, args[0], ctx, indent_array_in_object, quote_keys, true, false)
+	c := evaluator.YamlManifestConfig{
+		IndentArrayInObjects: indent_array_in_object,
+		QuoteKeys:            quote_keys,
+		QuoteValues:          true,
+	}
+
+	err := evaluator.ManifestYaml(&b, args[0], ctx, c)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
@@ -82,6 +88,12 @@ func std_manifestYamlStream(args []evaluator.Value, ctx evaluator.Context) (eval
 	var b strings.Builder
 	b.Grow(1024)
 
+	c := evaluator.YamlManifestConfig{
+		IndentArrayInObjects: indent_array_in_object,
+		QuoteKeys:            quote_keys,
+		QuoteValues:          true,
+	}
+
 	for _, v := range inputArr.Array(ctx) {
 		err := evaluator.EvaluateValueStrict(&v, ctx)
 		if err != nil {
@@ -90,7 +102,7 @@ func std_manifestYamlStream(args []evaluator.Value, ctx evaluator.Context) (eval
 		b.WriteString(yamlSeparator)
 		b.WriteByte('\n')
 
-		err = evaluator.ManifestYaml(&b, v, ctx, indent_array_in_object, quote_keys, true, false)
+		err = evaluator.ManifestYaml(&b, v, ctx, c)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
@@ -114,7 +126,7 @@ func std_manifestJson(args []evaluator.Value, ctx evaluator.Context) (evaluator.
 	var b strings.Builder
 	b.Grow(1024)
 
-	err := evaluator.ManifestJson(&b, args[0], ctx, "    ", "\n", ": ")
+	err := evaluator.ManifestJson(&b, args[0], ctx, evaluator.JsonConfigPretty)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
@@ -131,7 +143,7 @@ func std_manifestJsonMinified(args []evaluator.Value, ctx evaluator.Context) (ev
 	var b strings.Builder
 	b.Grow(1024)
 
-	err := evaluator.ManifestJson(&b, args[0], ctx, "", "", ":")
+	err := evaluator.ManifestJson(&b, args[0], ctx, evaluator.JsonConfigMinified)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
@@ -169,7 +181,13 @@ func std_manifestJsonEx(args []evaluator.Value, ctx evaluator.Context) (evaluato
 	var b strings.Builder
 	b.Grow(1024)
 
-	err := evaluator.ManifestJson(&b, args[0], ctx, indent.String(ctx), newline, key_val_sep)
+	c := evaluator.JsonManifestConfig{
+		IndentStep: indent.String(ctx),
+		Newline:    newline,
+		KeyValSep:  key_val_sep,
+	}
+
+	err := evaluator.ManifestJson(&b, args[0], ctx, c)
 	if err != nil {
 		return evaluator.Value{}, err
 	}

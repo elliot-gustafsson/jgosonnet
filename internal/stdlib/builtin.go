@@ -63,9 +63,13 @@ func builtin_flatMapArray(args []evaluator.Value, ctx evaluator.Context) (evalua
 
 	inputArr := val.Array(ctx)
 
+	// Create the array once and mutate it to reduce object on the heap
+	mapperFuncInput := []evaluator.Value{{}}
+
 	res := make([]evaluator.Value, 0, len(inputArr))
 	for _, v := range inputArr {
-		out, err := mapperFunc.Function(ctx)([]evaluator.Value{v}, ctx)
+		mapperFuncInput[0] = v
+		out, err := mapperFunc.Function(ctx)(mapperFuncInput, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}

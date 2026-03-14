@@ -8,41 +8,39 @@ import (
 	"strings"
 )
 
-const (
-	yamlIndent = "  "
-	hexChars   = "0123456789abcdef"
-)
-
-var yamlReserved = []string{
-	// Boolean types taken from https://yaml.org/type/bool.html
-	"y", "Y", "n", "N",
-	"yes", "Yes", "YES", "no", "No", "NO",
-	"true", "True", "TRUE", "false", "False", "FALSE",
-	"on", "On", "ON", "off", "Off", "OFF",
-
-	// Null types taken from https://yaml.org/type/null.html
-	"null", "Null", "NULL", "~",
-
-	// Numerical words taken from https://yaml.org/type/float.html
-	".nan", ".NaN", ".NAN",
-	".inf", ".Inf", ".INF",
-	"+.inf", "+.Inf", "+.INF",
-	"-.inf", "-.Inf", "-.INF",
-
-	// Invalid keys that contain no invalid characters / Document markers
-	"-", "---", "...", "''",
+type JsonManifestConfig struct {
+	IndentStep string
+	Newline    string
+	KeyValSep  string
+	SpaceComma bool
+	hasNewline bool
 }
 
-func ManifestYaml(b *strings.Builder, value Value, ctx Context, indentArrayInObjects, quoteKeys, quoteValues, singleQuoteEscape bool) error {
-	return manifestYaml(value, ctx, b, "", indentArrayInObjects, quoteKeys, quoteValues, singleQuoteEscape)
+// Pre-defined configurations matching Jsonnet's standard library.
+var (
+	JsonConfigPretty   = JsonManifestConfig{IndentStep: "    ", Newline: "\n", KeyValSep: ": ", SpaceComma: false}
+	JsonConfigMinified = JsonManifestConfig{IndentStep: "", Newline: "", KeyValSep: ":", SpaceComma: false}
+	JsonConfigToString = JsonManifestConfig{IndentStep: "", Newline: "", KeyValSep: ": ", SpaceComma: true}
+)
+
+type YamlManifestConfig struct {
+	IndentArrayInObjects bool
+	QuoteKeys            bool
+	QuoteValues          bool
+	SingleQuoteEscape    bool
+}
+
+func ManifestYaml(b *strings.Builder, value Value, ctx Context, config YamlManifestConfig) error {
+	return manifestYaml(value, ctx, b, "", config)
 }
 
 // value Value, ctx Context, b *strings.Builder, cindent string, indent, newline, key_val_sep string
-func ManifestJson(b *strings.Builder, value Value, ctx Context, indent, newline, key_val_sep string) error {
-	return manifestJson(value, ctx, b, "", indent, newline, key_val_sep)
+func ManifestJson(b *strings.Builder, value Value, ctx Context, config JsonManifestConfig) error {
+	config.hasNewline = config.Newline != ""
+	return manifestJson(value, ctx, b, "", config)
 }
 
-func manifestYaml(value Value, ctx Context, buf *strings.Builder, cindent string, indentArrayInObjects, quoteKeys, quoteValues, singleQuoteEscape bool) error {
+func manifestYaml(value Value, ctx Context, buf *strings.Builder, cindent string, config YamlManifestConfig) error {
 	err := EvaluateValueStrict(&value, ctx)
 	if err != nil {
 		return err
@@ -93,15 +91,12 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, cindent string
 			return nil
 		}
 
-		// buf.WriteByte('"')
-		if quoteValues {
+		if config.QuoteValues {
 			writeYamlString(buf, data, true, false)
 			return nil
 		}
 
-		// buf.WriteString(writeYamlString(data, false, true))
 		writeYamlString(buf, data, false, true)
-		// buf.WriteByte('"')
 		return nil
 	case ValueTypeArray:
 		data := value.Array(ctx)
@@ -135,7 +130,7 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, cindent string
 				cindent = cindent + yamlIndent
 			}
 
-			err = manifestYaml(v, ctx, buf, cindent, indentArrayInObjects, quoteKeys, quoteValues, singleQuoteEscape)
+			err = manifestYaml(v, ctx, buf, cindent, config)
 			if err != nil {
 				return err
 			}
@@ -164,7 +159,7 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, cindent string
 			}
 
 			keyStr := ctx.Interner.Get(p.KeyId)
-			if quoteKeys || !yamlBareSafe(keyStr) {
+			if config.QuoteKeys || !yamlBareSafe(keyStr) {
 				// buf.WriteByte('"')
 				writeYamlString(buf, keyStr, true, false)
 				// buf.WriteByte('"')
@@ -182,7 +177,7 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, cindent string
 			if fieldValue.IsArray() && len(fieldValue.Array(subCtx)) > 0 {
 				buf.WriteByte('\n')
 				buf.WriteString(cindent)
-				if indentArrayInObjects {
+				if config.IndentArrayInObjects {
 					buf.WriteString(yamlIndent)
 					cindent = cindent + yamlIndent
 				}
@@ -201,7 +196,7 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, cindent string
 				buf.WriteByte(' ')
 			}
 
-			err = manifestYaml(fieldValue, subCtx, buf, cindent, indentArrayInObjects, quoteKeys, quoteValues, singleQuoteEscape)
+			err = manifestYaml(fieldValue, subCtx, buf, cindent, config)
 			if err != nil {
 				return err
 			}
@@ -213,7 +208,7 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, cindent string
 	}
 }
 
-func manifestJson(value Value, ctx Context, b *strings.Builder, cindent string, indent, newline, key_val_sep string) error {
+func manifestJson(value Value, ctx Context, b *strings.Builder, cindent string, config JsonManifestConfig) error {
 
 	err := EvaluateValueStrict(&value, ctx)
 	if err != nil {
@@ -251,14 +246,28 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, cindent string, 
 	case ValueTypeArray:
 		data := value.Array(ctx)
 		if len(data) == 0 {
+			if config.SpaceComma {
+				b.WriteString("[ ]")
+				return nil
+			}
+
+			if config.hasNewline {
+				b.WriteByte('[')
+				b.WriteString(config.Newline)
+				b.WriteString(config.Newline)
+				b.WriteString(cindent)
+				b.WriteByte(']')
+				return nil
+			}
+
 			b.WriteString("[]")
 			return nil
 		}
 
 		b.WriteByte('[')
-		nextIndent := cindent + indent
+		nextIndent := cindent + config.IndentStep
 
-		b.WriteString(newline)
+		b.WriteString(config.Newline)
 
 		for i, v := range data {
 			err := EvaluateValueStrict(&v, ctx)
@@ -268,21 +277,21 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, cindent string, 
 
 			if i > 0 {
 				b.WriteByte(',')
-				b.WriteString(newline)
+				b.WriteString(config.Newline)
 			}
 
-			if i != 0 || newline != "" {
+			if i != 0 || config.hasNewline {
 				b.WriteString(nextIndent)
 			}
 
-			err = manifestJson(v, ctx, b, nextIndent, indent, newline, key_val_sep)
+			err = manifestJson(v, ctx, b, nextIndent, config)
 			if err != nil {
 				return err
 			}
 
 		}
 
-		b.WriteString(newline)
+		b.WriteString(config.Newline)
 		b.WriteString(cindent)
 		b.WriteByte(']')
 		return nil
@@ -290,13 +299,27 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, cindent string, 
 		obj := value.Object(ctx)
 		plans := CompileObjectPlan(obj, ctx)
 		if len(plans) == 0 {
+			if config.SpaceComma {
+				b.WriteString("{ }")
+				return nil
+			}
+
+			if config.hasNewline {
+				b.WriteByte('{')
+				b.WriteString(config.Newline)
+				b.WriteString(config.Newline)
+				b.WriteString(cindent)
+				b.WriteByte('}')
+				return nil
+			}
+
 			b.WriteString("{}")
 			return nil
 		}
 
 		b.WriteByte('{')
-		nextIndent := cindent + indent
-		b.WriteString(newline)
+		nextIndent := cindent + config.IndentStep
+		b.WriteString(config.Newline)
 
 		subCtx := ctx
 		subCtx.Self = value
@@ -310,20 +333,24 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, cindent string, 
 
 			if hasWritten {
 				b.WriteByte(',')
-				b.WriteString(newline)
+				if config.hasNewline {
+					b.WriteString(config.Newline)
+				} else if config.SpaceComma {
+					b.WriteByte(' ')
+				}
 			}
 
 			b.WriteString(nextIndent)
 
 			writeJsonString(b, subCtx.Interner.Get(p.KeyId))
-			b.WriteString(key_val_sep)
+			b.WriteString(config.KeyValSep)
 
 			fieldValue, err := p.GetValue(obj, subCtx)
 			if err != nil {
 				return err
 			}
 
-			err = manifestJson(fieldValue, subCtx, b, nextIndent, indent, newline, key_val_sep)
+			err = manifestJson(fieldValue, subCtx, b, nextIndent, config)
 			if err != nil {
 				return err
 			}
@@ -331,13 +358,38 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, cindent string, 
 			hasWritten = true
 		}
 
-		b.WriteString(newline)
+		b.WriteString(config.Newline)
 		b.WriteString(cindent)
 		b.WriteByte('}')
 
 		return nil
 	}
 
+}
+
+const (
+	yamlIndent = "  "
+	hexChars   = "0123456789abcdef"
+)
+
+var yamlReserved = []string{
+	// Boolean types taken from https://yaml.org/type/bool.html
+	"y", "Y", "n", "N",
+	"yes", "Yes", "YES", "no", "No", "NO",
+	"true", "True", "TRUE", "false", "False", "FALSE",
+	"on", "On", "ON", "off", "Off", "OFF",
+
+	// Null types taken from https://yaml.org/type/null.html
+	"null", "Null", "NULL", "~",
+
+	// Numerical words taken from https://yaml.org/type/float.html
+	".nan", ".NaN", ".NAN",
+	".inf", ".Inf", ".INF",
+	"+.inf", "+.Inf", "+.INF",
+	"-.inf", "-.Inf", "-.INF",
+
+	// Invalid keys that contain no invalid characters / Document markers
+	"-", "---", "...", "''",
 }
 
 func yamlBareSafe(s string) bool {

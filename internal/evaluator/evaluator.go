@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/google/go-jsonnet"
 	"github.com/google/go-jsonnet/ast"
 )
 
@@ -79,22 +78,6 @@ func ManifestValue(value Value, ctx Context) (any, error) {
 	}
 }
 
-func ResolveImport(filePath string) (ast.Node, error) {
-	fileData, err := os.ReadFile(filePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, err
-		}
-		return nil, fmt.Errorf("failed importing file: %s, err: %w", filePath, err)
-	}
-
-	importedNode, err := jsonnet.SnippetToAST(filePath, string(fileData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve import %s, err: %w", filePath, err)
-	}
-	return importedNode, nil
-}
-
 func createErrorWithContext(err error, loc *ast.LocationRange) error {
 	return fmt.Errorf("%w\n\nlocation: %s", err, loc.String())
 }
@@ -123,7 +106,12 @@ func evaluateNodeLazy(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 	// case *ast.Local:
 	// 	return handleLocal(node, scopeId, ctx)
 	default:
-		return CreateThunk(node, scopeId, ctx), nil
+		return MakeThunk(Thunk{
+			Node:                node,
+			ScopeId:             scopeId,
+			CapturedSelf:        ctx.Self,
+			CapturedSuperOffset: ctx.SuperOffset,
+		}, ctx), nil
 	}
 }
 
@@ -704,7 +692,7 @@ func handleImport(node *ast.Import, scopeId uint32, ctx Context) (Value, error) 
 
 		// TODO: check and mark fp loading to catch import loops
 
-		in, innerErr := ResolveImport(fp)
+		in, innerErr := ctx.Importer.ResolveImport(fp)
 		if os.IsNotExist(innerErr) {
 			rangeErr = errors.Join(rangeErr, innerErr)
 			continue

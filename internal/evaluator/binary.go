@@ -241,6 +241,8 @@ func bopGreaterEq(left, right Value, ctx Context) (Value, error) {
 		val = left.Number() >= right.Number()
 	case ValueTypeString:
 		val = left.String(ctx) >= right.String(ctx)
+	case ValueTypeArray:
+		val = len(left.Array(ctx)) >= len(right.Array(ctx))
 	default:
 		return Value{}, fmt.Errorf("bop greaterEq: unexpected type %s", left.Type().String())
 	}

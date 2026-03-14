@@ -115,42 +115,17 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (Value, bool, err
 	for i := len(t.Layers) - (1 + offset); i >= 0; i-- {
 		layer := t.Layers[i]
 
-		scopeId, err := t.getScope(i, layer, ctx)
-		if err != nil {
-			return Value{}, false, err
-		}
-
 		fieldIndex := layer.findField(key)
 		if fieldIndex == -1 {
 			continue
 		}
 
-		if t.Values == nil {
-			t.Values = make([][]Value, len(t.Layers))
-		}
+		evalCtx := ctx
+		evalCtx.SuperOffset = len(t.Layers) - 1 - i
 
-		if t.Values[i] == nil {
-			t.Values[i] = make([]Value, len(layer.Keys))
-		}
-
-		// if len(t.Values[i]) <= fieldIndex {
-		// 	return Value{}, false, fmt.Errorf("index out of range")
-		// }
-
-		val := t.Values[i][fieldIndex]
-
-		if val.IsNone() {
-			n := layer.Nodes[fieldIndex]
-
-			evalCtx := ctx
-			evalCtx.SuperOffset = len(t.Layers) - 1 - i
-
-			v, err := EvaluateNodeStrict(n, scopeId, evalCtx)
-			if err != nil {
-				return Value{}, false, err
-			}
-			t.Values[i][fieldIndex] = v
-			val = v
+		val, err := getValue(t, i, fieldIndex, evalCtx)
+		if err != nil {
+			return Value{}, false, err
 		}
 
 		visibility, plusSuper := EvalFieldMeta(layer.Meta[fieldIndex])
@@ -161,11 +136,6 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (Value, bool, err
 		if res.IsNone() && !plusSuper {
 			return val, false, nil
 		}
-
-		// err := evaluateValueStrict(&val, ctx)
-		// if err != nil {
-		// 	return Value{}, false, err
-		// }
 
 		if res.IsNone() {
 			res = val
@@ -495,6 +465,8 @@ func ManifestObjectRoot(obj *Object, ctx Context) (map[string]Value, error) {
 
 func getValue(obj *Object, layerId, fieldId int, ctx Context) (Value, error) {
 
+	// TODO: make a single continuous slice for all layers instead of a 2d one
+
 	if obj.Values == nil {
 		obj.Values = make([][]Value, len(obj.Layers))
 	}
@@ -521,6 +493,7 @@ func getValue(obj *Object, layerId, fieldId int, ctx Context) (Value, error) {
 	if err != nil {
 		return Value{}, err
 	}
+	obj.Values[layerId][fieldId] = val
 	return val, nil
 }
 

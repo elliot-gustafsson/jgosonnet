@@ -2,79 +2,11 @@ package evaluator
 
 import (
 	"fmt"
-	"io"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/google/go-jsonnet/ast"
 )
-
-type Interpreter struct {
-	interner *Interner
-	jpaths   []string
-	traceOut io.Writer
-	// nativeFuncs map[string]*NativeFunction // TODO: make it possible to pass custom funcs
-}
-
-type Importer struct {
-	JPaths      []string
-	ImportScope uint32
-
-	lock  sync.Mutex
-	cache map[string]Value
-}
-
-func NewImporter(scopeId uint32, jPaths []string) *Importer {
-	return &Importer{
-		ImportScope: scopeId,
-		JPaths:      jPaths,
-		cache:       make(map[string]Value, 32),
-	}
-}
-
-func (i *Importer) Set(path string, v Value) {
-	i.lock.Lock()
-	defer i.lock.Unlock()
-	i.cache[path] = v
-}
-
-func (i *Importer) Get(path string) Value {
-	i.lock.Lock()
-	defer i.lock.Unlock()
-	return i.cache[path]
-}
-
-type Interner struct {
-	mapping map[string]uint32
-	strings []string
-}
-
-func NewInterner() *Interner {
-	return &Interner{
-		mapping: make(map[string]uint32, 8192),
-		strings: make([]string, 0, 8192),
-	}
-}
-
-func (i *Interner) Intern(s string) uint32 {
-	if id, ok := i.mapping[s]; ok {
-		return id
-	}
-
-	id := uint32(len(i.strings))
-	i.strings = append(i.strings, s)
-	i.mapping[s] = id
-
-	return id
-}
-
-func (i *Interner) Get(id uint32) string {
-	if id >= uint32(len(i.strings)) {
-		return ""
-	}
-	return i.strings[id]
-}
 
 type ValueType uint8
 
@@ -119,122 +51,6 @@ func (t ValueType) String() string {
 	}
 }
 
-type Binding struct {
-	Key uint32
-	Val Value
-}
-
-type Scope struct {
-	Bindings []Binding
-
-	ParentId uint32
-}
-
-type Arena struct {
-	Objects []Object
-	Arrays  [][]Value
-	Thunks  []Thunk
-	Funcs   []Func
-
-	Scopes []Scope
-}
-
-func NewArena() *Arena {
-	return &Arena{
-		Thunks:  make([]Thunk, 0, 32*1024),
-		Objects: make([]Object, 0, 8*1024),
-		Arrays:  make([][]Value, 0, 16*1024),
-		Funcs:   make([]Func, 0, 2*1024),
-		Scopes:  make([]Scope, 0, 32*1024),
-	}
-}
-
-type Context struct {
-	// Cwd      string
-	Interner *Interner
-	Importer *Importer
-	Arena    *Arena
-
-	// Root Value // $
-	Self Value // self
-
-	SuperOffset int
-}
-
-func (a *Arena) NewScope(parentId uint32, cap int) uint32 {
-	id := uint32(len(a.Scopes))
-
-	a.Scopes = append(a.Scopes, Scope{
-		ParentId: parentId,
-		Bindings: make([]Binding, 0, cap),
-	})
-
-	return id
-}
-
-func (a *Arena) GetScope(id uint32) *Scope {
-	return &a.Scopes[id]
-}
-
-func (a *Arena) AddScopeBind(scopeId, keyId uint32, val Value) {
-	s := &a.Scopes[scopeId]
-
-	s.Bindings = append(s.Bindings, Binding{
-		Key: keyId,
-		Val: val,
-	})
-}
-
-func (a *Arena) GetScopeBind(scopeId, key uint32) (Value, bool) {
-	currId := scopeId
-
-	for {
-		scope := &a.Scopes[currId]
-
-		for i := len(scope.Bindings) - 1; i >= 0; i-- {
-			if scope.Bindings[i].Key == key {
-				return scope.Bindings[i].Val, true
-			}
-		}
-
-		if currId == 0 {
-			break
-		}
-
-		if scope.ParentId == currId {
-			break
-		}
-
-		currId = scope.ParentId
-	}
-	return Value{}, false
-}
-
-// func FindScopeBinding(scopeId, key uint32, ctx Context) (Value, bool) {
-// 	currId := scopeId
-
-// 	for {
-// 		scope := &ctx.Arena.Scopes[currId]
-
-// 		for i := len(scope.Bindings) - 1; i >= 0; i-- {
-// 			if scope.Bindings[i].Key == key {
-// 				return scope.Bindings[i].Val, true
-// 			}
-// 		}
-
-// 		if currId == 0 {
-// 			break
-// 		}
-
-// 		if scope.ParentId == currId {
-// 			break
-// 		}
-
-// 		currId = scope.ParentId
-// 	}
-// 	return Value{}, false
-// }
-
 type Thunk struct {
 	Node                ast.Node
 	ScopeId             uint32
@@ -242,15 +58,6 @@ type Thunk struct {
 	CapturedSuperOffset int
 
 	Value Value
-}
-
-func CreateThunk(node ast.Node, scopeId uint32, ctx Context) Value {
-	return MakeThunk(Thunk{
-		Node:                node,
-		ScopeId:             scopeId,
-		CapturedSelf:        ctx.Self,
-		CapturedSuperOffset: ctx.SuperOffset,
-	}, ctx)
 }
 
 type Func = func(args []Value, ctx Context) (Value, error)
@@ -382,7 +189,7 @@ func (v Value) ToString(ctx Context) (string, error) {
 		return "false", nil
 	case ValueTypeObject, ValueTypeArray:
 		var b strings.Builder
-		err := ManifestJson(&b, v, ctx, "", "", ": ")
+		err := ManifestJson(&b, v, ctx, JsonConfigToString)
 		if err != nil {
 			return "", err
 		}
