@@ -124,9 +124,7 @@ func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
 
 	obj := evaluator.NewObject([]*evaluator.Layer{layer})
 
-	obj.Values = [][]evaluator.Value{
-		make([]evaluator.Value, fieldCount),
-	}
+	obj.Values = make([]evaluator.Value, fieldCount)
 
 	index := 0
 	for name, f := range functions {
@@ -137,7 +135,7 @@ func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
 		layer.Meta = append(layer.Meta, 0)
 		layer.Index[keyId] = index
 
-		obj.Values[0][index] = v
+		obj.Values[index] = v
 
 		index++
 	}

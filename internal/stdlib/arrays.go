@@ -53,10 +53,14 @@ func std_makeArray(args []evaluator.Value, ctx evaluator.Context) (evaluator.Val
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.makeArray (arg 1): %s, expected function", f.Type().String())
 	}
 
+	// Create the array once and mutate it to reduce object on the heap
+	mapperFuncInput := []evaluator.Value{{}}
+
 	res := make([]evaluator.Value, int(val.Number()))
 	for i := range int(val.Number()) {
 		v := evaluator.MakeNumber(float64(i))
-		out, err := f.Function(ctx)([]evaluator.Value{v}, ctx)
+		mapperFuncInput[0] = v
+		out, err := f.Function(ctx)(mapperFuncInput, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
@@ -177,10 +181,14 @@ func std_filter(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value,
 	}
 
 	inputArray := arr.Array(ctx)
-	// res := make([]evaluator.Value, 0, len(inputArray))
+
+	// Create the array once and mutate it to reduce object on the heap
+	mapperFuncInput := []evaluator.Value{{}}
+
 	res := []evaluator.Value{}
 	for _, v := range inputArray {
-		out, err := f.Function(ctx)([]evaluator.Value{v}, ctx)
+		mapperFuncInput[0] = v
+		out, err := f.Function(ctx)(mapperFuncInput, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
@@ -219,9 +227,14 @@ func std_filterMap(args []evaluator.Value, ctx evaluator.Context) (evaluator.Val
 	}
 
 	inputArray := arr.Array(ctx)
+
+	// Create the array once and mutate it to reduce object on the heap
+	mapperFuncInput := []evaluator.Value{{}}
+
 	filteredArr := make([]evaluator.Value, 0, len(inputArray)/2)
 	for _, v := range inputArray {
-		out, err := filterFunc.Function(ctx)([]evaluator.Value{v}, ctx)
+		mapperFuncInput[0] = v
+		out, err := filterFunc.Function(ctx)(mapperFuncInput, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
@@ -238,7 +251,8 @@ func std_filterMap(args []evaluator.Value, ctx evaluator.Context) (evaluator.Val
 
 	res := make([]evaluator.Value, 0, len(filteredArr))
 	for _, v := range filteredArr {
-		out, err := mapFunc.Function(ctx)([]evaluator.Value{v}, ctx)
+		mapperFuncInput[0] = v
+		out, err := mapFunc.Function(ctx)(mapperFuncInput, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
@@ -276,6 +290,9 @@ func std_uniq(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, e
 
 	inputArr := arr.Array(ctx)
 
+	// Create the array once and mutate it to reduce object on the heap
+	mapperFuncInput := []evaluator.Value{{}}
+
 	var last evaluator.Value
 	res := make([]evaluator.Value, 0, len(inputArr))
 	for _, v := range inputArr {
@@ -286,11 +303,14 @@ func std_uniq(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, e
 			continue
 		}
 
-		x, err := keyF([]evaluator.Value{last}, ctx)
+		mapperFuncInput[0] = last
+		x, err := keyF(mapperFuncInput, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
-		y, err := keyF([]evaluator.Value{v}, ctx)
+
+		mapperFuncInput[0] = v
+		y, err := keyF(mapperFuncInput, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
@@ -470,9 +490,13 @@ func std_map(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, er
 
 	inputArr := arr.Array(ctx)
 
+	// Create the array once and mutate it to reduce object on the heap
+	mapperFuncInput := []evaluator.Value{{}}
+
 	res := make([]evaluator.Value, 0, len(inputArr))
 	for _, v := range inputArr {
-		out, err := f.Function(ctx)([]evaluator.Value{v}, ctx)
+		mapperFuncInput[0] = v
+		out, err := f.Function(ctx)(mapperFuncInput, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
@@ -565,6 +589,9 @@ func std_setMember(args []evaluator.Value, ctx evaluator.Context) (evaluator.Val
 		keyF = f.Function(ctx)
 	}
 
+	// Create the array once and mutate it to reduce object on the heap
+	mapperFuncInput := []evaluator.Value{{}}
+
 	for _, v := range arr.Array(ctx) {
 		err := evaluator.EvaluateValueStrict(&v, ctx)
 		if err != nil {
@@ -575,11 +602,14 @@ func std_setMember(args []evaluator.Value, ctx evaluator.Context) (evaluator.Val
 		br := member
 
 		if keyF != nil {
-			ar, err = keyF([]evaluator.Value{v}, ctx)
+			mapperFuncInput[0] = v
+			ar, err = keyF(mapperFuncInput, ctx)
 			if err != nil {
 				return evaluator.Value{}, err
 			}
-			br, err = keyF([]evaluator.Value{member}, ctx)
+
+			mapperFuncInput[0] = member
+			br, err = keyF(mapperFuncInput, ctx)
 			if err != nil {
 				return evaluator.Value{}, err
 			}

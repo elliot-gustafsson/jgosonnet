@@ -71,7 +71,10 @@ const (
 
 type Object struct {
 	Layers []*Layer
-	Values [][]Value
+
+	Values       []Value
+	layerOffsets []int
+
 	Scopes []uint32
 
 	AssertionState uint8
@@ -465,17 +468,23 @@ func ManifestObjectRoot(obj *Object, ctx Context) (map[string]Value, error) {
 
 func getValue(obj *Object, layerId, fieldId int, ctx Context) (Value, error) {
 
-	// TODO: make a single continuous slice for all layers instead of a 2d one
+	if obj.layerOffsets == nil {
+		obj.layerOffsets = make([]int, len(obj.Layers))
+	}
 
 	if obj.Values == nil {
-		obj.Values = make([][]Value, len(obj.Layers))
+		totalFields := 0
+
+		for i, layer := range obj.Layers {
+			obj.layerOffsets[i] = totalFields
+			totalFields += len(layer.Keys)
+		}
+		obj.Values = make([]Value, totalFields)
 	}
 
-	if obj.Values[layerId] == nil {
-		obj.Values[layerId] = make([]Value, len(obj.Layers[layerId].Keys))
-	}
+	flatIndex := obj.layerOffsets[layerId] + fieldId
 
-	val := obj.Values[layerId][fieldId]
+	val := obj.Values[flatIndex]
 	if !val.IsNone() {
 		return val, nil
 	}
@@ -493,7 +502,7 @@ func getValue(obj *Object, layerId, fieldId int, ctx Context) (Value, error) {
 	if err != nil {
 		return Value{}, err
 	}
-	obj.Values[layerId][fieldId] = val
+	obj.Values[flatIndex] = val
 	return val, nil
 }
 
@@ -591,10 +600,10 @@ func GetObjectKeysValues(obj *Object, ctx Context, inclHidden bool) ([]Value, er
 		m := CreateFieldMeta(ast.ObjectFieldInherit, false)
 		layer.Meta = []uint8{m, m}
 
-		obj.Values = [][]Value{{
+		obj.Values = []Value{
 			MakeString(ctx.Interner.Get(plan.KeyId), ctx),
 			val,
-		}}
+		}
 
 		kv := MakeObject(obj, ctx)
 

@@ -417,7 +417,7 @@ func toValue(v any, ctx evaluator.Context) evaluator.Value {
 			values = append(values, toValue(item, ctx))
 		}
 		obj := evaluator.NewObject([]*evaluator.Layer{layer})
-		obj.Values = [][]evaluator.Value{values}
+		obj.Values = values
 		return evaluator.MakeObject(obj, ctx)
 	default:
 		panic(fmt.Sprintf("unhandled type %T", val))
