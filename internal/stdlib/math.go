@@ -8,7 +8,7 @@ import (
 )
 
 func liftNumeric(f func(float64) float64, name string) evaluator.Func {
-	return func(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 		if len(args) != 1 {
 			return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to %s: %d, expected 1", name, len(args))
 		}
@@ -21,7 +21,7 @@ func liftNumeric(f func(float64) float64, name string) evaluator.Func {
 }
 
 func liftNumeric2(f func(float64, float64) float64, name string) evaluator.Func {
-	return func(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 		if len(args) != 2 {
 			return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to %s: %d, expected 2", name, len(args))
 		}
@@ -37,7 +37,7 @@ func liftNumeric2(f func(float64, float64) float64, name string) evaluator.Func 
 }
 
 func liftNumericToBoolean(f func(float64) bool, name string) evaluator.Func {
-	return func(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 		if len(args) != 1 {
 			return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to %s: %d, expected 1", name, len(args))
 		}

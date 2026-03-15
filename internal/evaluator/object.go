@@ -127,10 +127,7 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (Value, bool, err
 			continue
 		}
 
-		evalCtx := ctx
-		evalCtx.SuperOffset = len(layers) - 1 - i
-
-		val, err := getValue(t, i, fieldIndex, evalCtx)
+		val, err := getValue(t, i, fieldIndex, ctx)
 		if err != nil {
 			return Value{}, false, err
 		}
@@ -191,25 +188,15 @@ func createScope(layer *Layer, ctx Context) (uint32, error) {
 
 	scopeId := ctx.Arena.NewScope(layer.ParentScopeId, len(layer.LocalKeys))
 
-	// rootKeyId := ctx.Interner.Intern("$")
-
 	for i, keyId := range layer.LocalKeys {
 		node := layer.LocalNodes[i]
-
-		// if keyId == rootKeyId {
-		// 	// Only set root if not already set
-		// 	_, found := ctx.Arena.GetScopeBind(layer.ParentScopeId, keyId)
-		// 	if found {
-		// 		continue
-		// 	}
-		// }
 
 		val, err := evaluateNodeLazy(node, scopeId, ctx)
 		if err != nil {
 			return 0, err
 		}
 
-		ctx.Arena.AddScopeBind(scopeId, keyId, val)
+		ctx.Arena.AddScopeBind(scopeId, NamedValue{keyId, val})
 	}
 
 	return scopeId, nil
@@ -525,12 +512,15 @@ func getValue(obj *Object, layerId, fieldId int, ctx Context) (Value, error) {
 
 	n := l.Nodes[fieldId]
 
-	scopeId, err := obj.getScope(layerId, l, ctx)
+	evalCtx := ctx
+	evalCtx.SuperOffset = len(layers) - 1 - layerId
+
+	scopeId, err := obj.getScope(layerId, l, evalCtx)
 	if err != nil {
 		return Value{}, err
 	}
 
-	val, err = EvaluateNodeStrict(n, scopeId, ctx)
+	val, err = EvaluateNodeStrict(n, scopeId, evalCtx)
 	if err != nil {
 		return Value{}, err
 	}
@@ -553,7 +543,10 @@ func runAssertions(obj *Object, ctx Context) error {
 	for i := len(layers) - 1; i >= 0; i-- {
 		layer := layers[i]
 
-		scopeId, err := obj.getScope(i, layer, ctx)
+		evalCtx := ctx
+		evalCtx.SuperOffset = len(layers) - 1 - i
+
+		scopeId, err := obj.getScope(i, layer, evalCtx)
 		if err != nil {
 			return err
 		}
@@ -646,4 +639,62 @@ func GetObjectKeysValues(obj *Object, ctx Context, inclHidden bool) ([]Value, er
 	}
 
 	return res, nil
+}
+
+func (t *Object) Prune(ctx Context) (Value, error) {
+	err := runAssertions(t, ctx)
+	if err != nil {
+		return Value{}, err
+	}
+
+	plans := CompileObjectPlan(t, ctx)
+	layer := &Layer{
+		Keys: make([]uint32, 0, len(plans)),
+		Meta: make([]uint8, 0, len(plans)),
+	}
+
+	resObj := NewObject([]*Layer{layer})
+	resObj.Values = make([]Value, 0, len(plans))
+
+	useMap := len(plans) > MaxLinearKeys
+	if useMap {
+		layer.Index = make(map[uint32]int, len(layer.Keys))
+	}
+
+	index := 0
+	for _, plan := range plans {
+		if plan.IsHidden() {
+			continue
+		}
+
+		val, err := plan.GetValue(t, ctx)
+		if err != nil {
+			return Value{}, err
+		}
+		err = EvaluateValueStrict(&val, ctx)
+		if err != nil {
+			return Value{}, err
+		}
+
+		prunedVal, err := val.Prune(ctx)
+		if err != nil {
+			return Value{}, err
+		}
+
+		if prunedVal.IsEmpty(ctx) {
+			continue
+		}
+
+		layer.Keys = append(layer.Keys, plan.KeyId)
+		layer.Meta = append(layer.Meta, CreateFieldMeta(plan.Visibility, false))
+
+		resObj.Values = append(resObj.Values, prunedVal)
+
+		if useMap {
+			layer.Index[plan.KeyId] = index
+		}
+		index++
+	}
+
+	return MakeObject(resObj, ctx), nil
 }

@@ -2,6 +2,7 @@ package stdlib
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 	"github.com/google/go-jsonnet/ast"
@@ -11,6 +12,7 @@ var functions = map[string]evaluator.Func{
 	// --- General ---
 	"$flatMapArray":    builtin_flatMapArray,
 	"$objectFlatMerge": builtin_objectFlatMerge,
+	"trace":            std_trace,
 	"toString":         std_toString,
 	"length":           std_length,
 	"mod":              std_mod,
@@ -56,8 +58,10 @@ var functions = map[string]evaluator.Func{
 	"endsWith":    std_endsWith,
 	"substr":      std_substr,
 	"findSubstr":  std_findSubstr,
+	"strReplace":  std_strReplace,
 	"split":       std_split,
 	"splitLimit":  std_splitLimit,
+	"stripChars":  std_stripChars,
 	"rstripChars": std_rstripChars,
 	"lstripChars": std_lstripChars,
 	"isEmpty":     std_isEmpty,
@@ -71,22 +75,25 @@ var functions = map[string]evaluator.Func{
 	"codepoint":   std_codepoint,
 	"parseInt":    std_parseInt,
 	"base64":      std_base64,
+	"asciiLower":  std_asciiLower,
+	"asciiUpper":  std_asciiUpper,
 
 	// --- Arrays ---
-	"join":      std_join,
-	"range":     std_range,
-	"makeArray": std_makeArray,
-	"filter":    std_filter,
-	"uniq":      std_uniq,
-	"sort":      std_sort,
-	"map":       std_map,
-	"filterMap": std_filterMap,
-	"member":    std_member,
-	"setMember": std_setMember,
-	"slice":     std_slice,
-	"count":     std_count,
-	"lines":     std_lines,
-	"reverse":   std_reverse,
+	"join":         std_join,
+	"range":        std_range,
+	"makeArray":    std_makeArray,
+	"filter":       std_filter,
+	"uniq":         std_uniq,
+	"sort":         std_sort,
+	"map":          std_map,
+	"mapWithIndex": std_mapWithIndex,
+	"filterMap":    std_filterMap,
+	"member":       std_member,
+	"setMember":    std_setMember,
+	"slice":        std_slice,
+	"count":        std_count,
+	"lines":        std_lines,
+	"reverse":      std_reverse,
 
 	// -- Sets ---
 	"set": std_set,
@@ -145,8 +152,8 @@ func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
 	return val, nil
 }
 
-func liftValueToBool(f func(evaluator.Value) bool, name string) evaluator.Func {
-	return func(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+func liftValueToBool(f func(evaluator.NamedValue) bool, name string) evaluator.Func {
+	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 		if len(args) != 1 {
 			return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to %s: %d, expected 1", name, len(args))
 		}
@@ -155,7 +162,24 @@ func liftValueToBool(f func(evaluator.Value) bool, name string) evaluator.Func {
 	}
 }
 
-func std_type(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+func std_trace(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 2 {
+		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.trace: %d, expected 2", len(args))
+	}
+
+	str := args[0]
+	if !str.IsString() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.trace (arg 0): %s, expected string", str.Type().String())
+	}
+
+	_, err := fmt.Fprint(os.Stdout, "TRACE: "+str.String(ctx))
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	return args[1].Value, nil
+}
+
+func std_type(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	if len(args) != 1 {
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.type: %d, expected 1", len(args))
 	}
@@ -163,14 +187,14 @@ func std_type(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, e
 	return evaluator.MakeString(args[0].Type().String(), ctx), nil
 }
 
-var std_isString = liftValueToBool(func(v evaluator.Value) bool { return v.IsString() }, "std.isString")
-var std_isNumber = liftValueToBool(func(v evaluator.Value) bool { return v.IsNumber() }, "std.isNumber")
-var std_isBoolean = liftValueToBool(func(v evaluator.Value) bool { return v.IsBool() }, "std.isBoolean")
-var std_isObject = liftValueToBool(func(v evaluator.Value) bool { return v.IsObject() }, "std.isObject")
-var std_isArray = liftValueToBool(func(v evaluator.Value) bool { return v.IsArray() }, "std.isArray")
-var std_isFunction = liftValueToBool(func(v evaluator.Value) bool { return v.IsFunction() }, "std.isFunction")
+var std_isString = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsString() }, "std.isString")
+var std_isNumber = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsNumber() }, "std.isNumber")
+var std_isBoolean = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsBool() }, "std.isBoolean")
+var std_isObject = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsObject() }, "std.isObject")
+var std_isArray = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsArray() }, "std.isArray")
+var std_isFunction = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsFunction() }, "std.isFunction")
 
-func std_toString(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+func std_toString(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	if len(args) != 1 {
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.toString: %d, expected 1", len(args))
 	}
@@ -183,7 +207,7 @@ func std_toString(args []evaluator.Value, ctx evaluator.Context) (evaluator.Valu
 	return evaluator.MakeString(s, ctx), nil
 }
 
-func std_length(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+func std_length(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	if len(args) != 1 {
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.length: %d, expected 1", len(args))
 	}
@@ -205,7 +229,7 @@ func std_length(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value,
 	return evaluator.MakeNumber(res), nil
 }
 
-func std_mod(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+func std_mod(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	if len(args) != 2 {
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.mod: %d, expected 2", len(args))
 	}
@@ -219,16 +243,11 @@ func std_mod(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, er
 	return evaluator.Value{}, fmt.Errorf("'Operator %% cannot be used on types %s and %s", args[0].Type().String(), args[1].Type().String())
 }
 
-func std_prune(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+func std_prune(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	if len(args) != 1 {
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.prune: %d, expected 1", len(args))
 	}
 	arg := args[0]
-
-	err := evaluator.EvaluateValueStrict(&arg, ctx)
-	if err != nil {
-		return evaluator.Value{}, err
-	}
 
 	res, err := arg.Prune(ctx)
 	if err != nil {

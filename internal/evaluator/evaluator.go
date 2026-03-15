@@ -153,17 +153,16 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 		}
 
 		if !val.IsFunction() {
-			// return Value{}, fmt.Errorf("(%T) unexpected value type '%s'", node, val.Type.String())
 			return Value{}, createErrorWithContext(fmt.Errorf("(%T) unexpected value type '%s'", node, val.Type().String()), &node.LocRange)
 		}
 
-		args := make([]Value, 0, len(node.Arguments.Positional)+len(node.Arguments.Named))
+		args := make([]NamedValue, 0, len(node.Arguments.Positional)+len(node.Arguments.Named))
 		for _, a := range node.Arguments.Positional {
 			v, err := EvaluateNodeStrict(a.Expr, scopeId, ctx)
 			if err != nil {
 				return Value{}, createErrorWithContext(err, &node.LocRange)
 			}
-			args = append(args, v)
+			args = append(args, NamedValue{Value: v})
 		}
 		for _, a := range node.Arguments.Named {
 			// a.Name
@@ -171,7 +170,8 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 			if err != nil {
 				return Value{}, createErrorWithContext(err, &node.LocRange)
 			}
-			args = append(args, v)
+			nameKeyId := ctx.Interner.Intern(string(a.Name))
+			args = append(args, NamedValue{nameKeyId, v})
 		}
 
 		res, err := val.Function(ctx)(args, ctx)
@@ -184,31 +184,12 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 	case *ast.Var:
 		name := string(node.Id)
 
-		// if name == "$" {
-		// 	if ctx.Root.IsNone() {
-		// 		return Value{}, createErrorWithContext(fmt.Errorf("root value is not defined"), &node.LocRange)
-		// 	}
-		// 	return ctx.Root, nil
-		// }
-
 		keyId := ctx.Interner.Intern(name)
 
-		// val, found := scopeId.FindBinding(keyId)
-		// val, found := FindScopeBinding(scopeId, keyId, ctx)
 		val, found := ctx.Arena.GetScopeBind(scopeId, keyId)
 		if !found {
-			val, _ := ctx.Arena.GetScopeBind(scopeId, keyId)
-			if val.IsNone() {
-
-			}
 			return Value{}, createErrorWithContext(fmt.Errorf("variable not found in scope, name: %s", name), &node.LocRange)
 		}
-
-		// if val.IsObject() && name != "std" {
-		// 	obj := val.Object(ctx)
-		// 	clone := obj.Clone()
-		// 	return MakeObject(clone, ctx), nil
-		// }
 
 		return val, nil
 	case *ast.Function:
@@ -292,12 +273,6 @@ func evaluateValue(value *Value, ctx Context) error {
 		return nil
 	}
 
-	// if thunk.Busy {
-	// 	return createErrorWithContext(fmt.Errorf("error during thunk evaluation, infinite recursion detected"), thunk.Node.Loc())
-	// }
-
-	// thunk.Busy = true
-
 	evalCtx := ctx
 	evalCtx.Self = thunk.CapturedSelf
 	evalCtx.SuperOffset = thunk.CapturedSuperOffset
@@ -307,9 +282,6 @@ func evaluateValue(value *Value, ctx Context) error {
 		return createErrorWithContext(err, thunk.Node.Loc())
 	}
 
-	// thunk = value.Thunk(ctx)
-	// thunk.Busy = false
-
 	if evaledVal.IsThunk() {
 		err = evaluateValue(&evaledVal, ctx)
 		if err != nil {
@@ -317,8 +289,10 @@ func evaluateValue(value *Value, ctx Context) error {
 		}
 	}
 
-	*value = evaledVal
+	thunk = value.Thunk(ctx)
 	thunk.Value = evaledVal
+
+	*value = evaledVal
 	return nil
 }
 
@@ -337,7 +311,7 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 		LocalKeys:  make([]uint32, 0, localsCount),
 		LocalNodes: make(ast.Nodes, 0, localsCount),
 
-		Asserts: make(ast.Nodes, 0, len(node.Asserts)),
+		Asserts: node.Asserts,
 	}
 
 	for _, v := range node.Locals {
@@ -391,18 +365,6 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 
 	}
 
-	for _, v := range node.Asserts {
-		// ass, err := evaluateNode(v, childScopeId, ctx)
-		// if err != nil {
-		// 	return Value{}, err
-		// }
-		// if !ass.IsBool() {
-		// 	return Value{}, fmt.Errorf("(%T) unexpected assert return, err: %w", v, err)
-		// }
-
-		layer.Asserts = append(layer.Asserts, v)
-	}
-
 	obj := NewObject([]*Layer{layer})
 
 	return MakeObject(obj, ctx), nil
@@ -420,7 +382,7 @@ func handleLocal(node *ast.Local, scopeId uint32, ctx Context) (Value, error) {
 			return Value{}, err
 		}
 
-		ctx.Arena.AddScopeBind(childScopeId, keyId, t)
+		ctx.Arena.AddScopeBind(childScopeId, NamedValue{keyId, t})
 	}
 
 	val, err := evaluateNodeLazy(node.Body, childScopeId, ctx)
@@ -488,11 +450,6 @@ func handleBinary(node *ast.Binary, scopeId uint32, ctx Context) (Value, error) 
 			return Value{}, createErrorWithContext(fmt.Errorf("(%T) failed to handle binary op, err: %w", node, err), &node.LocRange)
 		}
 
-		// if res.IsObject() {
-		// 	// Self needs to be reset to point to the virtually merged object
-		// 	ctx.Self = &res
-		// }
-
 		return res, nil
 	}
 
@@ -507,20 +464,34 @@ func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, err
 		paramKeyIds[i] = ctx.Interner.Intern(string(p.Name))
 	}
 
-	f := func(args []Value, _ Context) (Value, error) {
+	f := func(args []NamedValue, _ Context) (Value, error) {
 		if len(args) > paramCount {
 			return Value{}, fmt.Errorf("unexpected amount of args passed to function")
 		}
 
-		// Note: Using callingCtx here to ensure we use the active Arena/State
 		childScopeId := ctx.Arena.NewScope(scopeId, paramCount)
 
+		posIndex := 0
 		for i := range paramCount {
 			keyId := paramKeyIds[i]
 
-			if i < len(args) {
-				// Arg was passed, bind it directly
-				ctx.Arena.AddScopeBind(childScopeId, keyId, args[i])
+			var bindVal NamedValue
+
+			if posIndex < len(args) && args[posIndex].Key == 0 {
+				bindVal = args[posIndex]
+				bindVal.Key = keyId
+				posIndex++
+			} else {
+				for _, a := range args {
+					if a.Key == keyId {
+						bindVal = a
+						break
+					}
+				}
+			}
+
+			if !bindVal.IsNone() {
+				ctx.Arena.AddScopeBind(childScopeId, bindVal)
 				continue
 			}
 
@@ -535,7 +506,7 @@ func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, err
 				return Value{}, err
 			}
 
-			ctx.Arena.AddScopeBind(childScopeId, keyId, da)
+			ctx.Arena.AddScopeBind(childScopeId, NamedValue{keyId, da})
 		}
 
 		val, err := evaluateNode(node.Body, childScopeId, ctx)
@@ -588,21 +559,11 @@ func handleIndex(node *ast.Index, scopeId uint32, ctx Context) (Value, error) {
 		subCtx := ctx
 		subCtx.Self = target
 
-		// if name == "mapRuleGroups" {
-		// 	log.Printf("asdf")
-		// }
-
 		val, _, err := obj.GetField(keyId, subCtx)
 		if err != nil {
 			return Value{}, createErrorWithContext(err, &node.LocRange)
 		}
 		if val.IsNone() {
-			// fields := getObjectFields(obj, subCtx, true)
-			// str := "\n"
-			// for _, v := range fields {
-			// 	str += "\n" + v.String(subCtx)
-			// }
-			// return Value{}, createErrorWithContext(fmt.Errorf("index not found on object, index: %s, %s", name, str), &node.LocRange)
 			return Value{}, createErrorWithContext(fmt.Errorf("index not found on object, index: %s", name), &node.LocRange)
 		}
 		err = EvaluateValueStrict(&val, subCtx)
@@ -640,8 +601,11 @@ func handleSuperIndex(node *ast.SuperIndex, scopeId uint32, ctx Context) (Value,
 	obj := ctx.Self.Object(ctx)
 
 	targetOffset := ctx.SuperOffset + 1
+	// targetOffset := ctx.SuperOffset
+	// if targetOffset == 0 {
+	// 	targetOffset = 1
+	// }
 
-	ctx.SuperOffset++
 	val, _, err := obj.GetFieldWithOffset(keyId, ctx, targetOffset)
 	if err != nil {
 		return Value{}, err

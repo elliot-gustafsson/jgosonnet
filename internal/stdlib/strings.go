@@ -18,7 +18,7 @@ import (
 const codepointMax = 0x10FFFF
 
 func liftString(f func(string) string, name string) evaluator.Func {
-	return func(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 		if len(args) != 1 {
 			return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to %s: %d, expected 1", name, len(args))
 		}
@@ -31,7 +31,7 @@ func liftString(f func(string) string, name string) evaluator.Func {
 }
 
 func liftString2(f func(string, string) string, name string) evaluator.Func {
-	return func(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 		if len(args) != 2 {
 			return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to %s: %d, expected 2", name, len(args))
 		}
@@ -47,7 +47,7 @@ func liftString2(f func(string, string) string, name string) evaluator.Func {
 }
 
 func liftStringToValueErr(f func(string) (evaluator.Value, error), name string) evaluator.Func {
-	return func(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 		if len(args) != 1 {
 			return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to %s: %d, expected 1", name, len(args))
 		}
@@ -59,6 +59,7 @@ func liftStringToValueErr(f func(string) (evaluator.Value, error), name string) 
 }
 
 var std_trim = liftString(strings.TrimSpace, "std.trim")
+var std_stripChars = liftString2(strings.Trim, "std.stripChars")
 var std_rstripChars = liftString2(strings.TrimRight, "std.rstripChars")
 var std_lstripChars = liftString2(strings.TrimLeft, "std.lstripChars")
 
@@ -87,6 +88,9 @@ var std_base64 = liftString(func(s string) string {
 	return hash
 }, "std.sha3")
 
+var std_asciiLower = liftString(strings.ToLower, "std.asciiLower")
+var std_asciiUpper = liftString(strings.ToUpper, "std.asciiUpper")
+
 var std_parseInt = liftStringToValueErr(func(s string) (evaluator.Value, error) {
 	num, err := strconv.ParseFloat(s, 64)
 	if err != nil {
@@ -95,7 +99,7 @@ var std_parseInt = liftStringToValueErr(func(s string) (evaluator.Value, error) 
 	return evaluator.MakeNumber(num), nil
 }, "std.parseInt")
 
-func std_isEmpty(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+func std_isEmpty(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
 	if len(args) != 1 {
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.isEmpty: %d, expected 1", len(args))
@@ -111,7 +115,7 @@ func std_isEmpty(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value
 	return evaluator.MakeBool(res), nil
 }
 
-func std_codepoint(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+func std_codepoint(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
 	if len(args) != 1 {
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.codepoint: %d, expected 1", len(args))
@@ -130,7 +134,7 @@ func std_codepoint(args []evaluator.Value, ctx evaluator.Context) (evaluator.Val
 	return evaluator.MakeNumber(float64(str[0])), nil
 }
 
-func std_char(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+func std_char(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
 	if len(args) != 1 {
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.char: %d, expected 1", len(args))
@@ -151,7 +155,7 @@ func std_char(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, e
 	return evaluator.MakeString(string(rune(num)), ctx), nil
 }
 
-func std_stringChars(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+func std_stringChars(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
 	if len(args) != 1 {
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.stringChars: %d, expected 1", len(args))
@@ -170,7 +174,7 @@ func std_stringChars(args []evaluator.Value, ctx evaluator.Context) (evaluator.V
 	return evaluator.MakeArray(res, ctx), nil
 }
 
-func std_startsWith(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+func std_startsWith(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
 	if len(args) != 2 {
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.startsWith: %d, expected 2", len(args))
@@ -191,7 +195,7 @@ func std_startsWith(args []evaluator.Value, ctx evaluator.Context) (evaluator.Va
 	return evaluator.MakeBool(res), nil
 }
 
-func std_endsWith(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+func std_endsWith(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
 	if len(args) != 2 {
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.endsWith: %d, expected 2", len(args))
@@ -212,7 +216,7 @@ func std_endsWith(args []evaluator.Value, ctx evaluator.Context) (evaluator.Valu
 	return evaluator.MakeBool(res), nil
 }
 
-func std_substr(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+func std_substr(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
 	if len(args) != 3 {
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.substr: %d, expected 2", len(args))
@@ -255,7 +259,7 @@ func std_substr(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value,
 	return evaluator.MakeString(res, ctx), nil
 }
 
-func std_findSubstr(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+func std_findSubstr(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
 	if len(args) != 2 {
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.findSubstr: %d, expected 2", len(args))
@@ -288,7 +292,36 @@ func std_findSubstr(args []evaluator.Value, ctx evaluator.Context) (evaluator.Va
 	return evaluator.MakeArray(res, ctx), nil
 }
 
-func std_split(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+func std_strReplace(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+
+	if len(args) != 3 {
+		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.strReplace: %d, expected 2", len(args))
+	}
+
+	fullVal := args[0]
+	if !fullVal.IsString() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.strReplace (arg 0): %s, expected string", fullVal.Type().String())
+	}
+	full := fullVal.String(ctx)
+
+	fromVal := args[1]
+	if !fromVal.IsString() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.strReplace (arg 1): %s, expected string", fromVal.Type().String())
+	}
+	from := fromVal.String(ctx)
+
+	toVal := args[2]
+	if !toVal.IsString() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.strReplace (arg 2): %s, expected string", toVal.Type().String())
+	}
+	to := toVal.String(ctx)
+
+	res := strings.ReplaceAll(full, from, to)
+
+	return evaluator.MakeString(res, ctx), nil
+}
+
+func std_split(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
 	if len(args) != 2 {
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.split: %d, expected 2", len(args))
@@ -314,7 +347,7 @@ func std_split(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, 
 	return evaluator.MakeArray(res, ctx), nil
 }
 
-func std_splitLimit(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+func std_splitLimit(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
 	if len(args) != 3 {
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.splitLimit: %d, expected 3", len(args))

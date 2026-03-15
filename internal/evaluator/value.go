@@ -60,7 +60,7 @@ type Thunk struct {
 	Value Value
 }
 
-type Func = func(args []Value, ctx Context) (Value, error)
+type Func = func(args []NamedValue, ctx Context) (Value, error)
 
 type Value struct {
 	t ValueType
@@ -70,6 +70,12 @@ type Value struct {
 
 	// Also holds 1.0 and 0.0 for bool
 	num float64
+}
+
+type NamedValue struct {
+	Key uint32
+
+	Value
 }
 
 func MakeNull() Value {
@@ -251,9 +257,9 @@ func (v Value) IsEmpty(ctx Context) bool {
 	case ValueTypeNull:
 		return true
 	case ValueTypeObject:
-		return v.Object(ctx).GetLength() != 0
+		return v.Object(ctx).GetLength() == 0
 	case ValueTypeArray:
-		return len(v.Array(ctx)) != 0
+		return len(v.Array(ctx)) == 0
 	}
 }
 
@@ -261,16 +267,10 @@ func (v Value) Prune(ctx Context) (Value, error) {
 	switch v.Type() {
 	default:
 		return Value{}, fmt.Errorf("unhandled type (%s) in Value.Prune()", v.Type())
-	case ValueTypeNull:
-		return MakeNull(), nil
-	case ValueTypeString:
-		return Value{t: ValueTypeString, refId: v.refId}, nil
-	case ValueTypeNumber:
-		return Value{t: ValueTypeNumber, num: v.num}, nil
-	case ValueTypeBool:
-		return Value{t: ValueTypeBool, num: v.num}, nil
+	case ValueTypeNull, ValueTypeString, ValueTypeNumber, ValueTypeBool:
+		return v, nil
 	case ValueTypeObject:
-		return Value{}, fmt.Errorf("Value.Prune() object not handled yet")
+		return v.Object(ctx).Prune(ctx)
 	case ValueTypeArray:
 		arr := v.Array(ctx)
 		res := make([]Value, 0, len(arr))

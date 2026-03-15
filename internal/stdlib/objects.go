@@ -7,14 +7,14 @@ import (
 )
 
 func liftObjectToValueErr(f func(evaluator.Value, evaluator.Context) (evaluator.Value, error), name string) evaluator.Func {
-	return func(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 		if len(args) != 1 {
 			return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to %s: %d, expected 1", name, len(args))
 		}
 		if !args[0].IsObject() {
 			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 0): %s, expected object", name, args[0].Type().String())
 		}
-		res, err := f(args[0], ctx)
+		res, err := f(args[0].Value, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
@@ -23,7 +23,7 @@ func liftObjectToValueErr(f func(evaluator.Value, evaluator.Context) (evaluator.
 }
 
 func liftObjectStringToValueErr(f func(evaluator.Value, string, evaluator.Context) (evaluator.Value, error), name string) evaluator.Func {
-	return func(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 		if len(args) != 2 {
 			return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to %s: %d, expected 2", name, len(args))
 		}
@@ -33,7 +33,7 @@ func liftObjectStringToValueErr(f func(evaluator.Value, string, evaluator.Contex
 		if !args[1].IsString() {
 			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 1): %s, expected string", name, args[0].Type().String())
 		}
-		res, err := f(args[0], args[1].String(ctx), ctx)
+		res, err := f(args[0].Value, args[1].String(ctx), ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
@@ -41,7 +41,7 @@ func liftObjectStringToValueErr(f func(evaluator.Value, string, evaluator.Contex
 	}
 }
 
-func std_get(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+func std_get(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	// std.get(o, f, default=null, inc_hidden=true)
 	if len(args) < 2 || len(args) > 4 {
 		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.get %d, expected 2-4", len(args))
@@ -59,7 +59,7 @@ func std_get(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, er
 
 	defaultVal := evaluator.MakeNull()
 	if len(args) > 2 {
-		defaultVal = args[2]
+		defaultVal = args[2].Value
 	}
 
 	inclHidden := true
@@ -73,7 +73,7 @@ func std_get(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, er
 	keyId := ctx.Interner.Intern(field.String(ctx))
 
 	childCtx := ctx
-	childCtx.Self = args[0]
+	childCtx.Self = args[0].Value
 
 	val, visible, err := obj.Object(ctx).GetField(keyId, childCtx)
 	if err != nil {

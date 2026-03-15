@@ -50,16 +50,11 @@ type Arena struct {
 
 	Scopes []Scope
 
-	bindings []Binding
-}
-
-type Binding struct {
-	Key uint32
-	Val Value
+	bindings []NamedValue
 }
 
 type Scope struct {
-	Bindings []Binding
+	Bindings []NamedValue
 
 	ParentId uint32
 }
@@ -72,7 +67,7 @@ func NewArena() *Arena {
 		Funcs:   make([]Func, 0, 2*1024),
 		Scopes:  make([]Scope, 0, 32*1024),
 
-		bindings: make([]Binding, 0, 128*1024),
+		bindings: make([]NamedValue, 0, 128*1024),
 	}
 }
 
@@ -87,13 +82,13 @@ func (a *Arena) NewScope(parentId uint32, cap int) uint32 {
 	return id
 }
 
-func (a *Arena) makeBindings(n int) []Binding {
+func (a *Arena) makeBindings(n int) []NamedValue {
 	if n == 0 {
 		return nil
 	}
 
 	start := len(a.bindings)
-	a.bindings = append(a.bindings, make([]Binding, n)...)
+	a.bindings = append(a.bindings, make([]NamedValue, n)...)
 	total := start + n
 
 	return a.bindings[start:start:total]
@@ -103,13 +98,10 @@ func (a *Arena) GetScope(id uint32) *Scope {
 	return &a.Scopes[id]
 }
 
-func (a *Arena) AddScopeBind(scopeId, keyId uint32, val Value) {
+func (a *Arena) AddScopeBind(scopeId uint32, val NamedValue) {
 	s := &a.Scopes[scopeId]
 
-	s.Bindings = append(s.Bindings, Binding{
-		Key: keyId,
-		Val: val,
-	})
+	s.Bindings = append(s.Bindings, val)
 }
 
 func (a *Arena) GetScopeBind(scopeId, key uint32) (Value, bool) {
@@ -120,7 +112,7 @@ func (a *Arena) GetScopeBind(scopeId, key uint32) (Value, bool) {
 
 		for i := len(scope.Bindings) - 1; i >= 0; i-- {
 			if scope.Bindings[i].Key == key {
-				return scope.Bindings[i].Val, true
+				return scope.Bindings[i].Value, true
 			}
 		}
 

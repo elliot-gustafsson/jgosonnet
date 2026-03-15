@@ -18,7 +18,7 @@ var bufPool = sync.Pool{
 	},
 }
 
-func std_format(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+func std_format(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	if len(args) != 2 {
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.format: %d, expected 2", len(args))
 	}
@@ -30,12 +30,7 @@ func std_format(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value,
 		return evaluator.Value{}, fmt.Errorf("unexpected type %s, expected string (std.format arg 0)", format.Type().String())
 	}
 
-	// v, err := manifestValue(arg, ctx)
-	// if err != nil {
-	// 	return evaluator.Value{}, err
-	// }
-
-	str, err := formatString(format.String(ctx), arg, ctx)
+	str, err := formatString(format.String(ctx), arg.Value, ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}

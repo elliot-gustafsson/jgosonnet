@@ -6,7 +6,7 @@ import (
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 )
 
-func builtin_objectFlatMerge(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	if len(args) != 1 {
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to builtin_objectFlatMerge: %d, expected 1", len(args))
 	}
@@ -39,7 +39,7 @@ func builtin_objectFlatMerge(args []evaluator.Value, ctx evaluator.Context) (eva
 	return evaluator.MakeObject(obj, ctx), nil
 }
 
-func builtin_flatMapArray(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+func builtin_flatMapArray(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	if len(args) != 2 {
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to builtin flatMapArray: %d, expected 2", len(args))
 	}
@@ -52,11 +52,6 @@ func builtin_flatMapArray(args []evaluator.Value, ctx evaluator.Context) (evalua
 
 	val := args[1]
 
-	err := evaluator.EvaluateValueStrict(&val, ctx)
-	if err != nil {
-		return evaluator.Value{}, err
-	}
-
 	if !val.IsArray() {
 		return evaluator.Value{}, fmt.Errorf("(builtin flatMapArray) unexpected type of arg 1: %s, expected array", mapperFunc.Type().String())
 	}
@@ -64,12 +59,13 @@ func builtin_flatMapArray(args []evaluator.Value, ctx evaluator.Context) (evalua
 	inputArr := val.Array(ctx)
 
 	// Create the array once and mutate it to reduce object on the heap
-	mapperFuncInput := []evaluator.Value{{}}
+	mapperFuncInput := []evaluator.NamedValue{{}}
+	mFunc := mapperFunc.Function(ctx)
 
 	res := make([]evaluator.Value, 0, len(inputArr))
 	for _, v := range inputArr {
-		mapperFuncInput[0] = v
-		out, err := mapperFunc.Function(ctx)(mapperFuncInput, ctx)
+		mapperFuncInput[0] = evaluator.NamedValue{Value: v}
+		out, err := mFunc(mapperFuncInput, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}

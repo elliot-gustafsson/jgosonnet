@@ -11,7 +11,7 @@ const (
 	yamlSeparator = "---"
 )
 
-func std_manifestYamlDoc(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+func std_manifestYamlDoc(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	// std.manifestYamlDoc(value, indent_array_in_object=false, quote_keys=true)
 	if len(args) < 1 || len(args) > 3 {
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.manifestYamlDoc: %d, expected 1-3", len(args))
@@ -42,7 +42,7 @@ func std_manifestYamlDoc(args []evaluator.Value, ctx evaluator.Context) (evaluat
 		QuoteValues:          true,
 	}
 
-	err := evaluator.ManifestYaml(&b, args[0], ctx, c)
+	err := evaluator.ManifestYaml(&b, args[0].Value, ctx, c)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
@@ -50,7 +50,7 @@ func std_manifestYamlDoc(args []evaluator.Value, ctx evaluator.Context) (evaluat
 	return evaluator.MakeString(b.String(), ctx), nil
 }
 
-func std_manifestYamlStream(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+func std_manifestYamlStream(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	// std.manifestYamlStream(value, indent_array_in_object=false, c_document_end=false, quote_keys=true)
 	if len(args) < 1 || len(args) > 4 {
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.manifestYamlStream: %d, expected 1-4", len(args))
@@ -117,7 +117,7 @@ func std_manifestYamlStream(args []evaluator.Value, ctx evaluator.Context) (eval
 	return evaluator.MakeString(b.String(), ctx), nil
 }
 
-func std_manifestJson(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+func std_manifestJson(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	// std.manifestJsonEx(value, indent, newline, key_val_sep)
 	if len(args) != 1 {
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.manifestJsonEx: %d, expected 1", len(args))
@@ -126,7 +126,7 @@ func std_manifestJson(args []evaluator.Value, ctx evaluator.Context) (evaluator.
 	var b strings.Builder
 	b.Grow(1024)
 
-	err := evaluator.ManifestJson(&b, args[0], ctx, evaluator.JsonConfigPretty)
+	err := evaluator.ManifestJson(&b, args[0].Value, ctx, evaluator.JsonConfigPretty)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
@@ -134,7 +134,7 @@ func std_manifestJson(args []evaluator.Value, ctx evaluator.Context) (evaluator.
 	return evaluator.MakeString(b.String(), ctx), nil
 }
 
-func std_manifestJsonMinified(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+func std_manifestJsonMinified(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	// std.manifestJsonEx(value, indent, newline, key_val_sep)
 	if len(args) != 1 {
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.manifestJsonEx: %d, expected 1", len(args))
@@ -143,7 +143,7 @@ func std_manifestJsonMinified(args []evaluator.Value, ctx evaluator.Context) (ev
 	var b strings.Builder
 	b.Grow(1024)
 
-	err := evaluator.ManifestJson(&b, args[0], ctx, evaluator.JsonConfigMinified)
+	err := evaluator.ManifestJson(&b, args[0].Value, ctx, evaluator.JsonConfigMinified)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
@@ -151,7 +151,7 @@ func std_manifestJsonMinified(args []evaluator.Value, ctx evaluator.Context) (ev
 	return evaluator.MakeString(b.String(), ctx), nil
 }
 
-func std_manifestJsonEx(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+func std_manifestJsonEx(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	// std.manifestJsonEx(value, indent, newline, key_val_sep)
 	if len(args) < 2 || len(args) > 4 {
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.manifestJsonEx: %d, expected 2-4", len(args))
@@ -187,7 +187,7 @@ func std_manifestJsonEx(args []evaluator.Value, ctx evaluator.Context) (evaluato
 		KeyValSep:  key_val_sep,
 	}
 
-	err := evaluator.ManifestJson(&b, args[0], ctx, c)
+	err := evaluator.ManifestJson(&b, args[0].Value, ctx, c)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
@@ -195,7 +195,7 @@ func std_manifestJsonEx(args []evaluator.Value, ctx evaluator.Context) (evaluato
 	return evaluator.MakeString(b.String(), ctx), nil
 }
 
-// func std_manifestIni(args []evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+// func std_manifestIni(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 // 	if len(args) != 1 {
 // 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.manifestIni: %d, expected 1", len(args))
 // 	}
