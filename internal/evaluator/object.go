@@ -58,8 +58,6 @@ func (l *Layer) findField(key uint32) (layerId int) {
 func NewObject(layers []*Layer) Object {
 	return Object{
 		Layers: layers,
-		// Values: make([][]Value, len(layers)),
-		// Scopes: make([]uint32, len(layers)),
 	}
 }
 
@@ -71,6 +69,10 @@ const (
 
 type Object struct {
 	Layers []*Layer
+
+	// Used ONLY for lazy merging (A + B)
+	Left  *Object
+	Right *Object
 
 	Values       []Value
 	layerOffsets []int
@@ -115,8 +117,10 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (Value, bool, err
 
 	currentVisibility := ast.ObjectFieldInherit
 
-	for i := len(t.Layers) - (1 + offset); i >= 0; i-- {
-		layer := t.Layers[i]
+	layers := t.GetLayers()
+
+	for i := len(layers) - (1 + offset); i >= 0; i-- {
+		layer := layers[i]
 
 		fieldIndex := layer.findField(key)
 		if fieldIndex == -1 {
@@ -124,7 +128,7 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (Value, bool, err
 		}
 
 		evalCtx := ctx
-		evalCtx.SuperOffset = len(t.Layers) - 1 - i
+		evalCtx.SuperOffset = len(layers) - 1 - i
 
 		val, err := getValue(t, i, fieldIndex, evalCtx)
 		if err != nil {
@@ -167,7 +171,7 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (Value, bool, err
 func (t *Object) getScope(layerIndex int, layer *Layer, ctx Context) (uint32, error) {
 
 	if t.Scopes == nil {
-		t.Scopes = make([]uint32, len(t.Layers))
+		t.Scopes = make([]uint32, len(t.GetLayers()))
 	}
 
 	scopeId := t.Scopes[layerIndex]
@@ -225,14 +229,12 @@ func EvalFieldMeta(m uint8) (visibility ast.ObjectFieldHide, plusSuper bool) {
 	return
 }
 
-func (t *Object) AddLayers(layers []*Layer) {
-	t.Layers = append(t.Layers, layers...)
-}
-
 func (t *Object) GetLength() int {
+	layers := t.GetLayers()
+
 	res := make(map[uint32]any)
-	for i := len(t.Layers) - 1; i >= 0; i-- {
-		layer := t.Layers[i]
+	for i := len(layers) - 1; i >= 0; i-- {
+		layer := layers[i]
 
 		for _, k := range layer.Keys {
 			res[k] = nil
@@ -241,19 +243,45 @@ func (t *Object) GetLength() int {
 	return len(res)
 }
 
-func (t *Object) Clone() Object {
-	layers := make([]*Layer, len(t.Layers))
-	copy(layers, t.Layers)
-	obj := NewObject(layers)
-	return obj
+func (t *Object) totalLayerCount() int {
+	if t.Layers != nil {
+		return len(t.Layers)
+	}
+	return t.Left.totalLayerCount() + t.Right.totalLayerCount()
+}
+
+func (t *Object) populateLayers(dest []*Layer, offset int) int {
+	if t.Layers != nil {
+		copied := copy(dest[offset:], t.Layers)
+		return offset + copied
+	}
+	offset = t.Left.populateLayers(dest, offset)
+	return t.Right.populateLayers(dest, offset)
+}
+
+func (t *Object) GetLayers() []*Layer {
+	if t.Layers != nil {
+		return t.Layers
+	}
+
+	total := t.totalLayerCount()
+
+	layers := make([]*Layer, total)
+
+	t.populateLayers(layers, 0)
+
+	t.Layers = layers
+	t.Left = nil
+	t.Right = nil
+
+	return t.Layers
 }
 
 func MergeObjects(left, right *Object) Object {
-	layers := make([]*Layer, len(left.Layers)+len(right.Layers))
-	copy(layers, left.Layers)
-	copy(layers[len(left.Layers):], right.Layers)
-	obj := NewObject(layers)
-	return obj
+	return Object{
+		Left:  left,
+		Right: right,
+	}
 }
 
 func getObjVisibility(curr, inc ast.ObjectFieldHide) ast.ObjectFieldHide {
@@ -286,14 +314,16 @@ type LayerRef struct {
 
 func CompileObjectPlan(obj *Object, ctx Context) []*FieldPlan {
 
-	length := len(obj.Layers) * 5
+	layers := obj.GetLayers()
+
+	length := len(layers) * 5
 
 	plans := make([]*FieldPlan, 0, length)
 
 	keyToIndex := make(map[uint32]int, length)
 
-	for l := len(obj.Layers) - 1; l >= 0; l-- {
-		layer := obj.Layers[l]
+	for l := len(layers) - 1; l >= 0; l-- {
+		layer := layers[l]
 
 		for f, keyID := range layer.Keys {
 			pIdx, exists := keyToIndex[keyID]
@@ -468,14 +498,16 @@ func ManifestObjectRoot(obj *Object, ctx Context) (map[string]Value, error) {
 
 func getValue(obj *Object, layerId, fieldId int, ctx Context) (Value, error) {
 
+	layers := obj.GetLayers()
+
 	if obj.layerOffsets == nil {
-		obj.layerOffsets = make([]int, len(obj.Layers))
+		obj.layerOffsets = make([]int, len(layers))
 	}
 
 	if obj.Values == nil {
 		totalFields := 0
 
-		for i, layer := range obj.Layers {
+		for i, layer := range layers {
 			obj.layerOffsets[i] = totalFields
 			totalFields += len(layer.Keys)
 		}
@@ -489,7 +521,7 @@ func getValue(obj *Object, layerId, fieldId int, ctx Context) (Value, error) {
 		return val, nil
 	}
 
-	l := obj.Layers[layerId]
+	l := layers[layerId]
 
 	n := l.Nodes[fieldId]
 
@@ -516,8 +548,10 @@ func runAssertions(obj *Object, ctx Context) error {
 
 	obj.AssertionState = AssertStatusChecking
 
-	for i := len(obj.Layers) - 1; i >= 0; i-- {
-		layer := obj.Layers[i]
+	layers := obj.GetLayers()
+
+	for i := len(layers) - 1; i >= 0; i-- {
+		layer := layers[i]
 
 		scopeId, err := obj.getScope(i, layer, ctx)
 		if err != nil {

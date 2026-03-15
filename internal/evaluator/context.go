@@ -49,6 +49,8 @@ type Arena struct {
 	Funcs   []Func
 
 	Scopes []Scope
+
+	bindings []Binding
 }
 
 type Binding struct {
@@ -69,6 +71,8 @@ func NewArena() *Arena {
 		Arrays:  make([][]Value, 0, 16*1024),
 		Funcs:   make([]Func, 0, 2*1024),
 		Scopes:  make([]Scope, 0, 32*1024),
+
+		bindings: make([]Binding, 0, 128*1024),
 	}
 }
 
@@ -77,10 +81,22 @@ func (a *Arena) NewScope(parentId uint32, cap int) uint32 {
 
 	a.Scopes = append(a.Scopes, Scope{
 		ParentId: parentId,
-		Bindings: make([]Binding, 0, cap),
+		Bindings: a.makeBindings(cap),
 	})
 
 	return id
+}
+
+func (a *Arena) makeBindings(n int) []Binding {
+	if n == 0 {
+		return nil
+	}
+
+	start := len(a.bindings)
+	a.bindings = append(a.bindings, make([]Binding, n)...)
+	total := start + n
+
+	return a.bindings[start:start:total]
 }
 
 func (a *Arena) GetScope(id uint32) *Scope {
@@ -128,10 +144,12 @@ func (a *Arena) Reset() {
 	clear(a.Arrays)
 	clear(a.Funcs)
 	clear(a.Scopes)
+	clear(a.bindings)
 
 	a.Thunks = a.Thunks[:0]
 	a.Objects = a.Objects[:0]
 	a.Arrays = a.Arrays[:0]
 	a.Funcs = a.Funcs[:0]
 	a.Scopes = a.Scopes[:0]
+	a.bindings = a.bindings[:0]
 }
