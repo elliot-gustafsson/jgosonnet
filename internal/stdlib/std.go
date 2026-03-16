@@ -160,7 +160,11 @@ func liftValueToBool(f func(evaluator.NamedValue) bool, name string) evaluator.F
 		if len(args) != 1 {
 			return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to %s: %d, expected 1", name, len(args))
 		}
-		res := f(args[0])
+		a, err := args[0].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+		res := f(evaluator.NamedValue{Value: a})
 		return evaluator.MakeBool(res), nil
 	}
 }
@@ -170,12 +174,15 @@ func std_trace(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.trace: %d, expected 2", len(args))
 	}
 
-	str := args[0]
+	str, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 	if !str.IsString() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.trace (arg 0): %s, expected string", str.Type().String())
 	}
 
-	_, err := fmt.Fprint(os.Stdout, "TRACE: "+str.String(ctx))
+	_, err = fmt.Fprint(os.Stdout, "TRACE: "+str.String(ctx))
 	if err != nil {
 		return evaluator.Value{}, err
 	}
@@ -187,7 +194,12 @@ func std_type(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.type: %d, expected 1", len(args))
 	}
 
-	return evaluator.MakeString(args[0].Type().String(), ctx), nil
+	v, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	return evaluator.MakeString(v.Type().String(), ctx), nil
 }
 
 var std_isString = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsString() }, "std.isString")
@@ -215,7 +227,10 @@ func std_length(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.length: %d, expected 1", len(args))
 	}
 
-	arg := args[0]
+	arg, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 
 	var res float64
 	switch arg.Type() {
@@ -236,21 +251,34 @@ func std_mod(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 	if len(args) != 2 {
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.mod: %d, expected 2", len(args))
 	}
-	if args[0].IsNumber() && args[1].IsNumber() {
+
+	a, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	b, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if a.IsNumber() && b.IsNumber() {
 		return std_modulo(args, ctx)
 	}
 
-	if args[0].IsString() {
-		return std_format(args, ctx)
+	if a.IsString() {
+		x := []evaluator.NamedValue{{Value: a}, {Value: b}}
+		return std_format(x, ctx)
 	}
-	return evaluator.Value{}, fmt.Errorf("'Operator %% cannot be used on types %s and %s", args[0].Type().String(), args[1].Type().String())
+	return evaluator.Value{}, fmt.Errorf("'Operator %% cannot be used on types %s and %s", a.Type().String(), b.Type().String())
 }
 
 func std_prune(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	if len(args) != 1 {
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.prune: %d, expected 1", len(args))
 	}
-	arg := args[0]
+	arg, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 
 	res, err := arg.Prune(ctx)
 	if err != nil {

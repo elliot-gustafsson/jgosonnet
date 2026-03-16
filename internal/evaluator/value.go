@@ -168,10 +168,19 @@ func (v Value) Eval(ctx Context) (Value, error) {
 	evalCtx.Self = thunk.CapturedSelf
 	evalCtx.SuperOffset = thunk.CapturedSuperOffset
 
-	evaledVal, err := EvaluateNodeStrict(thunk.Node, thunk.ScopeId, evalCtx)
+	evaledVal, err := evaluateNode(thunk.Node, thunk.ScopeId, evalCtx)
 	if err != nil {
 		return Value{}, err
 	}
+
+	if evaledVal.IsThunk() {
+		evaledVal, err = evaledVal.Eval(ctx)
+		if err != nil {
+			return Value{}, err
+		}
+	}
+
+	thunk = v.Thunk(ctx)
 	thunk.Value = evaledVal
 	return evaledVal, nil
 }
@@ -201,7 +210,7 @@ func (v Value) ToString(ctx Context) (string, error) {
 		}
 		return b.String(), nil
 	case ValueTypeThunk:
-		err := EvaluateValueStrict(&v, ctx)
+		v, err := v.Eval(ctx)
 		if err != nil {
 			return "", err
 		}

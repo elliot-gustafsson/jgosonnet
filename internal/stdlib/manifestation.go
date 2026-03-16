@@ -19,18 +19,26 @@ func std_manifestYamlDoc(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 
 	indent_array_in_object := false
 	if len(args) > 1 {
-		if !args[1].IsBool() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.manifestYamlDoc (arg 1): %s, expected boolean", args[1].Type().String())
+		v, err := args[1].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
 		}
-		indent_array_in_object = args[1].Bool()
+		if !v.IsBool() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.manifestYamlDoc (arg 1): %s, expected boolean", v.Type().String())
+		}
+		indent_array_in_object = v.Bool()
 	}
 
 	quote_keys := true
 	if len(args) > 2 {
-		if !args[2].IsBool() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.manifestYamlDoc (arg 2): %s, expected boolean", args[2].Type().String())
+		v, err := args[2].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
 		}
-		quote_keys = args[2].Bool()
+		if !v.IsBool() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.manifestYamlDoc (arg 2): %s, expected boolean", v.Type().String())
+		}
+		quote_keys = v.Bool()
 	}
 
 	var b strings.Builder
@@ -42,7 +50,11 @@ func std_manifestYamlDoc(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 		QuoteValues:          true,
 	}
 
-	err := evaluator.ManifestYaml(&b, args[0].Value, ctx, c)
+	v, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	err = evaluator.ManifestYaml(&b, v, ctx, c)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
@@ -56,33 +68,48 @@ func std_manifestYamlStream(args []evaluator.NamedValue, ctx evaluator.Context) 
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.manifestYamlStream: %d, expected 1-4", len(args))
 	}
 
-	inputArr := args[0]
+	inputArr, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 	if !inputArr.IsArray() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.manifestYamlStream (arg 0): %s, expected array", args[0].Type().String())
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.manifestYamlStream (arg 0): %s, expected array", inputArr.Type().String())
 	}
 
 	indent_array_in_object := false
 	if len(args) > 1 {
-		if !args[1].IsBool() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.manifestYamlStream (arg 1): %s, expected boolean", args[1].Type().String())
+		v, err := args[1].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
 		}
-		indent_array_in_object = args[1].Bool()
+		if !v.IsBool() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.manifestYamlStream (arg 1): %s, expected boolean", v.Type().String())
+		}
+		indent_array_in_object = v.Bool()
 	}
 
 	c_document_end := false
 	if len(args) > 2 {
-		if !args[2].IsBool() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.manifestYamlStream (arg 2): %s, expected boolean", args[2].Type().String())
+		v, err := args[2].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
 		}
-		c_document_end = args[2].Bool()
+		if !v.IsBool() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.manifestYamlStream (arg 2): %s, expected boolean", v.Type().String())
+		}
+		c_document_end = v.Bool()
 	}
 
 	quote_keys := true
 	if len(args) > 3 {
-		if !args[3].IsBool() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.manifestYamlStream (arg 3): %s, expected boolean", args[2].Type().String())
+		v, err := args[3].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
 		}
-		quote_keys = args[3].Bool()
+		if !v.IsBool() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.manifestYamlStream (arg 3): %s, expected boolean", v.Type().String())
+		}
+		quote_keys = v.Bool()
 	}
 
 	var b strings.Builder
@@ -126,7 +153,12 @@ func std_manifestJson(args []evaluator.NamedValue, ctx evaluator.Context) (evalu
 	var b strings.Builder
 	b.Grow(1024)
 
-	err := evaluator.ManifestJson(&b, args[0].Value, ctx, evaluator.JsonConfigPretty)
+	a, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	err = evaluator.ManifestJson(&b, a, ctx, evaluator.JsonConfigPretty)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
@@ -143,7 +175,12 @@ func std_manifestJsonMinified(args []evaluator.NamedValue, ctx evaluator.Context
 	var b strings.Builder
 	b.Grow(1024)
 
-	err := evaluator.ManifestJson(&b, args[0].Value, ctx, evaluator.JsonConfigMinified)
+	a, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	err = evaluator.ManifestJson(&b, a, ctx, evaluator.JsonConfigMinified)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
@@ -157,25 +194,36 @@ func std_manifestJsonEx(args []evaluator.NamedValue, ctx evaluator.Context) (eva
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.manifestJsonEx: %d, expected 2-4", len(args))
 	}
 
-	indent := args[1]
+	indent, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 	if !indent.IsString() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.manifestJsonEx (arg 1): %s, expected string", indent.Type().String())
 	}
 
 	newline := "\n"
 	if len(args) > 2 {
-		if !args[2].IsString() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.manifestJsonEx (arg 2): %s, expected string", args[2].Type().String())
+		v, err := args[2].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
 		}
-		newline = args[2].String(ctx)
+		if !v.IsString() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.manifestJsonEx (arg 2): %s, expected string", v.Type().String())
+		}
+		newline = v.String(ctx)
 	}
 
 	key_val_sep := ": "
 	if len(args) > 3 {
-		if !args[3].IsString() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.manifestJsonEx (arg 3): %s, expected string", args[3].Type().String())
+		v, err := args[3].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
 		}
-		key_val_sep = args[3].String(ctx)
+		if !v.IsString() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.manifestJsonEx (arg 3): %s, expected string", v.Type().String())
+		}
+		key_val_sep = v.String(ctx)
 	}
 
 	var b strings.Builder
@@ -186,8 +234,11 @@ func std_manifestJsonEx(args []evaluator.NamedValue, ctx evaluator.Context) (eva
 		Newline:    newline,
 		KeyValSep:  key_val_sep,
 	}
-
-	err := evaluator.ManifestJson(&b, args[0].Value, ctx, c)
+	v, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	err = evaluator.ManifestJson(&b, v, ctx, c)
 	if err != nil {
 		return evaluator.Value{}, err
 	}

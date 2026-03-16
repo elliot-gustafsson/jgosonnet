@@ -111,13 +111,13 @@ func (t *Evaluator) EvaluateYamlMulti(file string) (map[string]string, error) {
 		return nil, fmt.Errorf("root object must be of type object, got: %s", value.Type().String())
 	}
 
-	root, err := evaluator.ManifestObjectRoot(value.Object(ctx), ctx)
+	evalCtx := ctx
+	evalCtx.Self = value
+
+	root, err := evaluator.ManifestObjectRoot(value.Object(evalCtx), evalCtx)
 	if err != nil {
 		return nil, err
 	}
-
-	evalCtx := ctx
-	evalCtx.Self = value
 
 	c := evaluator.YamlManifestConfig{
 		IndentArrayInObjects: true,

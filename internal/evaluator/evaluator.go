@@ -15,9 +15,11 @@ func EvaluateNodeStrict(n ast.Node, scopeId uint32, ctx Context) (Value, error) 
 	if err != nil {
 		return Value{}, createErrorWithContext(err, n.Loc())
 	}
-	err = EvaluateValueStrict(&val, ctx)
-	if err != nil {
-		return Value{}, err
+	if val.IsThunk() {
+		val, err = val.Eval(ctx)
+		if err != nil {
+			return Value{}, err
+		}
 	}
 	return val, nil
 }
@@ -158,7 +160,8 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 
 		args := make([]NamedValue, 0, len(node.Arguments.Positional)+len(node.Arguments.Named))
 		for _, a := range node.Arguments.Positional {
-			v, err := EvaluateNodeStrict(a.Expr, scopeId, ctx)
+			// v, err := EvaluateNodeStrict(a.Expr, scopeId, ctx)
+			v, err := evaluateNodeLazy(a.Expr, scopeId, ctx)
 			if err != nil {
 				return Value{}, createErrorWithContext(err, &node.LocRange)
 			}
@@ -166,7 +169,8 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 		}
 		for _, a := range node.Arguments.Named {
 			// a.Name
-			v, err := EvaluateNodeStrict(a.Arg, scopeId, ctx)
+			// v, err := EvaluateNodeStrict(a.Arg, scopeId, ctx)
+			v, err := evaluateNodeLazy(a.Arg, scopeId, ctx)
 			if err != nil {
 				return Value{}, createErrorWithContext(err, &node.LocRange)
 			}

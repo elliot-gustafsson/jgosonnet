@@ -23,14 +23,20 @@ func std_format(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.format: %d, expected 2", len(args))
 	}
 
-	format := args[0]
-	arg := args[1]
+	format, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	arg, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 
 	if !format.IsString() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type %s, expected string (std.format arg 0)", format.Type().String())
 	}
 
-	str, err := formatString(format.String(ctx), arg.Value, ctx)
+	str, err := formatString(format.String(ctx), arg, ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}

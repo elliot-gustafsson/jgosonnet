@@ -11,10 +11,14 @@ func liftObjectToValueErr(f func(evaluator.Value, evaluator.Context) (evaluator.
 		if len(args) != 1 {
 			return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to %s: %d, expected 1", name, len(args))
 		}
-		if !args[0].IsObject() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 0): %s, expected object", name, args[0].Type().String())
+		a, err := args[0].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
 		}
-		res, err := f(args[0].Value, ctx)
+		if !a.IsObject() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 0): %s, expected object", name, a.Type().String())
+		}
+		res, err := f(a, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
@@ -27,13 +31,21 @@ func liftObjectStringToValueErr(f func(evaluator.Value, string, evaluator.Contex
 		if len(args) != 2 {
 			return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to %s: %d, expected 2", name, len(args))
 		}
-		if !args[0].IsObject() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 0): %s, expected object", name, args[0].Type().String())
+		a, err := args[0].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
 		}
-		if !args[1].IsString() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 1): %s, expected string", name, args[0].Type().String())
+		if !a.IsObject() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 0): %s, expected object", name, a.Type().String())
 		}
-		res, err := f(args[0].Value, args[1].String(ctx), ctx)
+		b, err := args[1].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+		if !b.IsString() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 1): %s, expected string", name, b.Type().String())
+		}
+		res, err := f(a, b.String(ctx), ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
@@ -47,33 +59,47 @@ func std_get(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.get %d, expected 2-4", len(args))
 	}
 
-	obj := args[0]
+	obj, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 	if !obj.IsObject() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.get (arg 0): %s, expected object", obj.Type().String())
 	}
 
-	field := args[1]
+	field, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 	if !field.IsString() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.get (arg 1): %s, expected string", field.Type().String())
 	}
 
 	defaultVal := evaluator.MakeNull()
 	if len(args) > 2 {
-		defaultVal = args[2].Value
+		v, err := args[2].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+		defaultVal = v
 	}
 
 	inclHidden := true
 	if len(args) > 3 {
-		if !args[3].IsBool() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.get (arg 3): %s, expected boolean", args[3].Type().String())
+		v, err := args[3].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
 		}
-		inclHidden = args[3].Bool()
+		if !v.IsBool() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.get (arg 3): %s, expected boolean", v.Type().String())
+		}
+		inclHidden = v.Bool()
 	}
 
 	keyId := ctx.Interner.Intern(field.String(ctx))
 
 	childCtx := ctx
-	childCtx.Self = args[0].Value
+	childCtx.Self = obj
 
 	val, visible, err := obj.Object(ctx).GetField(keyId, childCtx)
 	if err != nil {

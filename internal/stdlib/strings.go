@@ -22,10 +22,14 @@ func liftString(f func(string) string, name string) evaluator.Func {
 		if len(args) != 1 {
 			return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to %s: %d, expected 1", name, len(args))
 		}
-		if !args[0].IsString() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 0): %s, expected string", name, args[0].Type().String())
+		a, err := args[0].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
 		}
-		res := f(args[0].String(ctx))
+		if !a.IsString() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 0): %s, expected string", name, a.Type().String())
+		}
+		res := f(a.String(ctx))
 		return evaluator.MakeString(res, ctx), nil
 	}
 }
@@ -35,13 +39,21 @@ func liftString2(f func(string, string) string, name string) evaluator.Func {
 		if len(args) != 2 {
 			return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to %s: %d, expected 2", name, len(args))
 		}
-		if !args[0].IsString() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 0): %s, expected string", name, args[0].Type().String())
+		a, err := args[0].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
 		}
-		if !args[1].IsString() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 1): %s, expected string", name, args[1].Type().String())
+		b, err := args[1].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
 		}
-		res := f(args[0].String(ctx), args[1].String(ctx))
+		if !a.IsString() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 0): %s, expected string", name, a.Type().String())
+		}
+		if !b.IsString() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 1): %s, expected string", name, b.Type().String())
+		}
+		res := f(a.String(ctx), b.String(ctx))
 		return evaluator.MakeString(res, ctx), nil
 	}
 }
@@ -51,10 +63,14 @@ func liftStringToValueErr(f func(string) (evaluator.Value, error), name string) 
 		if len(args) != 1 {
 			return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to %s: %d, expected 1", name, len(args))
 		}
-		if !args[0].IsString() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 0): %s, expected string", name, args[0].Type().String())
+		a, err := args[0].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
 		}
-		return f(args[0].String(ctx))
+		if !a.IsString() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 0): %s, expected string", name, a.Type().String())
+		}
+		return f(a.String(ctx))
 	}
 }
 
@@ -105,7 +121,10 @@ func std_isEmpty(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.isEmpty: %d, expected 1", len(args))
 	}
 
-	arg := args[0]
+	arg, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 	if !arg.IsString() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type %s, expected string (std.isEmpty arg 0)", arg.Type().String())
 	}
@@ -121,7 +140,10 @@ func std_codepoint(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.codepoint: %d, expected 1", len(args))
 	}
 
-	arg := args[0]
+	arg, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 	if !arg.IsString() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type %s, expected string (std.codepoint arg 0)", arg.Type().String())
 	}
@@ -140,7 +162,10 @@ func std_char(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.char: %d, expected 1", len(args))
 	}
 
-	arg := args[0]
+	arg, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 	if !arg.IsNumber() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type %s, expected number (std.char arg 0)", arg.Type().String())
 	}
@@ -161,7 +186,10 @@ func std_stringChars(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.stringChars: %d, expected 1", len(args))
 	}
 
-	arg := args[0]
+	arg, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 	if !arg.IsString() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type %s, expected string (std.stringChars arg 0)", arg.Type().String())
 	}
@@ -180,12 +208,18 @@ func std_startsWith(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.startsWith: %d, expected 2", len(args))
 	}
 
-	full := args[0]
+	full, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 	if !full.IsString() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.startsWith (arg 0): %s, expected string", full.Type().String())
 	}
 
-	prefix := args[1]
+	prefix, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 	if !prefix.IsString() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.startsWith (arg 1): %s, expected string", prefix.Type().String())
 	}
@@ -201,12 +235,18 @@ func std_endsWith(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.endsWith: %d, expected 2", len(args))
 	}
 
-	full := args[0]
+	full, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 	if !full.IsString() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.endsWith (arg 0): %s, expected string", full.Type().String())
 	}
 
-	prefix := args[1]
+	prefix, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 	if !prefix.IsString() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.endsWith (arg 1): %s, expected string", prefix.Type().String())
 	}
@@ -222,13 +262,19 @@ func std_substr(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.substr: %d, expected 2", len(args))
 	}
 
-	fullVal := args[0]
+	fullVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 	if !fullVal.IsString() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.substr (arg 0): %s, expected string", fullVal.Type().String())
 	}
 	full := fullVal.String(ctx)
 
-	fromVal := args[1]
+	fromVal, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 	if !fromVal.IsNumber() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.substr (arg 1): %s, expected number", fromVal.Type().String())
 	}
@@ -237,7 +283,10 @@ func std_substr(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 		return evaluator.Value{}, fmt.Errorf("std.substr (arg 1) must be greater than zero, got %d", from)
 	}
 
-	toVal := args[2]
+	toVal, err := args[2].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 	if !toVal.IsNumber() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.substr (arg 2): %s, expected number", toVal.Type().String())
 	}
@@ -265,13 +314,19 @@ func std_findSubstr(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.findSubstr: %d, expected 2", len(args))
 	}
 
-	substrVal := args[0]
+	substrVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 	if !substrVal.IsString() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.findSubstr (arg 0): %s, expected string", substrVal.Type().String())
 	}
 	substr := substrVal.String(ctx)
 
-	fullVal := args[1]
+	fullVal, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 	if !fullVal.IsString() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.findSubstr (arg 1): %s, expected string", fullVal.Type().String())
 	}
@@ -298,19 +353,28 @@ func std_strReplace(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.strReplace: %d, expected 2", len(args))
 	}
 
-	fullVal := args[0]
+	fullVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 	if !fullVal.IsString() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.strReplace (arg 0): %s, expected string", fullVal.Type().String())
 	}
 	full := fullVal.String(ctx)
 
-	fromVal := args[1]
+	fromVal, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 	if !fromVal.IsString() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.strReplace (arg 1): %s, expected string", fromVal.Type().String())
 	}
 	from := fromVal.String(ctx)
 
-	toVal := args[2]
+	toVal, err := args[2].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 	if !toVal.IsString() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.strReplace (arg 2): %s, expected string", toVal.Type().String())
 	}
@@ -327,13 +391,19 @@ func std_split(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.split: %d, expected 2", len(args))
 	}
 
-	fullVal := args[0]
+	fullVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 	if !fullVal.IsString() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.split (arg 0): %s, expected string", fullVal.Type().String())
 	}
 	full := fullVal.String(ctx)
 
-	splitVal := args[1]
+	splitVal, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 	if !splitVal.IsString() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.split (arg 1): %s, expected string", splitVal.Type().String())
 	}
@@ -353,26 +423,35 @@ func std_splitLimit(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.splitLimit: %d, expected 3", len(args))
 	}
 
-	fullVal := args[0]
+	fullVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 	if !fullVal.IsString() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.splitLimit (arg 0): %s, expected string", fullVal.Type().String())
 	}
 	full := fullVal.String(ctx)
 
-	splitVal := args[1]
+	splitVal, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 	if !splitVal.IsString() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.splitLimit (arg 1): %s, expected string", splitVal.Type().String())
 	}
 	split := splitVal.String(ctx)
 
-	maxCountVal := args[2]
+	maxCountVal, err := args[2].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
 	if !maxCountVal.IsNumber() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.splitLimit (arg 2): %s, expected number", maxCountVal.Type().String())
 	}
 	maxCount := maxCountVal.Number()
 
 	res := []evaluator.Value{}
-	for _, v := range strings.SplitN(full, split, int(maxCount)) {
+	for _, v := range strings.SplitN(full, split, int(maxCount)+1) {
 		res = append(res, evaluator.MakeString(v, ctx))
 	}
 

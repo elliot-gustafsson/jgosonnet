@@ -12,10 +12,14 @@ func liftNumeric(f func(float64) float64, name string) evaluator.Func {
 		if len(args) != 1 {
 			return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to %s: %d, expected 1", name, len(args))
 		}
-		if !args[0].IsNumber() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s: %s, expected number", name, args[0].Type().String())
+		a, err := args[0].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
 		}
-		res := f(args[0].Number())
+		if !a.IsNumber() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s: %s, expected number", name, a.Type().String())
+		}
+		res := f(a.Number())
 		return evaluator.MakeNumber(res), nil
 	}
 }
@@ -25,13 +29,21 @@ func liftNumeric2(f func(float64, float64) float64, name string) evaluator.Func 
 		if len(args) != 2 {
 			return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to %s: %d, expected 2", name, len(args))
 		}
-		if !args[0].IsNumber() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 0): %s, expected number", name, args[0].Type().String())
+		a, err := args[0].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
 		}
-		if !args[1].IsNumber() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 1): %s, expected number", name, args[1].Type().String())
+		b, err := args[1].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
 		}
-		res := f(args[0].Number(), args[1].Number())
+		if !a.IsNumber() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 0): %s, expected number", name, a.Type().String())
+		}
+		if !b.IsNumber() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 1): %s, expected number", name, b.Type().String())
+		}
+		res := f(a.Number(), b.Number())
 		return evaluator.MakeNumber(res), nil
 	}
 }
@@ -41,10 +53,14 @@ func liftNumericToBoolean(f func(float64) bool, name string) evaluator.Func {
 		if len(args) != 1 {
 			return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to %s: %d, expected 1", name, len(args))
 		}
-		if !args[0].IsNumber() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 0): %s, expected number", name, args[0].Type().String())
+		a, err := args[0].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
 		}
-		res := f(args[0].Number())
+		if !a.IsNumber() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 0): %s, expected number", name, a.Type().String())
+		}
+		res := f(a.Number())
 		return evaluator.MakeBool(res), nil
 	}
 }
