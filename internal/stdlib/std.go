@@ -8,6 +8,7 @@ import (
 	"github.com/google/go-jsonnet/ast"
 )
 
+// TODO: Fix named arguments in std funcs
 var functions = map[string]evaluator.Func{
 	// --- General ---
 	"$flatMapArray":    builtin_flatMapArray,
@@ -94,6 +95,8 @@ var functions = map[string]evaluator.Func{
 	"count":        std_count,
 	"lines":        std_lines,
 	"reverse":      std_reverse,
+	"foldl":        std_foldl,
+	"foldr":        std_foldr,
 
 	// -- Sets ---
 	"set": std_set,

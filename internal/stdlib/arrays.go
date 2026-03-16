@@ -818,6 +818,120 @@ func std_reverse(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.
 	return evaluator.MakeArray(res, ctx), nil
 }
 
+func std_foldl(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	// std.foldl(func, arr, init)
+	if len(args) != 3 {
+		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.foldl %d, expected 3", len(args))
+	}
+
+	fVal := args[0]
+	if !fVal.IsFunction() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.foldl (arg 0): %s, expected function", fVal.Type().String())
+	}
+	foldFunc := fVal.Function(ctx)
+	foldFuncArgs := []evaluator.NamedValue{{}, {}}
+
+	state := args[2].Value
+
+	arrVal := args[1]
+	if arrVal.IsString() {
+		for _, v := range arrVal.String(ctx) {
+			str := evaluator.MakeString(string(v), ctx)
+
+			foldFuncArgs[0] = evaluator.NamedValue{Value: state}
+			foldFuncArgs[1] = evaluator.NamedValue{Value: str}
+
+			val, err := foldFunc(foldFuncArgs, ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+
+			state = val
+		}
+
+		return state, nil
+	}
+
+	if !arrVal.IsArray() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.foldl (arg 1): %s, expected string or array", arrVal.Type().String())
+	}
+
+	for _, v := range arrVal.Array(ctx) {
+
+		foldFuncArgs[0] = evaluator.NamedValue{Value: state}
+		foldFuncArgs[1] = evaluator.NamedValue{Value: v}
+
+		val, err := foldFunc(foldFuncArgs, ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+
+		state = val
+	}
+
+	return state, nil
+}
+
+func std_foldr(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	// std.foldr(func, arr, init)
+	if len(args) != 3 {
+		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.foldr %d, expected 3", len(args))
+	}
+
+	fVal := args[0]
+	if !fVal.IsFunction() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.foldr (arg 0): %s, expected function", fVal.Type().String())
+	}
+	foldFunc := fVal.Function(ctx)
+	foldFuncArgs := []evaluator.NamedValue{{}, {}}
+
+	state := args[2].Value
+
+	arrVal := args[1]
+	if arrVal.IsString() {
+		runes := []rune(arrVal.String(ctx))
+
+		for i := len(runes); i >= 0; i-- {
+			v := runes[i]
+
+			str := evaluator.MakeString(string(v), ctx)
+
+			foldFuncArgs[0] = evaluator.NamedValue{Value: state}
+			foldFuncArgs[1] = evaluator.NamedValue{Value: str}
+
+			val, err := foldFunc(foldFuncArgs, ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+
+			state = val
+		}
+
+		return state, nil
+	}
+
+	if !arrVal.IsArray() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.foldr (arg 1): %s, expected string or array", arrVal.Type().String())
+	}
+
+	arr := arrVal.Array(ctx)
+	for i := len(arr); i >= 0; i-- {
+		v := arr[i]
+
+		foldFuncArgs[0] = evaluator.NamedValue{Value: state}
+		foldFuncArgs[1] = evaluator.NamedValue{Value: v}
+
+		val, err := foldFunc(foldFuncArgs, ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+
+		state = val
+	}
+
+	return state, nil
+}
+
 func sliceArr[T any](arr []T, start, end, step int) ([]T, error) {
 
 	if step <= 0 {
