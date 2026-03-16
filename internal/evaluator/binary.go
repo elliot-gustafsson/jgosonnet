@@ -171,6 +171,8 @@ func bopManifestUnequal(left, right Value, ctx Context) (Value, error) {
 		res = left.refId != right.refId
 	case ValueTypeNumber:
 		res = left.Number() != right.Number()
+	case ValueTypeBool:
+		res = left.Bool() != right.Bool()
 	case ValueTypeObject:
 		planAs := CompileObjectPlan(left.Object(ctx), ctx)
 		planBs := CompileObjectPlan(right.Object(ctx), ctx)

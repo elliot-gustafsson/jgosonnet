@@ -246,11 +246,117 @@ func std_manifestJsonEx(args []evaluator.NamedValue, ctx evaluator.Context) (eva
 	return evaluator.MakeString(b.String(), ctx), nil
 }
 
-// func std_manifestIni(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-// 	if len(args) != 1 {
-// 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.manifestIni: %d, expected 1", len(args))
-// 	}
+func std_manifestIni(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 1 {
+		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.manifestIni: %d, expected 1", len(args))
+	}
+	iniObjVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !iniObjVal.IsObject() {
+		return evaluator.Value{}, fmt.Errorf("expected object passed to std.manifestIni, got %s", iniObjVal.Type().String())
+	}
+	var b strings.Builder
+	b.Grow(512)
 
-// 	cfg := ini.Empty()
+	iniObj := iniObjVal.Object(ctx)
+	// Handle 'main' section (top-level properties)
+	mainKeyId := ctx.Interner.Intern("main")
+	mainVal, _, err := iniObj.GetField(mainKeyId, ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	// std.objectHas matches even hidden fields, so we only check if it exists (!IsNone)
+	if !mainVal.IsNone() {
+		err = evaluator.EvaluateValueStrict(&mainVal, ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
 
-// }
+		err = printIniSection(&b, mainVal, ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+	}
+	// Handle 'sections' section (grouped properties)
+	sectionsKeyId := ctx.Interner.Intern("sections")
+	sectionsVal, _, err := iniObj.GetField(sectionsKeyId, ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !sectionsVal.IsNone() {
+		err = evaluator.EvaluateValueStrict(&sectionsVal, ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+		if !sectionsVal.IsObject() {
+			return evaluator.Value{}, fmt.Errorf("expected object for 'sections' field")
+		}
+		sectionsObj := sectionsVal.Object(ctx)
+		plans := evaluator.CompileObjectPlan(sectionsObj, ctx)
+
+		for _, plan := range plans {
+			// jsonnet's std.objectFields skips hidden fields, so we do too!
+			if plan.IsHidden() {
+				continue
+			}
+			secVal, err := plan.GetValue(sectionsObj, ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+			err = evaluator.EvaluateValueStrict(&secVal, ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+			keyStr := ctx.Interner.Get(plan.KeyId)
+			b.WriteString("[")
+			b.WriteString(keyStr)
+			b.WriteString("]\n")
+			err = printIniSection(&b, secVal, ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+		}
+	}
+	return evaluator.MakeString(b.String(), ctx), nil
+}
+
+// printIniSection is our custom helper to loop through and print properties
+func printIniSection(b *strings.Builder, objVal evaluator.Value, ctx evaluator.Context) error {
+	if !objVal.IsObject() {
+		return fmt.Errorf("expected object for INI section")
+	}
+
+	obj := objVal.Object(ctx)
+	plans := evaluator.CompileObjectPlan(obj, ctx)
+
+	for _, plan := range plans {
+		if plan.IsHidden() {
+			continue
+		}
+
+		val, err := plan.GetValue(obj, ctx)
+		if err != nil {
+			return err
+		}
+
+		err = evaluator.EvaluateValueStrict(&val, ctx)
+		if err != nil {
+			return err
+		}
+
+		// val.ToString gives us the raw representation just like `%s` does in Jsonnet
+		strVal, err := val.ToString(ctx)
+		if err != nil {
+			return err
+		}
+
+		keyStr := ctx.Interner.Get(plan.KeyId)
+		b.WriteString(keyStr)
+		b.WriteString(" = ")
+		b.WriteString(strVal)
+		b.WriteByte('\n')
+	}
+	return nil
+}

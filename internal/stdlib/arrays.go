@@ -1061,6 +1061,62 @@ func std_foldr(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 	return state, nil
 }
 
+func std_sum(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 1 {
+		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.sum %d, expected 1", len(args))
+	}
+
+	arr, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	if !arr.IsArray() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.sum (arg 0): %s, expected array", arr.Type().String())
+	}
+
+	var sum float64
+	for _, v := range arr.Array(ctx) {
+		v, err := v.Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+		if !v.IsNumber() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type in std.sum arr: %s, expected number", arr.Type().String())
+		}
+		sum += v.Number()
+	}
+	return evaluator.MakeNumber(sum), nil
+}
+
+func std_flattenArrays(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 1 {
+		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.flattenArrays %d, expected 1", len(args))
+	}
+
+	arr, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	if !arr.IsArray() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.flattenArrays (arg 0): %s, expected array", arr.Type().String())
+	}
+
+	res := []evaluator.Value{}
+	for _, v := range arr.Array(ctx) {
+		v, err := v.Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+		if !v.IsArray() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type in std.flattenArrays arr: %s, expected array", arr.Type().String())
+		}
+		res = append(res, v.Array(ctx)...)
+	}
+	return evaluator.MakeArray(res, ctx), nil
+}
+
 func sliceArr[T any](arr []T, start, end, step int) ([]T, error) {
 
 	if step <= 0 {

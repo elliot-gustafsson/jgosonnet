@@ -111,3 +111,5 @@ var std_isDecimal = liftNumericToBoolean(func(f float64) bool {
 	_, frac := math.Modf(f) // Get the fraction part of the float
 	return frac != 0
 }, "std.isDecimal")
+var std_max = liftNumeric2(math.Max, "std.max")
+var std_min = liftNumeric2(math.Max, "std.min")

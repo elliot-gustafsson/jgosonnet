@@ -51,6 +51,8 @@ var functions = map[string]evaluator.Func{
 	"isOdd":     std_isOdd,
 	"isInteger": std_isInteger,
 	"isDecimal": std_isDecimal,
+	"max":       std_max,
+	"min":       std_min,
 
 	// --- Strings ---
 	"format":      std_format,
@@ -80,23 +82,25 @@ var functions = map[string]evaluator.Func{
 	"asciiUpper":  std_asciiUpper,
 
 	// --- Arrays ---
-	"join":         std_join,
-	"range":        std_range,
-	"makeArray":    std_makeArray,
-	"filter":       std_filter,
-	"uniq":         std_uniq,
-	"sort":         std_sort,
-	"map":          std_map,
-	"mapWithIndex": std_mapWithIndex,
-	"filterMap":    std_filterMap,
-	"member":       std_member,
-	"setMember":    std_setMember,
-	"slice":        std_slice,
-	"count":        std_count,
-	"lines":        std_lines,
-	"reverse":      std_reverse,
-	"foldl":        std_foldl,
-	"foldr":        std_foldr,
+	"join":          std_join,
+	"range":         std_range,
+	"makeArray":     std_makeArray,
+	"filter":        std_filter,
+	"uniq":          std_uniq,
+	"sort":          std_sort,
+	"map":           std_map,
+	"mapWithIndex":  std_mapWithIndex,
+	"filterMap":     std_filterMap,
+	"member":        std_member,
+	"setMember":     std_setMember,
+	"slice":         std_slice,
+	"count":         std_count,
+	"lines":         std_lines,
+	"reverse":       std_reverse,
+	"foldl":         std_foldl,
+	"foldr":         std_foldr,
+	"sum":           std_sum,
+	"flattenArrays": std_flattenArrays,
 
 	// -- Sets ---
 	"set": std_set,
@@ -118,6 +122,7 @@ var functions = map[string]evaluator.Func{
 	"manifestJson":         std_manifestJson,
 	"manifestJsonEx":       std_manifestJsonEx,
 	"manifestJsonMinified": std_manifestJsonMinified,
+	"manifestIni":          std_manifestIni,
 }
 
 func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
