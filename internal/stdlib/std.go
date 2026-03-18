@@ -8,121 +8,157 @@ import (
 	"github.com/google/go-jsonnet/ast"
 )
 
-// TODO: Fix named arguments in std funcs
 var functions = map[string]evaluator.Func{
 	// --- General ---
-	"$flatMapArray":    builtin_flatMapArray,
-	"$objectFlatMerge": builtin_objectFlatMerge,
-	"trace":            std_trace,
-	"toString":         std_toString,
-	"length":           std_length,
-	"mod":              std_mod,
+	"$flatMapArray":    f(builtin_flatMapArray, "func", "arr"),
+	"$objectFlatMerge": f(builtin_objectFlatMerge, "arr"),
+	"trace":            f(std_trace, "str", "rest"),
+	"toString":         f(std_toString, "a"),
+	"length":           f(std_length, "x"),
+	"mod":              f(std_mod, "a", "b"),
 
 	// --- Types ---
-	"type":       std_type,
-	"isString":   std_isString,
-	"isNumber":   std_isNumber,
-	"isBoolean":  std_isBoolean,
-	"isObject":   std_isObject,
-	"isArray":    std_isArray,
-	"isFunction": std_isFunction,
-	"prune":      std_prune,
+	"type":       f(std_type, "x"),
+	"isString":   f(std_isString, "v"),
+	"isNumber":   f(std_isNumber, "v"),
+	"isBoolean":  f(std_isBoolean, "v"),
+	"isObject":   f(std_isObject, "v"),
+	"isArray":    f(std_isArray, "v"),
+	"isFunction": f(std_isFunction, "v"),
+	"prune":      f(std_prune, "a"),
 
 	// --- Math ---
-	"floor":     std_floor,
-	"ceil":      std_ceil,
-	"round":     std_round,
-	"pow":       std_pow,
-	"sqrt":      std_sqrt,
-	"hypot":     std_hypot,
-	"modulo":    std_modulo,
-	"mantissa":  std_mantissa,
-	"exponent":  std_exponent,
-	"sin":       std_sin,
-	"cos":       std_cos,
-	"tan":       std_tan,
-	"asin":      std_asin,
-	"acos":      std_acos,
-	"atan":      std_atan,
-	"atan2":     std_atan2,
-	"log":       std_log,
-	"exp":       std_exp,
-	"isEven":    std_isEven,
-	"isOdd":     std_isOdd,
-	"isInteger": std_isInteger,
-	"isDecimal": std_isDecimal,
-	"max":       std_max,
-	"min":       std_min,
+	"floor":     f(std_floor, "x"),
+	"ceil":      f(std_ceil, "x"),
+	"round":     f(std_round, "x"),
+	"pow":       f(std_pow, "x", "n"),
+	"sqrt":      f(std_sqrt, "x"),
+	"hypot":     f(std_hypot, "a", "b"),
+	"modulo":    f(std_modulo, "a", "b"),
+	"mantissa":  f(std_mantissa, "x"),
+	"exponent":  f(std_exponent, "x"),
+	"sin":       f(std_sin, "x"),
+	"cos":       f(std_cos, "x"),
+	"tan":       f(std_tan, "x"),
+	"asin":      f(std_asin, "x"),
+	"acos":      f(std_acos, "x"),
+	"atan":      f(std_atan, "x"),
+	"atan2":     f(std_atan2, "y", "x"),
+	"log":       f(std_log, "x"),
+	"exp":       f(std_exp, "x"),
+	"isEven":    f(std_isEven, "x"),
+	"isOdd":     f(std_isOdd, "x"),
+	"isInteger": f(std_isInteger, "x"),
+	"isDecimal": f(std_isDecimal, "x"),
+	"max":       f(std_max, "a", "b"),
+	"min":       f(std_min, "a", "b"),
 
 	// --- Strings ---
-	"format":      std_format,
-	"stringChars": std_stringChars,
-	"startsWith":  std_startsWith,
-	"endsWith":    std_endsWith,
-	"substr":      std_substr,
-	"findSubstr":  std_findSubstr,
-	"strReplace":  std_strReplace,
-	"split":       std_split,
-	"splitLimit":  std_splitLimit,
-	"stripChars":  std_stripChars,
-	"rstripChars": std_rstripChars,
-	"lstripChars": std_lstripChars,
-	"isEmpty":     std_isEmpty,
-	"trim":        std_trim,
-	"md5":         std_md5,
-	"sha1":        std_sha1,
-	"sha256":      std_sha256,
-	"sha512":      std_sha512,
-	"sha3":        std_sha3,
-	"char":        std_char,
-	"codepoint":   std_codepoint,
-	"parseInt":    std_parseInt,
-	"base64":      std_base64,
-	"asciiLower":  std_asciiLower,
-	"asciiUpper":  std_asciiUpper,
+	"format":      f(std_format, "str", "vals"),
+	"stringChars": f(std_stringChars, "str"),
+	"startsWith":  f(std_startsWith, "a", "b"),
+	"endsWith":    f(std_endsWith, "a", "b"),
+	"substr":      f(std_substr, "str", "from", "len"),
+	"findSubstr":  f(std_findSubstr, "pat", "str"),
+	"strReplace":  f(std_strReplace, "str", "from", "to"),
+	"split":       f(std_split, "str", "c"),
+	"splitLimit":  f(std_splitLimit, "str", "c", "maxsplits"),
+	"stripChars":  f(std_stripChars, "str", "chars"),
+	"rstripChars": f(std_rstripChars, "str", "chars"),
+	"lstripChars": f(std_lstripChars, "str", "chars"),
+	"isEmpty":     f(std_isEmpty, "str"),
+	"trim":        f(std_trim, "str"),
+	"md5":         f(std_md5, "s"),
+	"sha1":        f(std_sha1, "s"),
+	"sha256":      f(std_sha256, "s"),
+	"sha512":      f(std_sha512, "s"),
+	"sha3":        f(std_sha3, "s"),
+	"char":        f(std_char, "n"),
+	"codepoint":   f(std_codepoint, "str"),
+	"parseInt":    f(std_parseInt, "str"),
+	"base64":      f(std_base64, "input"),
+	"asciiLower":  f(std_asciiLower, "str"),
+	"asciiUpper":  f(std_asciiUpper, "str"),
 
 	// --- Arrays ---
-	"join":          std_join,
-	"range":         std_range,
-	"makeArray":     std_makeArray,
-	"filter":        std_filter,
-	"uniq":          std_uniq,
-	"sort":          std_sort,
-	"map":           std_map,
-	"mapWithIndex":  std_mapWithIndex,
-	"filterMap":     std_filterMap,
-	"member":        std_member,
-	"setMember":     std_setMember,
-	"slice":         std_slice,
-	"count":         std_count,
-	"lines":         std_lines,
-	"reverse":       std_reverse,
-	"foldl":         std_foldl,
-	"foldr":         std_foldr,
-	"sum":           std_sum,
-	"flattenArrays": std_flattenArrays,
+	"join":          f(std_join, "sep", "arr"),
+	"range":         f(std_range, "from", "to"),
+	"makeArray":     f(std_makeArray, "sz", "func"),
+	"filter":        f(std_filter, "func", "arr"),
+	"uniq":          f(std_uniq, "arr", "keyF"),
+	"sort":          f(std_sort, "arr", "keyF"),
+	"map":           f(std_map, "func", "arr"),
+	"mapWithIndex":  f(std_mapWithIndex, "func", "arr"),
+	"filterMap":     f(std_filterMap, "filter_func", "map_func", "arr"),
+	"member":        f(std_member, "arr", "x"),
+	"setMember":     f(std_setMember, "x", "arr", "keyF"),
+	"slice":         f(std_slice, "indexable", "index", "end", "step"),
+	"count":         f(std_count, "arr", "x"),
+	"lines":         f(std_lines, "arr"),
+	"reverse":       f(std_reverse, "arrs"),
+	"foldl":         f(std_foldl, "func", "arr", "init"),
+	"foldr":         f(std_foldr, "func", "arr", "init"),
+	"sum":           f(std_sum, "arr"),
+	"flattenArrays": f(std_flattenArrays, "arr"),
 
 	// -- Sets ---
-	"set": std_set,
+	"set": f(std_set, "arr", "keyF"),
 
 	// --- Objects ---
-	"get":                 std_get,
-	"objectFields":        std_objectFields,
-	"objectFieldsAll":     std_objectFieldsAll,
-	"objectHas":           std_objectHas,
-	"objectHasAll":        std_objectHasAll,
-	"objectValues":        std_objectValues,
-	"objectValuesAll":     std_objectValuesAll,
-	"objectKeysValues":    std_objectKeysValues,
-	"objectKeysValuesAll": std_objectKeysValuesAll,
+	"get":                 f(std_get, "o", "f", "default", "inc_hidden"),
+	"objectFields":        f(std_objectFields, "o"),
+	"objectFieldsAll":     f(std_objectFieldsAll, "o"),
+	"objectHas":           f(std_objectHas, "o", "f"),
+	"objectHasAll":        f(std_objectHasAll, "o", "f"),
+	"objectValues":        f(std_objectValues, "o"),
+	"objectValuesAll":     f(std_objectValuesAll, "o"),
+	"objectKeysValues":    f(std_objectKeysValues, "o"),
+	"objectKeysValuesAll": f(std_objectKeysValuesAll, "o"),
 
 	// --- Manifestation ---
-	"manifestYamlDoc":      std_manifestYamlDoc,
-	"manifestYamlStream":   std_manifestYamlStream,
-	"manifestJson":         std_manifestJson,
-	"manifestJsonEx":       std_manifestJsonEx,
-	"manifestJsonMinified": std_manifestJsonMinified,
-	"manifestIni":          std_manifestIni,
+	"manifestYamlDoc":      f(std_manifestYamlDoc, "value", "indent_array_in_object", "quote_keys"),
+	"manifestYamlStream":   f(std_manifestYamlStream, "value", "indent_array_in_object", "c_document_end", "quote_keys"),
+	"manifestJson":         f(std_manifestJson, "value"),
+	"manifestJsonEx":       f(std_manifestJsonEx, "value", "indent", "newline", "key_val_sep"),
+	"manifestJsonMinified": f(std_manifestJsonMinified, "value"),
+	"manifestIni":          f(std_manifestIni, "ini"),
+}
+
+func f(f evaluator.Func, argn ...string) evaluator.Func {
+
+	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+		argIds := make([]uint32, 0, len(argn))
+		for _, v := range argn {
+			id := ctx.Interner.Intern(v)
+			argIds = append(argIds, id)
+		}
+
+		var onNamedArgs bool
+
+		orderedArgs := make([]evaluator.NamedValue, len(argIds))
+		for i, na := range args {
+			if !onNamedArgs && na.Key != 0 {
+				onNamedArgs = true
+			}
+
+			if na.Key == 0 {
+				if onNamedArgs {
+					return evaluator.Value{}, fmt.Errorf("positional argument after a named argument is not allowed")
+				}
+				orderedArgs[i] = na
+				continue
+			}
+
+			for ii, aid := range argIds {
+				if na.Key == aid {
+					orderedArgs[ii] = na
+				}
+			}
+
+		}
+
+		return f(orderedArgs, ctx)
+	}
 }
 
 func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {

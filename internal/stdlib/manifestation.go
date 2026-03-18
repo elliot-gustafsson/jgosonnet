@@ -13,12 +13,12 @@ const (
 
 func std_manifestYamlDoc(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	// std.manifestYamlDoc(value, indent_array_in_object=false, quote_keys=true)
-	if len(args) < 1 || len(args) > 3 {
-		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.manifestYamlDoc: %d, expected 1-3", len(args))
+	if len(args) != 3 {
+		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.manifestYamlDoc: %d, expected 3", len(args))
 	}
 
 	indent_array_in_object := false
-	if len(args) > 1 {
+	if !args[1].IsNone() {
 		v, err := args[1].Eval(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
@@ -30,7 +30,7 @@ func std_manifestYamlDoc(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 	}
 
 	quote_keys := true
-	if len(args) > 2 {
+	if !args[2].IsNone() {
 		v, err := args[2].Eval(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
@@ -64,8 +64,8 @@ func std_manifestYamlDoc(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 
 func std_manifestYamlStream(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	// std.manifestYamlStream(value, indent_array_in_object=false, c_document_end=false, quote_keys=true)
-	if len(args) < 1 || len(args) > 4 {
-		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.manifestYamlStream: %d, expected 1-4", len(args))
+	if len(args) != 4 {
+		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.manifestYamlStream: %d, expected 4", len(args))
 	}
 
 	inputArr, err := args[0].Eval(ctx)
@@ -77,7 +77,7 @@ func std_manifestYamlStream(args []evaluator.NamedValue, ctx evaluator.Context) 
 	}
 
 	indent_array_in_object := false
-	if len(args) > 1 {
+	if !args[1].IsNone() {
 		v, err := args[1].Eval(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
@@ -89,7 +89,7 @@ func std_manifestYamlStream(args []evaluator.NamedValue, ctx evaluator.Context) 
 	}
 
 	c_document_end := false
-	if len(args) > 2 {
+	if !args[1].IsNone() {
 		v, err := args[2].Eval(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
@@ -101,7 +101,7 @@ func std_manifestYamlStream(args []evaluator.NamedValue, ctx evaluator.Context) 
 	}
 
 	quote_keys := true
-	if len(args) > 3 {
+	if !args[3].IsNone() {
 		v, err := args[3].Eval(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
@@ -190,8 +190,8 @@ func std_manifestJsonMinified(args []evaluator.NamedValue, ctx evaluator.Context
 
 func std_manifestJsonEx(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	// std.manifestJsonEx(value, indent, newline, key_val_sep)
-	if len(args) < 2 || len(args) > 4 {
-		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.manifestJsonEx: %d, expected 2-4", len(args))
+	if len(args) != 4 {
+		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.manifestJsonEx: %d, expected 4", len(args))
 	}
 
 	indent, err := args[1].Eval(ctx)
@@ -203,7 +203,7 @@ func std_manifestJsonEx(args []evaluator.NamedValue, ctx evaluator.Context) (eva
 	}
 
 	newline := "\n"
-	if len(args) > 2 {
+	if !args[2].IsNone() {
 		v, err := args[2].Eval(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
@@ -215,7 +215,7 @@ func std_manifestJsonEx(args []evaluator.NamedValue, ctx evaluator.Context) (eva
 	}
 
 	key_val_sep := ": "
-	if len(args) > 3 {
+	if !args[3].IsNone() {
 		v, err := args[3].Eval(ctx)
 		if err != nil {
 			return evaluator.Value{}, err

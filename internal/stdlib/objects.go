@@ -55,8 +55,8 @@ func liftObjectStringToValueErr(f func(evaluator.Value, string, evaluator.Contex
 
 func std_get(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	// std.get(o, f, default=null, inc_hidden=true)
-	if len(args) < 2 || len(args) > 4 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.get %d, expected 2-4", len(args))
+	if len(args) != 4 {
+		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.get %d, expected 4", len(args))
 	}
 
 	obj, err := args[0].Eval(ctx)
@@ -76,7 +76,7 @@ func std_get(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 	}
 
 	defaultVal := evaluator.MakeNull()
-	if len(args) > 2 {
+	if !args[2].IsNone() {
 		v, err := args[2].Eval(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
@@ -85,7 +85,7 @@ func std_get(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 	}
 
 	inclHidden := true
-	if len(args) > 3 {
+	if !args[3].IsNone() {
 		v, err := args[3].Eval(ctx)
 		if err != nil {
 			return evaluator.Value{}, err

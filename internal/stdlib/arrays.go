@@ -310,8 +310,8 @@ func std_filterMap(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 }
 
 func std_uniq(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) == 0 || len(args) > 2 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.uniq %d, expected 1 or 2", len(args))
+	if len(args) != 2 {
+		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.uniq %d, expected 2", len(args))
 	}
 
 	arr, err := args[0].Eval(ctx)
@@ -323,7 +323,7 @@ func std_uniq(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 	}
 
 	var keyF evaluator.Func
-	if len(args) > 1 {
+	if !args[1].IsNone() {
 		f, err := args[1].Eval(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
@@ -402,8 +402,8 @@ func std_uniq(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 }
 
 func std_sort(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) < 1 || len(args) > 2 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.sort %d, expected 1 or 2", len(args))
+	if len(args) != 2 {
+		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.sort %d, expected 2", len(args))
 	}
 
 	arr, err := args[0].Eval(ctx)
@@ -415,7 +415,7 @@ func std_sort(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 	}
 
 	var keyF evaluator.Func
-	if len(args) > 1 {
+	if !args[1].IsNone() {
 		f, err := args[1].Eval(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
@@ -517,8 +517,8 @@ func sortArray(arr []evaluator.Value, keyF evaluator.Func, ctx evaluator.Context
 
 // Shortcut for std.uniq(std.sort(arr)).
 func std_set(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) == 0 || len(args) > 2 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.set %d, expected 1 or 2", len(args))
+	if len(args) != 2 {
+		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.set %d, expected 2", len(args))
 	}
 
 	sorted, err := std_sort(args, ctx)
@@ -526,10 +526,7 @@ func std_set(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 		return evaluator.Value{}, err
 	}
 
-	uniqArgs := []evaluator.NamedValue{{Value: sorted}}
-	if len(args) > 1 {
-		uniqArgs = append(uniqArgs, args[1])
-	}
+	uniqArgs := []evaluator.NamedValue{{Value: sorted}, args[1]}
 
 	set, err := std_uniq(uniqArgs, ctx)
 	if err != nil {
@@ -684,8 +681,8 @@ func std_member(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 }
 
 func std_setMember(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) < 2 || len(args) > 3 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.setMember %d, expected 2-3", len(args))
+	if len(args) != 3 {
+		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.setMember %d, expected 3", len(args))
 	}
 
 	member, err := args[0].Eval(ctx)
@@ -702,7 +699,7 @@ func std_setMember(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 	}
 
 	var keyF evaluator.Func
-	if len(args) > 2 {
+	if !args[2].IsNone() {
 		f, err := args[2].Eval(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
