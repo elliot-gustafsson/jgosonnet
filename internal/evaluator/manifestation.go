@@ -525,9 +525,15 @@ func writeYamlString(b *strings.Builder, s string, forceQuotes, preferSingleQuot
 		} else if slices.Contains(yamlReserved, s) {
 			needsQuotes = true
 			useSingle = false // Reserved words (true/null) need double quotes
-		} else if _, err := strconv.ParseFloat(s, 64); err == nil {
+		} else if n, err := strconv.ParseFloat(s, 64); err == nil {
+			if !math.IsInf(n, 0) && !math.IsNaN(n) {
+				needsQuotes = true
+				useSingle = false // Numbers as strings need double quotes
+			}
+		} else if _, err := strconv.ParseInt(s, 0, 64); err == nil {
+			// Handles hex and octal numbers
 			needsQuotes = true
-			useSingle = false // Numbers as strings need double quotes
+			useSingle = false
 		} else if strings.TrimSpace(s) != s {
 			needsQuotes = true
 		} else {
