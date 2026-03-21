@@ -122,7 +122,7 @@ func std_manifestYamlStream(args []evaluator.NamedValue, ctx evaluator.Context) 
 	}
 
 	for _, v := range inputArr.Array(ctx) {
-		err := evaluator.EvaluateValueStrict(&v, ctx)
+		v, err := v.Eval(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
@@ -269,7 +269,7 @@ func std_manifestIni(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 	}
 	// std.objectHas matches even hidden fields, so we only check if it exists (!IsNone)
 	if !mainVal.IsNone() {
-		err = evaluator.EvaluateValueStrict(&mainVal, ctx)
+		mainVal, err := mainVal.Eval(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
@@ -286,7 +286,7 @@ func std_manifestIni(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 		return evaluator.Value{}, err
 	}
 	if !sectionsVal.IsNone() {
-		err = evaluator.EvaluateValueStrict(&sectionsVal, ctx)
+		sectionsVal, err := sectionsVal.Eval(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
@@ -305,7 +305,7 @@ func std_manifestIni(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 			if err != nil {
 				return evaluator.Value{}, err
 			}
-			err = evaluator.EvaluateValueStrict(&secVal, ctx)
+			secVal, err = secVal.Eval(ctx)
 			if err != nil {
 				return evaluator.Value{}, err
 			}
@@ -341,7 +341,7 @@ func printIniSection(b *strings.Builder, objVal evaluator.Value, ctx evaluator.C
 			return err
 		}
 
-		err = evaluator.EvaluateValueStrict(&val, ctx)
+		val, err = val.Eval(ctx)
 		if err != nil {
 			return err
 		}

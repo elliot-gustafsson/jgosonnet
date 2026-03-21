@@ -247,7 +247,7 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 			argIdx++
 		}
 
-		err := evaluator.EvaluateValueStrict(&currentArg, ctx)
+		currentArg, err := currentArg.Eval(ctx)
 		if err != nil {
 			return "", err
 		}

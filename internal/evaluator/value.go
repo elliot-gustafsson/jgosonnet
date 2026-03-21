@@ -1,6 +1,7 @@
 package evaluator
 
 import (
+	"cmp"
 	"fmt"
 	"strconv"
 	"strings"
@@ -266,7 +267,7 @@ func (v Value) IsEmpty(ctx Context) bool {
 	case ValueTypeNull:
 		return true
 	case ValueTypeObject:
-		return v.Object(ctx).GetLength() == 0
+		return len(v.Object(ctx).GetLayers()) == 0
 	case ValueTypeArray:
 		return len(v.Array(ctx)) == 0
 	}
@@ -284,7 +285,7 @@ func (v Value) Prune(ctx Context) (Value, error) {
 		arr := v.Array(ctx)
 		res := make([]Value, 0, len(arr))
 		for _, v := range arr {
-			err := EvaluateValueStrict(&v, ctx)
+			v, err := v.Eval(ctx)
 			if err != nil {
 				return Value{}, err
 			}
@@ -298,6 +299,122 @@ func (v Value) Prune(ctx Context) (Value, error) {
 			res = append(res, out)
 		}
 		return MakeArray(res, ctx), nil
+	}
+
+}
+
+func (a Value) Equal(b Value, ctx Context) (bool, error) {
+	if a.Type() != b.Type() {
+		return false, nil
+	}
+
+	switch a.Type() {
+	case ValueTypeNull:
+		return true, nil
+	case ValueTypeString:
+		return a.refId == b.refId, nil
+	case ValueTypeNumber:
+		return a.Number() == b.Number(), nil
+	case ValueTypeBool:
+		return a.Bool() == b.Bool(), nil
+	case ValueTypeObject:
+		return a.Object(ctx).Equal(b.Object(ctx), ctx)
+	case ValueTypeArray:
+		aArr := a.Array(ctx)
+		bArr := b.Array(ctx)
+
+		if len(aArr) != len(bArr) {
+			return false, nil
+		}
+
+		for i, av := range aArr {
+			av, err := av.Eval(ctx)
+			if err != nil {
+				return false, err
+			}
+			bv, err := bArr[i].Eval(ctx)
+			if err != nil {
+				return false, err
+			}
+
+			eq, err := av.Equal(bv, ctx)
+			if err != nil {
+				return false, err
+			}
+
+			if !eq {
+				return false, nil
+			}
+
+		}
+
+		return true, nil
+	case ValueTypeThunk:
+		a, err := a.Eval(ctx)
+		if err != nil {
+			return false, err
+		}
+		b, err := b.Eval(ctx)
+		if err != nil {
+			return false, err
+		}
+		return a.Equal(b, ctx)
+	default:
+		return false, fmt.Errorf("comparing types %s is not supported", a.Type().String())
+	}
+
+}
+
+func (a Value) Compare(b Value, ctx Context) (int, error) {
+	if a.Type() != b.Type() {
+		return 0, fmt.Errorf("comparing %s with %s is not supported", a.Type().String(), b.Type().String())
+	}
+
+	switch a.Type() {
+	case ValueTypeNull:
+		return 0, nil
+	case ValueTypeString:
+		if a.refId == b.refId {
+			return 0, nil
+		}
+		return cmp.Compare(a.String(ctx), b.String(ctx)), nil
+	case ValueTypeNumber:
+		return cmp.Compare(a.Number(), b.Number()), nil
+	// case ValueTypeBool:
+	// 	return 0, fmt.Errorf("comparing boolean values is not supported")
+	// case ValueTypeObject:
+	// 	return a.Object(ctx).Compare(b.Object(ctx), ctx)
+	case ValueTypeArray:
+		aArr := a.Array(ctx)
+		bArr := b.Array(ctx)
+
+		i, j := 0, 0
+		for i < len(aArr) && j < len(bArr) {
+
+			x, err := aArr[i].Compare(bArr[j], ctx)
+			if err != nil {
+				return 0, err
+			}
+
+			if x != 0 {
+				return x, nil
+			}
+			i++
+			j++
+		}
+		return cmp.Compare(len(aArr), len(bArr)), nil
+	case ValueTypeThunk:
+		a, err := a.Eval(ctx)
+		if err != nil {
+			return 0, err
+		}
+		b, err := b.Eval(ctx)
+		if err != nil {
+			return 0, err
+		}
+		return a.Compare(b, ctx)
+	default:
+		return 0, fmt.Errorf("comparing types %s is not supported", a.Type().String())
 	}
 
 }

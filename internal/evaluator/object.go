@@ -216,18 +216,17 @@ func EvalFieldMeta(m uint8) (visibility ast.ObjectFieldHide, plusSuper bool) {
 	return
 }
 
-func (t *Object) GetLength() int {
-	layers := t.GetLayers()
+func (t *Object) GetLength(ctx Context) int {
+	fps := CompileObjectPlan(t, ctx)
 
-	res := make(map[uint32]any)
-	for i := len(layers) - 1; i >= 0; i-- {
-		layer := layers[i]
-
-		for _, k := range layer.Keys {
-			res[k] = nil
+	length := 0
+	for _, v := range fps {
+		if v.IsHidden() {
+			continue
 		}
+		length++
 	}
-	return len(res)
+	return length
 }
 
 func (t *Object) totalLayerCount() int {
@@ -385,11 +384,6 @@ func (t *FieldPlan) GetValue(obj *Object, ctx Context) (Value, error) {
 
 	for i := 1; i < layersCount; i++ {
 
-		err := EvaluateValueStrict(&value, ctx)
-		if err != nil {
-			return Value{}, err
-		}
-
 		overlayRef := t.Layers[i]
 
 		innerVal, err := getValue(obj, overlayRef.LayerIdx, overlayRef.FieldIdx, ctx)
@@ -397,12 +391,17 @@ func (t *FieldPlan) GetValue(obj *Object, ctx Context) (Value, error) {
 			return Value{}, err
 		}
 
-		err = EvaluateValueStrict(&innerVal, ctx)
+		innerVal, err = innerVal.Eval(ctx)
 		if err != nil {
 			return Value{}, err
 		}
 
 		res, err := bopPlus(innerVal, value, ctx)
+		if err != nil {
+			return Value{}, err
+		}
+
+		res, err = res.Eval(ctx)
 		if err != nil {
 			return Value{}, err
 		}
@@ -520,7 +519,7 @@ func getValue(obj *Object, layerId, fieldId int, ctx Context) (Value, error) {
 		return Value{}, err
 	}
 
-	val, err = EvaluateNodeStrict(n, scopeId, evalCtx)
+	val, err = EvaluateNode(n, scopeId, evalCtx)
 	if err != nil {
 		return Value{}, err
 	}
@@ -552,7 +551,7 @@ func runAssertions(obj *Object, ctx Context) error {
 		}
 
 		for _, n := range layer.Asserts {
-			val, err := EvaluateNodeStrict(n, scopeId, ctx)
+			val, err := EvaluateNode(n, scopeId, ctx)
 			if err != nil {
 				return err
 			}
@@ -671,9 +670,11 @@ func (t *Object) Prune(ctx Context) (Value, error) {
 		if err != nil {
 			return Value{}, err
 		}
-		err = EvaluateValueStrict(&val, ctx)
+
+		val, err = val.Eval(ctx)
 		if err != nil {
 			return Value{}, err
+
 		}
 
 		prunedVal, err := val.Prune(ctx)
@@ -697,4 +698,67 @@ func (t *Object) Prune(ctx Context) (Value, error) {
 	}
 
 	return MakeObject(resObj, ctx), nil
+}
+
+func (a *Object) Equal(b *Object, ctx Context) (bool, error) {
+	if a == b {
+		return true, nil
+	}
+
+	planAs := CompileObjectPlan(a, ctx)
+	planBs := CompileObjectPlan(b, ctx)
+	if len(planAs) == 0 && len(planBs) == 0 {
+		return true, nil
+	}
+
+	i, j := 0, 0
+	for i < len(planAs) && j < len(planBs) {
+		// Skip hidden fields for both objects
+		if planAs[i].IsHidden() {
+			i++
+			continue
+		}
+		if planBs[j].IsHidden() {
+			j++
+			continue
+		}
+
+		if planAs[i].KeyId != planBs[j].KeyId {
+			return false, nil
+		}
+		valA, err := planAs[i].GetValue(a, ctx)
+		if err != nil {
+			return false, err
+		}
+		valB, err := planBs[j].GetValue(b, ctx)
+		if err != nil {
+			return false, err
+		}
+
+		eq, err := valA.Equal(valB, ctx)
+		if err != nil {
+			return false, err
+		}
+		if !eq {
+			return false, nil
+		}
+		i++
+		j++
+	}
+
+	// Make sure object A has no remaining visible fields
+	for i < len(planAs) {
+		if !planAs[i].IsHidden() {
+			return false, nil
+		}
+		i++
+	}
+	// Make sure object B has no remaining visible fields
+	for j < len(planBs) {
+		if !planBs[j].IsHidden() {
+			return false, nil
+		}
+		j++
+	}
+	return true, nil
 }

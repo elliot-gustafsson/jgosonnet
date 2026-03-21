@@ -178,7 +178,7 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 
 	ctx.Importer = evaluator.NewImporter(scopeId, t.jpaths, t.astImporter)
 
-	value, err := evaluator.EvaluateNodeStrict(node, scopeId, ctx)
+	value, err := evaluator.EvaluateNode(node, scopeId, ctx)
 	if err != nil {
 		return evaluator.Value{}, evaluator.Context{}, cleanup, err
 	}

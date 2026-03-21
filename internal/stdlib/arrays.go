@@ -383,11 +383,11 @@ func std_uniq(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 
 		if x.Type() == y.Type() {
 
-			eq, err := evaluator.BopManifestEqual(x, y, ctx)
+			eq, err := x.Equal(y, ctx)
 			if err != nil {
 				return evaluator.Value{}, err
 			}
-			if eq.Bool() {
+			if eq {
 				continue
 			}
 
@@ -454,18 +454,6 @@ func sortArray(arr []evaluator.Value, keyF evaluator.Func, ctx evaluator.Context
 
 	// TODO: now we eval the values over and over, think abt this
 	slices.SortFunc(result, func(a, b evaluator.Value) int {
-		// a, err := a.Eval(ctx)
-		// if err != nil {
-		// 	panic(err)
-		// }
-
-		// b, err = b.Eval(ctx)
-		// if err != nil {
-		// 	panic(err)
-		// }
-
-		// ar := a
-		// br := b
 
 		if keyF != nil {
 			mapperFuncInput[0] = evaluator.NamedValue{Value: a}
@@ -500,15 +488,11 @@ func sortArray(arr []evaluator.Value, keyF evaluator.Func, ctx evaluator.Context
 			panic(err)
 		}
 
-		greater, err := evaluator.BopGreater(a, b, ctx)
+		x, err := a.Compare(b, ctx)
 		if err != nil {
 			panic(err)
 		}
-
-		if greater.Bool() {
-			return 1
-		}
-		return -1
+		return x
 
 	})
 
@@ -639,11 +623,11 @@ func std_member(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 
 		for _, s := range indexable.String(ctx) {
 			v := evaluator.MakeString(string(s), ctx)
-			eq, err := evaluator.BopManifestEqual(v, arg, ctx)
+			eq, err := v.Equal(arg, ctx)
 			if err != nil {
 				return evaluator.Value{}, err
 			}
-			if eq.Bool() {
+			if eq {
 				return evaluator.MakeBool(true), nil
 			}
 
@@ -668,11 +652,11 @@ func std_member(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 			continue
 		}
 
-		eq, err := evaluator.BopManifestEqual(v, arg, ctx)
+		eq, err := v.Equal(arg, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
-		if eq.Bool() {
+		if eq {
 			return evaluator.MakeBool(true), nil
 		}
 	}
@@ -740,12 +724,12 @@ func std_setMember(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 			continue
 		}
 
-		eq, err := evaluator.BopManifestEqual(ar, br, ctx)
+		eq, err := ar.Equal(br, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
 
-		if eq.Bool() {
+		if eq {
 			return evaluator.MakeBool(true), nil
 		}
 
@@ -783,12 +767,12 @@ func std_count(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 			continue
 		}
 
-		res, err := evaluator.BopManifestEqual(v, arg, ctx)
+		res, err := v.Equal(arg, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
 
-		if res.Bool() {
+		if res {
 			count++
 		}
 	}

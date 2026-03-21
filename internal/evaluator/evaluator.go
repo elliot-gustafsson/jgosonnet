@@ -10,7 +10,7 @@ import (
 	"github.com/google/go-jsonnet/ast"
 )
 
-func EvaluateNodeStrict(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
+func EvaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 	val, err := evaluateNode(n, scopeId, ctx)
 	if err != nil {
 		return Value{}, createErrorWithContext(err, n.Loc())
@@ -22,20 +22,6 @@ func EvaluateNodeStrict(n ast.Node, scopeId uint32, ctx Context) (Value, error) 
 		}
 	}
 	return val, nil
-}
-
-func EvaluateValueStrict(value *Value, ctx Context) error {
-	err := evaluateValue(value, ctx)
-	if err != nil {
-		return err
-	}
-	if value.IsThunk() {
-		err := EvaluateValueStrict(value, ctx)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func ManifestValue(value Value, ctx Context) (any, error) {
@@ -149,7 +135,7 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 		return handleLocal(node, scopeId, ctx)
 	case *ast.Apply:
 
-		val, err := EvaluateNodeStrict(node.Target, scopeId, ctx)
+		val, err := EvaluateNode(node.Target, scopeId, ctx)
 		if err != nil {
 			return Value{}, createErrorWithContext(err, &node.LocRange)
 		}
@@ -199,7 +185,7 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 	case *ast.Function:
 		return handleFunction(node, scopeId, ctx)
 	case *ast.Conditional:
-		cond, err := EvaluateNodeStrict(node.Cond, scopeId, ctx)
+		cond, err := EvaluateNode(node.Cond, scopeId, ctx)
 		if err != nil {
 			return Value{}, createErrorWithContext(err, &node.LocRange)
 		}
@@ -223,7 +209,7 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 	case *ast.Binary:
 		return handleBinary(node, scopeId, ctx)
 	case *ast.Unary:
-		unary, err := EvaluateNodeStrict(node.Expr, scopeId, ctx)
+		unary, err := EvaluateNode(node.Expr, scopeId, ctx)
 		if err != nil {
 			return Value{}, err
 		}
@@ -253,7 +239,7 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 	case *ast.SuperIndex:
 		return handleSuperIndex(node, scopeId, ctx)
 	case *ast.Error:
-		msg, err := EvaluateNodeStrict(node.Expr, scopeId, ctx)
+		msg, err := EvaluateNode(node.Expr, scopeId, ctx)
 		if err != nil {
 			return Value{}, err
 		}
@@ -336,7 +322,7 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 
 	index := 0
 	for _, v := range node.Fields {
-		name, err := EvaluateNodeStrict(v.Name, scopeId, ctx)
+		name, err := EvaluateNode(v.Name, scopeId, ctx)
 		if err != nil {
 			return Value{}, err
 		}
@@ -397,7 +383,7 @@ func handleLocal(node *ast.Local, scopeId uint32, ctx Context) (Value, error) {
 }
 
 func handleBinary(node *ast.Binary, scopeId uint32, ctx Context) (Value, error) {
-	left, err := EvaluateNodeStrict(node.Left, scopeId, ctx)
+	left, err := EvaluateNode(node.Left, scopeId, ctx)
 	if err != nil {
 		return Value{}, createErrorWithContext(err, &node.LocRange)
 	}
@@ -413,7 +399,7 @@ func handleBinary(node *ast.Binary, scopeId uint32, ctx Context) (Value, error) 
 			return MakeBool(false), nil
 		}
 
-		right, err := EvaluateNodeStrict(node.Right, scopeId, ctx)
+		right, err := EvaluateNode(node.Right, scopeId, ctx)
 		if err != nil {
 			return Value{}, createErrorWithContext(err, &node.LocRange)
 		}
@@ -433,7 +419,7 @@ func handleBinary(node *ast.Binary, scopeId uint32, ctx Context) (Value, error) 
 			return MakeBool(true), nil
 		}
 
-		right, err := EvaluateNodeStrict(node.Right, scopeId, ctx)
+		right, err := EvaluateNode(node.Right, scopeId, ctx)
 		if err != nil {
 			return Value{}, createErrorWithContext(err, &node.LocRange)
 		}
@@ -444,14 +430,14 @@ func handleBinary(node *ast.Binary, scopeId uint32, ctx Context) (Value, error) 
 		res := left.Bool() || right.Bool()
 		return MakeBool(res), nil
 	default:
-		right, err := EvaluateNodeStrict(node.Right, scopeId, ctx)
+		right, err := EvaluateNode(node.Right, scopeId, ctx)
 		if err != nil {
 			return Value{}, createErrorWithContext(err, &node.LocRange)
 		}
 
 		res, err := handleBinaryOp(node.Op, left, right, ctx)
 		if err != nil {
-			return Value{}, createErrorWithContext(fmt.Errorf("(%T) failed to handle binary op, err: %w", node, err), &node.LocRange)
+			return Value{}, createErrorWithContext(err, &node.LocRange)
 		}
 
 		return res, nil
@@ -525,12 +511,12 @@ func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, err
 }
 
 func handleIndex(node *ast.Index, scopeId uint32, ctx Context) (Value, error) {
-	index, err := EvaluateNodeStrict(node.Index, scopeId, ctx)
+	index, err := EvaluateNode(node.Index, scopeId, ctx)
 	if err != nil {
 		return Value{}, createErrorWithContext(err, &node.LocRange)
 	}
 
-	target, err := EvaluateNodeStrict(node.Target, scopeId, ctx)
+	target, err := EvaluateNode(node.Target, scopeId, ctx)
 	if err != nil {
 		return Value{}, createErrorWithContext(err, &node.LocRange)
 	}
@@ -570,7 +556,7 @@ func handleIndex(node *ast.Index, scopeId uint32, ctx Context) (Value, error) {
 		if val.IsNone() {
 			return Value{}, createErrorWithContext(fmt.Errorf("index not found on object, index: %s", name), &node.LocRange)
 		}
-		err = EvaluateValueStrict(&val, subCtx)
+		val, err = val.Eval(subCtx)
 		if err != nil {
 			return Value{}, createErrorWithContext(err, &node.LocRange)
 		}
@@ -619,7 +605,7 @@ func handleSuperIndex(node *ast.SuperIndex, scopeId uint32, ctx Context) (Value,
 		return Value{}, createErrorWithContext(fmt.Errorf("super index not found, index: %s", name), &node.LocRange)
 	}
 
-	err = EvaluateValueStrict(&val, ctx)
+	val, err = val.Eval(ctx)
 	if err != nil {
 		return Value{}, createErrorWithContext(err, &node.LocRange)
 	}
@@ -628,7 +614,7 @@ func handleSuperIndex(node *ast.SuperIndex, scopeId uint32, ctx Context) (Value,
 }
 
 func handleImport(node *ast.Import, scopeId uint32, ctx Context) (Value, error) {
-	fileVal, err := EvaluateNodeStrict(node.File, scopeId, ctx)
+	fileVal, err := EvaluateNode(node.File, scopeId, ctx)
 	if err != nil {
 		return Value{}, createErrorWithContext(err, &node.LocRange)
 	}

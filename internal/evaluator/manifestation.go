@@ -41,7 +41,7 @@ func ManifestJson(b *strings.Builder, value Value, ctx Context, config JsonManif
 }
 
 func manifestYaml(value Value, ctx Context, buf *strings.Builder, cindent string, config YamlManifestConfig) error {
-	err := EvaluateValueStrict(&value, ctx)
+	value, err := value.Eval(ctx)
 	if err != nil {
 		return err
 	}
@@ -105,7 +105,7 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, cindent string
 			return nil
 		}
 		for i, v := range data {
-			err := EvaluateValueStrict(&v, ctx)
+			v, err := v.Eval(ctx)
 			if err != nil {
 				return err
 			}
@@ -210,7 +210,7 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, cindent string
 
 func manifestJson(value Value, ctx Context, b *strings.Builder, cindent string, config JsonManifestConfig) error {
 
-	err := EvaluateValueStrict(&value, ctx)
+	value, err := value.Eval(ctx)
 	if err != nil {
 		return err
 	}
@@ -270,14 +270,18 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, cindent string, 
 		b.WriteString(config.Newline)
 
 		for i, v := range data {
-			err := EvaluateValueStrict(&v, ctx)
+			v, err := v.Eval(ctx)
 			if err != nil {
 				return err
 			}
 
 			if i > 0 {
 				b.WriteByte(',')
-				b.WriteString(config.Newline)
+				if config.hasNewline {
+					b.WriteString(config.Newline)
+				} else if config.SpaceComma {
+					b.WriteByte(' ')
+				}
 			}
 
 			if i != 0 || config.hasNewline {
