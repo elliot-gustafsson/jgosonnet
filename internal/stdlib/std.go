@@ -2,17 +2,23 @@ package stdlib
 
 import (
 	"fmt"
+	"math"
 	"os"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 	"github.com/google/go-jsonnet/ast"
 )
 
+var constants = map[string]evaluator.Value{
+	"pi": evaluator.MakeNumber(math.Pi),
+}
+
 var functions = map[string]evaluator.Func{
 	// --- General ---
 	"$flatMapArray":    f(builtin_flatMapArray, "func", "arr"),
 	"$objectFlatMerge": f(builtin_objectFlatMerge, "arr"),
 	"trace":            f(std_trace, "str", "rest"),
+	"assertEqual":      f(std_assertEqual, "a", "b"),
 	"toString":         f(std_toString, "a"),
 	"length":           f(std_length, "x"),
 	"mod":              f(std_mod, "a", "b"),
@@ -25,7 +31,15 @@ var functions = map[string]evaluator.Func{
 	"isObject":   f(std_isObject, "v"),
 	"isArray":    f(std_isArray, "v"),
 	"isFunction": f(std_isFunction, "v"),
+	"isNull":     f(std_isNull, "x"),
 	"prune":      f(std_prune, "a"),
+
+	// --- Parse ---
+	"parseInt":   f(std_parseInt, "str"),
+	"parseOctal": f(std_parseOctal, "str"),
+	"parseHex":   f(std_parseHex, "str"),
+	"parseJson":  f(std_parseJson, "str"),
+	"parseYaml":  f(std_parseYaml, "str"),
 
 	// --- Math ---
 	"floor":     f(std_floor, "x"),
@@ -44,7 +58,11 @@ var functions = map[string]evaluator.Func{
 	"acos":      f(std_acos, "x"),
 	"atan":      f(std_atan, "x"),
 	"atan2":     f(std_atan2, "y", "x"),
+	"deg2rad":   f(std_deg2rad, "x"),
+	"rad2deg":   f(std_rad2deg, "x"),
 	"log":       f(std_log, "x"),
+	"log2":      f(std_log2, "x"),
+	"log10":     f(std_log10, "x"),
 	"exp":       f(std_exp, "x"),
 	"isEven":    f(std_isEven, "x"),
 	"isOdd":     f(std_isOdd, "x"),
@@ -52,6 +70,9 @@ var functions = map[string]evaluator.Func{
 	"isDecimal": f(std_isDecimal, "x"),
 	"max":       f(std_max, "a", "b"),
 	"min":       f(std_min, "a", "b"),
+	"abs":       f(std_abs, "n"),
+	"sign":      f(std_sign, "n"),
+	"clamp":     f(std_clamp, "x", "minVal", "maxVal"),
 
 	// --- Strings ---
 	"format":      f(std_format, "str", "vals"),
@@ -75,7 +96,6 @@ var functions = map[string]evaluator.Func{
 	"sha3":        f(std_sha3, "s"),
 	"char":        f(std_char, "n"),
 	"codepoint":   f(std_codepoint, "str"),
-	"parseInt":    f(std_parseInt, "str"),
 	"base64":      f(std_base64, "input"),
 	"asciiLower":  f(std_asciiLower, "str"),
 	"asciiUpper":  f(std_asciiUpper, "str"),
@@ -163,7 +183,7 @@ func f(f evaluator.Func, argn ...string) evaluator.Func {
 
 func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
 
-	fieldCount := len(functions)
+	fieldCount := len(functions) + len(constants)
 
 	layer := &evaluator.Layer{
 		Keys:  make([]uint32, 0, fieldCount),
@@ -182,6 +202,18 @@ func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
 		keyId := ctx.Interner.Intern(name)
 
 		v := evaluator.MakeFunction(f, ctx)
+		layer.Keys = append(layer.Keys, keyId)
+		layer.Meta = append(layer.Meta, 0)
+		layer.Index[keyId] = index
+
+		obj.Values[index] = v
+
+		index++
+	}
+
+	for name, v := range constants {
+		keyId := ctx.Interner.Intern(name)
+
 		layer.Keys = append(layer.Keys, keyId)
 		layer.Meta = append(layer.Meta, 0)
 		layer.Index[keyId] = index
@@ -243,12 +275,48 @@ func std_type(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 	return evaluator.MakeString(v.Type().String(), ctx), nil
 }
 
+func std_assertEqual(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 2 {
+		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.assertEqual: %d, expected 2", len(args))
+	}
+
+	a, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	b, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	eq, err := a.Equal(b, ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	if eq {
+		return evaluator.MakeBool(true), nil
+	}
+
+	aStr, err := a.ToString(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	bStr, err := b.ToString(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	return evaluator.MakeBool(false), fmt.Errorf("assertion failed %s != %s", aStr, bStr)
+}
+
 var std_isString = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsString() }, "std.isString")
 var std_isNumber = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsNumber() }, "std.isNumber")
 var std_isBoolean = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsBool() }, "std.isBoolean")
 var std_isObject = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsObject() }, "std.isObject")
 var std_isArray = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsArray() }, "std.isArray")
 var std_isFunction = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsFunction() }, "std.isFunction")
+var std_isNull = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsNull() }, "std.isNull")
 
 func std_toString(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	if len(args) != 1 {

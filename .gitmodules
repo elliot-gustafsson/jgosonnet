@@ -1,0 +1,3 @@
+[submodule "tests/resources/jsonnet-cpp"]
+	path = tests/resources/jsonnet-cpp
+	url = https://github.com/google/jsonnet.git

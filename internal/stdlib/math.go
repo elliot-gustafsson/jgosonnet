@@ -79,6 +79,8 @@ var std_acos = liftNumeric(math.Acos, "std.acos")
 var std_atan = liftNumeric(math.Atan, "std.atan")
 var std_atan2 = liftNumeric2(math.Atan2, "std.atan2")
 var std_log = liftNumeric(math.Log, "std.log")
+var std_log2 = liftNumeric(math.Log2, "std.log2")
+var std_log10 = liftNumeric(math.Log10, "std.log10")
 var std_exp = liftNumeric(func(f float64) float64 {
 	res := math.Exp(f)
 	if res == 0 && f > 0 {
@@ -113,3 +115,55 @@ var std_isDecimal = liftNumericToBoolean(func(f float64) bool {
 }, "std.isDecimal")
 var std_max = liftNumeric2(math.Max, "std.max")
 var std_min = liftNumeric2(math.Max, "std.min")
+var std_abs = liftNumeric(math.Abs, "std.abs")
+var std_sign = liftNumeric(func(f float64) float64 {
+	if f == 0 {
+		return 0
+	}
+	if f > 0 {
+		return 1
+	}
+	return -1
+}, "std.sign")
+var std_deg2rad = liftNumeric(func(f float64) float64 {
+	return f * (math.Pi / 180.0)
+}, "std.deg2rad")
+var std_rad2deg = liftNumeric(func(f float64) float64 {
+	return f * (180.0 / math.Pi)
+}, "std.rad2deg")
+
+func std_clamp(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 3 {
+		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.clamp: %d, expected 3", len(args))
+	}
+	x, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !x.IsNumber() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.clamp (arg 0): %s, expected number", x.Type().String())
+	}
+	minVal, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !minVal.IsNumber() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.clamp (arg 1): %s, expected number", minVal.Type().String())
+	}
+	maxVal, err := args[2].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !maxVal.IsNumber() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.clamp (arg 2): %s, expected number", maxVal.Type().String())
+	}
+
+	if x.Number() <= minVal.Number() {
+		return minVal, nil
+	}
+
+	if x.Number() >= maxVal.Number() {
+		return maxVal, nil
+	}
+	return x, nil
+}

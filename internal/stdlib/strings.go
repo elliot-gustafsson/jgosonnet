@@ -9,7 +9,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
@@ -58,22 +57,6 @@ func liftString2(f func(string, string) string, name string) evaluator.Func {
 	}
 }
 
-func liftStringToValueErr(f func(string) (evaluator.Value, error), name string) evaluator.Func {
-	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-		if len(args) != 1 {
-			return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to %s: %d, expected 1", name, len(args))
-		}
-		a, err := args[0].Eval(ctx)
-		if err != nil {
-			return evaluator.Value{}, err
-		}
-		if !a.IsString() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 0): %s, expected string", name, a.Type().String())
-		}
-		return f(a.String(ctx))
-	}
-}
-
 var std_trim = liftString(strings.TrimSpace, "std.trim")
 var std_stripChars = liftString2(strings.Trim, "std.stripChars")
 var std_rstripChars = liftString2(strings.TrimRight, "std.rstripChars")
@@ -106,14 +89,6 @@ var std_base64 = liftString(func(s string) string {
 
 var std_asciiLower = liftString(strings.ToLower, "std.asciiLower")
 var std_asciiUpper = liftString(strings.ToUpper, "std.asciiUpper")
-
-var std_parseInt = liftStringToValueErr(func(s string) (evaluator.Value, error) {
-	num, err := strconv.ParseFloat(s, 64)
-	if err != nil {
-		return evaluator.Value{}, fmt.Errorf("failed to parse float val (%s), err: %w", s, err)
-	}
-	return evaluator.MakeNumber(num), nil
-}, "std.parseInt")
 
 func std_isEmpty(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
