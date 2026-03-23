@@ -52,7 +52,7 @@ func ManifestValue(value Value, ctx Context) (any, error) {
 		}
 		return res, nil
 	case ValueTypeFunction:
-		res, err := value.Function(ctx)(nil, ctx)
+		res, err := value.Function(ctx).Exec(nil, ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -164,7 +164,7 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 			args = append(args, NamedValue{nameKeyId, v})
 		}
 
-		res, err := val.Function(ctx)(args, ctx)
+		res, err := val.Function(ctx).Exec(args, ctx)
 		if err != nil {
 			return Value{}, createErrorWithContext(err, &node.LocRange)
 		}
@@ -454,7 +454,7 @@ func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, err
 		paramKeyIds[i] = ctx.Interner.Intern(string(p.Name))
 	}
 
-	f := func(args []NamedValue, _ Context) (Value, error) {
+	var fn Func = func(args []NamedValue, _ Context) (Value, error) {
 		if len(args) > paramCount {
 			return Value{}, fmt.Errorf("unexpected amount of args passed to function")
 		}
@@ -505,6 +505,11 @@ func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, err
 		}
 
 		return val, nil
+	}
+
+	f := Function{
+		Args: paramKeyIds,
+		fn:   fn,
 	}
 
 	return MakeFunction(f, ctx), nil

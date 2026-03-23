@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"unicode/utf8"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 	"github.com/google/go-jsonnet/ast"
@@ -13,7 +14,7 @@ var constants = map[string]evaluator.Value{
 	"pi": evaluator.MakeNumber(math.Pi),
 }
 
-var functions = map[string]evaluator.Func{
+var functions = map[string]func(evaluator.Context) evaluator.Function{
 	// --- General ---
 	"$flatMapArray":    f(builtin_flatMapArray, "func", "arr"),
 	"$objectFlatMerge": f(builtin_objectFlatMerge, "arr"),
@@ -144,40 +145,48 @@ var functions = map[string]evaluator.Func{
 	"manifestIni":          f(std_manifestIni, "ini"),
 }
 
-func f(f evaluator.Func, argn ...string) evaluator.Func {
+func f(f evaluator.Func, argn ...string) func(evaluator.Context) evaluator.Function {
 
-	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	return func(ctx evaluator.Context) evaluator.Function {
+
 		argIds := make([]uint32, 0, len(argn))
 		for _, v := range argn {
 			id := ctx.Interner.Intern(v)
 			argIds = append(argIds, id)
 		}
 
-		var onNamedArgs bool
+		var fn evaluator.Func = func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
-		orderedArgs := make([]evaluator.NamedValue, len(argIds))
-		for i, na := range args {
-			if !onNamedArgs && na.Key != 0 {
-				onNamedArgs = true
-			}
+			// TODO: do arg reordering in evaluator.Function.Exec
 
-			if na.Key == 0 {
-				if onNamedArgs {
-					return evaluator.Value{}, fmt.Errorf("positional argument after a named argument is not allowed")
+			var onNamedArgs bool
+
+			orderedArgs := make([]evaluator.NamedValue, len(argIds))
+			for i, na := range args {
+				if !onNamedArgs && na.Key != 0 {
+					onNamedArgs = true
 				}
-				orderedArgs[i] = na
-				continue
-			}
 
-			for ii, aid := range argIds {
-				if na.Key == aid {
-					orderedArgs[ii] = na
+				if na.Key == 0 {
+					if onNamedArgs {
+						return evaluator.Value{}, fmt.Errorf("positional argument after a named argument is not allowed")
+					}
+					orderedArgs[i] = na
+					continue
 				}
+
+				for ii, aid := range argIds {
+					if na.Key == aid {
+						orderedArgs[ii] = na
+					}
+				}
+
 			}
 
+			return f(orderedArgs, ctx)
 		}
 
-		return f(orderedArgs, ctx)
+		return evaluator.NewFunction(argIds, fn)
 	}
 }
 
@@ -201,7 +210,9 @@ func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
 	for name, f := range functions {
 		keyId := ctx.Interner.Intern(name)
 
-		v := evaluator.MakeFunction(f, ctx)
+		fVal := f(ctx)
+
+		v := evaluator.MakeFunction(fVal, ctx)
 		layer.Keys = append(layer.Keys, keyId)
 		layer.Meta = append(layer.Meta, 0)
 		layer.Index[keyId] = index
@@ -344,11 +355,14 @@ func std_length(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 	var res float64
 	switch arg.Type() {
 	case evaluator.ValueTypeString:
-		res = float64(len(arg.String(ctx)))
+		// res = float64(len(arg.String(ctx)))
+		res = float64(utf8.RuneCountInString(arg.String(ctx)))
 	case evaluator.ValueTypeArray:
 		res = float64(len(arg.Array(ctx)))
-	// case ValueTypeObject:
-	// 	res = float64(arg.Object().GetLength())
+	case evaluator.ValueTypeObject:
+		res = float64(arg.Object(ctx).Length(ctx))
+	case evaluator.ValueTypeFunction:
+		res = float64(len(arg.Function(ctx).Args))
 	default:
 		return evaluator.Value{}, fmt.Errorf("std.length: unexpected type %s", arg.Type().String())
 	}

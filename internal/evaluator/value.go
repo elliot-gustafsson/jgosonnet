@@ -63,6 +63,30 @@ type Thunk struct {
 
 type Func = func(args []NamedValue, ctx Context) (Value, error)
 
+type Function struct {
+	Args []uint32
+
+	fn Func
+}
+
+func NewFunction(args []uint32, fn Func) Function {
+	return Function{
+		Args: args,
+		fn:   fn,
+	}
+}
+
+func (t Function) Exec(args []NamedValue, ctx Context) (Value, error) {
+	if t.fn == nil {
+		return Value{}, fmt.Errorf("function no instantiated")
+	}
+	return t.fn(args, ctx)
+}
+
+func (t Function) Empty() bool {
+	return t.fn == nil
+}
+
 type Value struct {
 	t ValueType
 
@@ -112,9 +136,9 @@ func MakeArray(v []Value, ctx Context) Value {
 	return Value{t: ValueTypeArray, refId: refId}
 }
 
-func MakeFunction(v Func, ctx Context) Value {
-	refId := uint32(len(ctx.Arena.Funcs))
-	ctx.Arena.Funcs = append(ctx.Arena.Funcs, v)
+func MakeFunction(v Function, ctx Context) Value {
+	refId := uint32(len(ctx.Arena.Functions))
+	ctx.Arena.Functions = append(ctx.Arena.Functions, v)
 	return Value{t: ValueTypeFunction, refId: refId}
 }
 
@@ -148,8 +172,8 @@ func (v Value) Object(ctx Context) *Object {
 	return &ctx.Arena.Objects[v.refId]
 }
 
-func (v Value) Function(ctx Context) Func {
-	return ctx.Arena.Funcs[v.refId]
+func (v Value) Function(ctx Context) Function {
+	return ctx.Arena.Functions[v.refId]
 }
 
 func (v Value) Thunk(ctx Context) *Thunk {

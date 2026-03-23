@@ -216,7 +216,7 @@ func EvalFieldMeta(m uint8) (visibility ast.ObjectFieldHide, plusSuper bool) {
 	return
 }
 
-func (t *Object) GetLength(ctx Context) int {
+func (t *Object) Length(ctx Context) int {
 	fps := CompileObjectPlan(t, ctx)
 
 	length := 0

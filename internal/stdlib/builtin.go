@@ -72,7 +72,7 @@ func builtin_flatMapArray(args []evaluator.NamedValue, ctx evaluator.Context) (e
 	res := make([]evaluator.Value, 0, len(inputArr))
 	for _, v := range inputArr {
 		mapperFuncInput[0] = evaluator.NamedValue{Value: v}
-		out, err := mFunc(mapperFuncInput, ctx)
+		out, err := mFunc.Exec(mapperFuncInput, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}

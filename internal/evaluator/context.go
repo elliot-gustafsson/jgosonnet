@@ -43,10 +43,10 @@ func (i *Interner) Get(id uint32) string {
 }
 
 type Arena struct {
-	Objects []Object
-	Arrays  [][]Value
-	Thunks  []Thunk
-	Funcs   []Func
+	Objects   []Object
+	Arrays    [][]Value
+	Thunks    []Thunk
+	Functions []Function
 
 	Scopes []Scope
 
@@ -61,11 +61,11 @@ type Scope struct {
 
 func NewArena() *Arena {
 	return &Arena{
-		Thunks:  make([]Thunk, 0, 32*1024),
-		Objects: make([]Object, 0, 8*1024),
-		Arrays:  make([][]Value, 0, 16*1024),
-		Funcs:   make([]Func, 0, 2*1024),
-		Scopes:  make([]Scope, 0, 32*1024),
+		Thunks:    make([]Thunk, 0, 32*1024),
+		Objects:   make([]Object, 0, 8*1024),
+		Arrays:    make([][]Value, 0, 16*1024),
+		Functions: make([]Function, 0, 2*1024),
+		Scopes:    make([]Scope, 0, 32*1024),
 
 		bindings: make([]NamedValue, 0, 128*1024),
 	}
@@ -134,14 +134,14 @@ func (a *Arena) Reset() {
 	clear(a.Thunks)
 	clear(a.Objects)
 	clear(a.Arrays)
-	clear(a.Funcs)
+	clear(a.Functions)
 	clear(a.Scopes)
 	clear(a.bindings)
 
 	a.Thunks = a.Thunks[:0]
 	a.Objects = a.Objects[:0]
 	a.Arrays = a.Arrays[:0]
-	a.Funcs = a.Funcs[:0]
+	a.Functions = a.Functions[:0]
 	a.Scopes = a.Scopes[:0]
 	a.bindings = a.bindings[:0]
 }

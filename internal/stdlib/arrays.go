@@ -73,7 +73,7 @@ func std_makeArray(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 	for i := range int(val.Number()) {
 		v := evaluator.MakeNumber(float64(i))
 		mapperFuncInput[0] = evaluator.NamedValue{Value: v}
-		out, err := mapperFunc(mapperFuncInput, ctx)
+		out, err := mapperFunc.Exec(mapperFuncInput, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
@@ -224,7 +224,7 @@ func std_filter(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 	res := []evaluator.Value{}
 	for _, v := range inputArray {
 		mapperFuncInput[0] = evaluator.NamedValue{Value: v}
-		out, err := mapperFunc(mapperFuncInput, ctx)
+		out, err := mapperFunc.Exec(mapperFuncInput, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
@@ -280,7 +280,7 @@ func std_filterMap(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 	filteredArr := make([]evaluator.Value, 0, len(inputArray)/2)
 	for _, v := range inputArray {
 		mapperFuncInput[0] = evaluator.NamedValue{Value: v}
-		out, err := fFunc(mapperFuncInput, ctx)
+		out, err := fFunc.Exec(mapperFuncInput, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
@@ -299,7 +299,7 @@ func std_filterMap(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 	res := make([]evaluator.Value, 0, len(filteredArr))
 	for _, v := range filteredArr {
 		mapperFuncInput[0] = evaluator.NamedValue{Value: v}
-		out, err := mFunc(mapperFuncInput, ctx)
+		out, err := mFunc.Exec(mapperFuncInput, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
@@ -322,7 +322,7 @@ func std_uniq(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.uniq (arg 0): %s, expected array", arr.Type().String())
 	}
 
-	var keyF evaluator.Func
+	var keyF evaluator.Function
 	if !args[1].IsNone() {
 		f, err := args[1].Eval(ctx)
 		if err != nil {
@@ -353,16 +353,16 @@ func std_uniq(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 		var y evaluator.Value
 		var err error
 
-		if keyF != nil {
+		if !keyF.Empty() {
 
 			mapperFuncInput[0] = evaluator.NamedValue{Value: last}
-			x, err = keyF(mapperFuncInput, ctx)
+			x, err = keyF.Exec(mapperFuncInput, ctx)
 			if err != nil {
 				return evaluator.Value{}, err
 			}
 
 			mapperFuncInput[0] = evaluator.NamedValue{Value: v}
-			y, err = keyF(mapperFuncInput, ctx)
+			y, err = keyF.Exec(mapperFuncInput, ctx)
 			if err != nil {
 				return evaluator.Value{}, err
 			}
@@ -414,7 +414,7 @@ func std_sort(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.sort (arg 0): %s, expected array", arr.Type().String())
 	}
 
-	var keyF evaluator.Func
+	var keyF evaluator.Function
 	if !args[1].IsNone() {
 		f, err := args[1].Eval(ctx)
 		if err != nil {
@@ -437,7 +437,7 @@ func std_sort(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 
 }
 
-func sortArray(arr []evaluator.Value, keyF evaluator.Func, ctx evaluator.Context) (res []evaluator.Value, err error) {
+func sortArray(arr []evaluator.Value, keyF evaluator.Function, ctx evaluator.Context) (res []evaluator.Value, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			if e, ok := r.(error); ok {
@@ -455,14 +455,14 @@ func sortArray(arr []evaluator.Value, keyF evaluator.Func, ctx evaluator.Context
 	// TODO: now we eval the values over and over, think abt this
 	slices.SortFunc(result, func(a, b evaluator.Value) int {
 
-		if keyF != nil {
+		if !keyF.Empty() {
 			mapperFuncInput[0] = evaluator.NamedValue{Value: a}
-			a, err = keyF(mapperFuncInput, ctx)
+			a, err = keyF.Exec(mapperFuncInput, ctx)
 			if err != nil {
 				panic(err)
 			}
 			mapperFuncInput[0] = evaluator.NamedValue{Value: b}
-			b, err = keyF(mapperFuncInput, ctx)
+			b, err = keyF.Exec(mapperFuncInput, ctx)
 			if err != nil {
 				panic(err)
 			}
@@ -550,7 +550,7 @@ func std_map(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 	res := make([]evaluator.Value, 0, len(inputArr))
 	for _, v := range inputArr {
 		mapperFuncInput[0] = evaluator.NamedValue{Value: v}
-		out, err := mapperFunc(mapperFuncInput, ctx)
+		out, err := mapperFunc.Exec(mapperFuncInput, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
@@ -591,7 +591,7 @@ func std_mapWithIndex(args []evaluator.NamedValue, ctx evaluator.Context) (evalu
 	for i, v := range inputArr {
 		mapperFuncInput[0] = evaluator.NamedValue{Value: evaluator.MakeNumber(float64(i))}
 		mapperFuncInput[1] = evaluator.NamedValue{Value: v}
-		out, err := mapperFunc(mapperFuncInput, ctx)
+		out, err := mapperFunc.Exec(mapperFuncInput, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
@@ -682,7 +682,7 @@ func std_setMember(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.member (arg 1): %s, expected array", arr.Type().String())
 	}
 
-	var keyF evaluator.Func
+	var keyF evaluator.Function
 	if !args[2].IsNone() {
 		f, err := args[2].Eval(ctx)
 		if err != nil {
@@ -706,15 +706,15 @@ func std_setMember(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 		ar := v
 		br := member
 
-		if keyF != nil {
+		if !keyF.Empty() {
 			mapperFuncInput[0] = evaluator.NamedValue{Value: v}
-			ar, err = keyF(mapperFuncInput, ctx)
+			ar, err = keyF.Exec(mapperFuncInput, ctx)
 			if err != nil {
 				return evaluator.Value{}, err
 			}
 
 			mapperFuncInput[0] = evaluator.NamedValue{Value: member}
-			br, err = keyF(mapperFuncInput, ctx)
+			br, err = keyF.Exec(mapperFuncInput, ctx)
 			if err != nil {
 				return evaluator.Value{}, err
 			}
@@ -942,7 +942,7 @@ func std_foldl(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 			foldFuncArgs[0] = evaluator.NamedValue{Value: state}
 			foldFuncArgs[1] = evaluator.NamedValue{Value: str}
 
-			val, err := foldFunc(foldFuncArgs, ctx)
+			val, err := foldFunc.Exec(foldFuncArgs, ctx)
 			if err != nil {
 				return evaluator.Value{}, err
 			}
@@ -962,7 +962,7 @@ func std_foldl(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 		foldFuncArgs[0] = evaluator.NamedValue{Value: state}
 		foldFuncArgs[1] = evaluator.NamedValue{Value: v}
 
-		val, err := foldFunc(foldFuncArgs, ctx)
+		val, err := foldFunc.Exec(foldFuncArgs, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
@@ -1009,7 +1009,7 @@ func std_foldr(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 			foldFuncArgs[0] = evaluator.NamedValue{Value: state}
 			foldFuncArgs[1] = evaluator.NamedValue{Value: str}
 
-			val, err := foldFunc(foldFuncArgs, ctx)
+			val, err := foldFunc.Exec(foldFuncArgs, ctx)
 			if err != nil {
 				return evaluator.Value{}, err
 			}
@@ -1031,7 +1031,7 @@ func std_foldr(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 		foldFuncArgs[0] = evaluator.NamedValue{Value: state}
 		foldFuncArgs[1] = evaluator.NamedValue{Value: v}
 
-		val, err := foldFunc(foldFuncArgs, ctx)
+		val, err := foldFunc.Exec(foldFuncArgs, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
