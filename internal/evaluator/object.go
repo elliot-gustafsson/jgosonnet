@@ -138,7 +138,7 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (Value, bool, err
 
 		// Fast exit if its the first time we encounter the key and it shouldnt merge with super
 		if res.IsNone() && !plusSuper {
-			return val, false, nil
+			return val, currentVisibility != ast.ObjectFieldHidden, nil
 		}
 
 		if res.IsNone() {

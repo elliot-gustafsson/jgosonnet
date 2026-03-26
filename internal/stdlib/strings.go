@@ -244,7 +244,7 @@ func std_substr(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 	if !fullVal.IsString() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.substr (arg 0): %s, expected string", fullVal.Type().String())
 	}
-	full := fullVal.String(ctx)
+	full := []rune(fullVal.String(ctx))
 
 	fromVal, err := args[1].Eval(ctx)
 	if err != nil {
@@ -258,29 +258,31 @@ func std_substr(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 		return evaluator.Value{}, fmt.Errorf("std.substr (arg 1) must be greater than zero, got %d", from)
 	}
 
-	toVal, err := args[2].Eval(ctx)
+	lenVal, err := args[2].Eval(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !toVal.IsNumber() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.substr (arg 2): %s, expected number", toVal.Type().String())
+	if !lenVal.IsNumber() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.substr (arg 2): %s, expected number", lenVal.Type().String())
 	}
-	to := int(toVal.Number())
-	if to < 0 {
-		return evaluator.Value{}, fmt.Errorf("std.substr (arg 2) must be greater than zero, got %d", to)
+	length := int(lenVal.Number())
+	if length < 0 {
+		return evaluator.Value{}, fmt.Errorf("std.substr (arg 2) must be greater than zero, got %d", length)
 	}
 
 	if from > len(full) {
 		return evaluator.MakeString("", ctx), nil
 	}
 
+	to := from + length
+
 	if to > len(full)-1 {
-		to = len(full)
+		res := full[from:]
+		return evaluator.MakeString(string(res), ctx), nil
 	}
 
 	res := full[from:to]
-
-	return evaluator.MakeString(res, ctx), nil
+	return evaluator.MakeString(string(res), ctx), nil
 }
 
 func std_findSubstr(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {

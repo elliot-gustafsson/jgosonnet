@@ -77,15 +77,4 @@
 // std.parseJson('{"a": "a"}')
 // std.parseYaml('1234.23')
 
-std.pi
-
-// {
-//   a: 'a',
-//   b: 'b',
-// }
-// ==
-// {
-//   c:: 'a',
-//   b: 'ba',
-//   a: 'a',
-// }
+std.substr('öö', 1, 1)
