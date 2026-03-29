@@ -109,6 +109,7 @@ var functions = map[string]func(evaluator.Context) evaluator.Function{
 	"sort":          f(std_sort, "arr", "keyF"),
 	"map":           f(std_map, "func", "arr"),
 	"mapWithIndex":  f(std_mapWithIndex, "func", "arr"),
+	"flatMap":       f(std_flatMap, "func", "arr"),
 	"filterMap":     f(std_filterMap, "filter_func", "map_func", "arr"),
 	"member":        f(std_member, "arr", "x"),
 	"setMember":     f(std_setMember, "x", "arr", "keyF"),
@@ -120,6 +121,7 @@ var functions = map[string]func(evaluator.Context) evaluator.Function{
 	"foldr":         f(std_foldr, "func", "arr", "init"),
 	"sum":           f(std_sum, "arr"),
 	"flattenArrays": f(std_flattenArrays, "arr"),
+	"repeat":        f(std_repeat, "what", "count"),
 
 	// -- Sets ---
 	"set": f(std_set, "arr", "keyF"),

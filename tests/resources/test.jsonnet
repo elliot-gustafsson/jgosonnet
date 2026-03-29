@@ -77,4 +77,8 @@
 // std.parseJson('{"a": "a"}')
 // std.parseYaml('1234.23')
 
-{ x: 'asdf' } + std.mapWithKey(function(k, o) k + o, { a: 1, b: 2 })
+// std.foldr(function(x, y) [x, y], [], 'bar')
+// std.foldr(function(x, y) [x, y], [1, 2, 3, 4], [])
+
+
+std.join(['a', 'b'], [null, [1, 2], null, [3, 4, 5], [6], null])

@@ -116,6 +116,9 @@ func std_join(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 			if err != nil {
 				return evaluator.Value{}, err
 			}
+			if v.IsNull() {
+				continue
+			}
 			if !v.IsString() {
 				return evaluator.Value{}, fmt.Errorf("second parameter to std.join must be an array of strings if first argument is a string, got %s", v.Type().String())
 			}
@@ -130,24 +133,23 @@ func std_join(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 		var sb strings.Builder
 		sb.Grow(totalLen)
 
-		for i, v := range inputArray {
+		hasWritten := false
+		for _, v := range inputArray {
 
 			v, err := v.Eval(ctx)
 			if err != nil {
 				return evaluator.Value{}, err
 			}
 
-			if i > 0 {
-				// Dont write separator first iteration
-				_, err := sb.WriteString(sep.String(ctx))
-				if err != nil {
-					return evaluator.Value{}, fmt.Errorf("failed to write separator, err: %w", err)
-				}
+			if v.IsNull() {
+				continue
 			}
-			_, err = sb.WriteString(v.String(ctx))
-			if err != nil {
-				return evaluator.Value{}, fmt.Errorf("failed to write value, err: %w", err)
+
+			if hasWritten {
+				sb.WriteString(sep.String(ctx))
 			}
+			sb.WriteString(v.String(ctx))
+			hasWritten = true
 		}
 
 		return evaluator.MakeString(sb.String(), ctx), nil
@@ -167,6 +169,11 @@ func std_join(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 		if err != nil {
 			return evaluator.Value{}, err
 		}
+
+		if v.IsNull() {
+			continue
+		}
+
 		if !v.IsArray() {
 			return evaluator.Value{}, fmt.Errorf("second parameter to std.join must be an array of arrays if first argument is an array")
 		}
@@ -177,18 +184,24 @@ func std_join(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 		totalCap += sepLen * (inputLen - 1)
 	}
 
+	hasWritten := false
 	res := make([]evaluator.Value, 0, totalCap)
-	for i, v := range inputArray {
+	for _, v := range inputArray {
 
 		v, err := v.Eval(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
 
-		if i > 0 {
+		if v.IsNull() {
+			continue
+		}
+
+		if hasWritten {
 			res = append(res, sepArray...)
 		}
 		res = append(res, v.Array(ctx)...)
+		hasWritten = true
 	}
 
 	return evaluator.MakeArray(res, ctx), nil
@@ -242,9 +255,60 @@ func std_filter(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 	return evaluator.MakeArray(res, ctx), nil
 }
 
+func std_flatMap(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 2 {
+		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.flatMap %d, expected 2", len(args))
+	}
+
+	funcVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !funcVal.IsFunction() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.flatMap (arg 0): %s, expected function", funcVal.Type().String())
+	}
+
+	arrVal, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !arrVal.IsArray() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.flatMap (arg 1): %s, expected array", arrVal.Type().String())
+	}
+
+	mapFunc := funcVal.Function(ctx)
+	mapFuncArgs := []evaluator.NamedValue{{}}
+
+	arr := arrVal.Array(ctx)
+
+	res := make([]evaluator.Value, 0, len(arr))
+	for _, v := range arr {
+
+		mapFuncArgs[0] = evaluator.NamedValue{Value: v}
+
+		x, err := mapFunc.Exec(mapFuncArgs, ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+
+		x, err = x.Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+
+		if !x.IsArray() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type received to std.flatMap map func: %s, expected array", x.Type().String())
+		}
+
+		res = append(res, x.Array(ctx)...)
+	}
+
+	return evaluator.MakeArray(res, ctx), nil
+}
+
 func std_filterMap(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	if len(args) != 3 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.filterMap %d, expected 2", len(args))
+		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.filterMap %d, expected 3", len(args))
 	}
 
 	filterFunc, err := args[0].Eval(ctx)
@@ -879,6 +943,10 @@ func std_lines(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 			return evaluator.Value{}, err
 		}
 
+		if v.IsNull() {
+			continue
+		}
+
 		if !v.IsString() {
 			return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.lines array: %s, expected strings", v.Type().String())
 		}
@@ -1025,11 +1093,11 @@ func std_foldr(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 	}
 
 	arr := arrVal.Array(ctx)
-	for i := len(arr); i >= 0; i-- {
+	for i := len(arr) - 1; i >= 0; i-- {
 		v := arr[i]
 
-		foldFuncArgs[0] = evaluator.NamedValue{Value: state}
-		foldFuncArgs[1] = evaluator.NamedValue{Value: v}
+		foldFuncArgs[0] = evaluator.NamedValue{Value: v}
+		foldFuncArgs[1] = evaluator.NamedValue{Value: state}
 
 		val, err := foldFunc.Exec(foldFuncArgs, ctx)
 		if err != nil {
@@ -1096,6 +1164,47 @@ func std_flattenArrays(args []evaluator.NamedValue, ctx evaluator.Context) (eval
 		res = append(res, v.Array(ctx)...)
 	}
 	return evaluator.MakeArray(res, ctx), nil
+}
+
+func std_repeat(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 2 {
+		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.repeat %d, expected 2", len(args))
+	}
+
+	whatVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	countVal, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !countVal.IsNumber() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.repeat (arg 1): %s, expected number", countVal.Type().String())
+	}
+	count := int(countVal.Number())
+
+	if whatVal.IsString() {
+		what := whatVal.String(ctx)
+		sb := strings.Builder{}
+		sb.Grow(count * len(what))
+		for range count {
+			sb.WriteString(what)
+		}
+		return evaluator.MakeString(sb.String(), ctx), nil
+	}
+
+	if whatVal.IsArray() {
+		what := whatVal.Array(ctx)
+		res := make([]evaluator.Value, 0, count*len(what))
+		for range count {
+			res = append(res, what...)
+		}
+		return evaluator.MakeArray(res, ctx), nil
+	}
+
+	return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.repeat (arg 0): %s, expected array or string", whatVal.Type().String())
 }
 
 func sliceArr[T any](arr []T, start, end, step int) ([]T, error) {
