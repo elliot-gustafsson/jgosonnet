@@ -1159,11 +1159,62 @@ func std_flattenArrays(args []evaluator.NamedValue, ctx evaluator.Context) (eval
 			return evaluator.Value{}, err
 		}
 		if !v.IsArray() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type in std.flattenArrays arr: %s, expected array", arr.Type().String())
+			return evaluator.Value{}, fmt.Errorf("unexpected type in std.flattenArrays arr: %s, expected array", v.Type().String())
 		}
 		res = append(res, v.Array(ctx)...)
 	}
 	return evaluator.MakeArray(res, ctx), nil
+}
+
+func std_flattenDeepArray(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 1 {
+		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.flattenDeepArray %d, expected 1", len(args))
+	}
+
+	arrVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	if !arrVal.IsArray() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.flattenDeepArray (arg 0): %s, expected array", arrVal.Type().String())
+	}
+	arr := arrVal.Array(ctx)
+
+	res := make([]evaluator.Value, 0, len(arr))
+	for _, v := range arr {
+		v, err := v.Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+		if v.IsArray() {
+			res, err = flattedDeepArray(res, v.Array(ctx), ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+			continue
+		}
+		res = append(res, v)
+	}
+	return evaluator.MakeArray(res, ctx), nil
+}
+
+func flattedDeepArray(state, v []evaluator.Value, ctx evaluator.Context) ([]evaluator.Value, error) {
+	for _, x := range v {
+		x, err := x.Eval(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if x.IsArray() {
+			state, err = flattedDeepArray(state, x.Array(ctx), ctx)
+			if err != nil {
+				return nil, err
+			}
+			continue
+		}
+		state = append(state, x)
+	}
+	return state, nil
 }
 
 func std_repeat(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {

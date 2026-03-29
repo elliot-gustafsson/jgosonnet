@@ -81,4 +81,4 @@
 // std.foldr(function(x, y) [x, y], [1, 2, 3, 4], [])
 
 
-std.join(['a', 'b'], [null, [1, 2], null, [3, 4, 5], [6], null])
+std.flattenDeepArray([[1], [2, 3], [[null]]])
