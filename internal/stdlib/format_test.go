@@ -307,7 +307,7 @@ func TestFormat(t *testing.T) {
 			name:     "Complex Struct to String",
 			format:   "Struct: %s",
 			args:     []any{[]int{1, 2}}, // Should use ManifestJson
-			expected: "Struct: [1,2]",
+			expected: "Struct: [1, 2]",
 		},
 		// --- Error Cases ---
 		{
@@ -409,15 +409,14 @@ func toValue(v any, ctx evaluator.Context) evaluator.Value {
 			Keys: make([]uint32, 0, len(val)),
 			Meta: make([]uint8, 0, len(val)),
 		}
-		values := make([]evaluator.Value, 0, len(val))
 		for k, item := range val {
 			keyId := ctx.Interner.Intern(k)
 			layer.Keys = append(layer.Keys, keyId)
+			layer.Values = append(layer.Values, toValue(item, ctx))
 			layer.Meta = append(layer.Meta, evaluator.CreateFieldMeta(ast.ObjectFieldInherit, false))
-			values = append(values, toValue(item, ctx))
+
 		}
 		obj := evaluator.NewObject([]*evaluator.Layer{layer})
-		obj.Values = values
 		return evaluator.MakeObject(obj, ctx)
 	default:
 		panic(fmt.Sprintf("unhandled type %T", val))

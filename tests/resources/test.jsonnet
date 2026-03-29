@@ -77,4 +77,4 @@
 // std.parseJson('{"a": "a"}')
 // std.parseYaml('1234.23')
 
-std.substr('öö', 1, 1)
+{ x: 'asdf' } + std.mapWithKey(function(k, o) k + o, { a: 1, b: 2 })

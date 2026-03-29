@@ -124,8 +124,6 @@ func rawDataToValue(x any, ctx evaluator.Context) (evaluator.Value, error) {
 
 		obj := evaluator.NewObject([]*evaluator.Layer{layer})
 
-		obj.Values = make([]evaluator.Value, fieldCount)
-
 		index := 0
 		for keyName, value := range data {
 			keyId := ctx.Interner.Intern(keyName)
@@ -136,10 +134,9 @@ func rawDataToValue(x any, ctx evaluator.Context) (evaluator.Value, error) {
 			}
 
 			layer.Keys = append(layer.Keys, keyId)
+			layer.Values = append(layer.Values, v)
 			layer.Meta = append(layer.Meta, evaluator.CreateFieldMeta(ast.ObjectFieldVisible, false))
 			layer.Index[keyId] = index
-
-			obj.Values[index] = v
 
 			index++
 		}

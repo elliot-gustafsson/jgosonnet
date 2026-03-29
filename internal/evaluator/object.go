@@ -22,9 +22,10 @@ type Field struct {
 }
 
 type Layer struct {
-	Keys  []uint32
-	Nodes ast.Nodes
-	Meta  []uint8
+	Keys   []uint32
+	Nodes  ast.Nodes
+	Values []Value
+	Meta   []uint8
 
 	Index map[uint32]int
 
@@ -509,20 +510,26 @@ func getValue(obj *Object, layerId, fieldId int, ctx Context) (Value, error) {
 
 	l := layers[layerId]
 
-	n := l.Nodes[fieldId]
+	if l.Values != nil {
+		val = l.Values[fieldId]
+	} else {
 
-	evalCtx := ctx
-	evalCtx.SuperOffset = len(layers) - 1 - layerId
+		n := l.Nodes[fieldId]
 
-	scopeId, err := obj.getScope(layerId, l, evalCtx)
-	if err != nil {
-		return Value{}, err
+		evalCtx := ctx
+		evalCtx.SuperOffset = len(layers) - 1 - layerId
+
+		scopeId, err := obj.getScope(layerId, l, evalCtx)
+		if err != nil {
+			return Value{}, err
+		}
+
+		val, err = EvaluateNode(n, scopeId, evalCtx)
+		if err != nil {
+			return Value{}, err
+		}
 	}
 
-	val, err = EvaluateNode(n, scopeId, evalCtx)
-	if err != nil {
-		return Value{}, err
-	}
 	obj.Values[flatIndex] = val
 	return val, nil
 }
@@ -623,13 +630,12 @@ func GetObjectKeysValues(obj *Object, ctx Context, inclHidden bool) ([]Value, er
 			ctx.Interner.Intern("key"),
 			ctx.Interner.Intern("value"),
 		}
-		m := CreateFieldMeta(ast.ObjectFieldInherit, false)
-		layer.Meta = []uint8{m, m}
-
-		obj.Values = []Value{
+		layer.Values = []Value{
 			MakeString(ctx.Interner.Get(plan.KeyId), ctx),
 			val,
 		}
+		m := CreateFieldMeta(ast.ObjectFieldInherit, false)
+		layer.Meta = []uint8{m, m}
 
 		kv := MakeObject(obj, ctx)
 
@@ -638,6 +644,29 @@ func GetObjectKeysValues(obj *Object, ctx Context, inclHidden bool) ([]Value, er
 	}
 
 	return res, nil
+}
+
+func GetObjectKeysValuesArray(obj *Object, ctx Context, inclHidden bool) ([]uint32, []Value, error) {
+	plans := CompileObjectPlan(obj, ctx)
+
+	keys := make([]uint32, 0, len(plans))
+	vals := make([]Value, 0, len(plans))
+	for _, plan := range plans {
+
+		if !inclHidden && plan.Visibility == ast.ObjectFieldHidden {
+			continue
+		}
+
+		val, err := plan.GetValue(obj, ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		keys = append(keys, plan.KeyId)
+		vals = append(vals, val)
+	}
+
+	return keys, vals, nil
 }
 
 func (t *Object) Prune(ctx Context) (Value, error) {
@@ -653,7 +682,6 @@ func (t *Object) Prune(ctx Context) (Value, error) {
 	}
 
 	resObj := NewObject([]*Layer{layer})
-	resObj.Values = make([]Value, 0, len(plans))
 
 	useMap := len(plans) > MaxLinearKeys
 	if useMap {
@@ -687,9 +715,8 @@ func (t *Object) Prune(ctx Context) (Value, error) {
 		}
 
 		layer.Keys = append(layer.Keys, plan.KeyId)
+		layer.Values = append(layer.Values, prunedVal)
 		layer.Meta = append(layer.Meta, CreateFieldMeta(plan.Visibility, false))
-
-		resObj.Values = append(resObj.Values, prunedVal)
 
 		if useMap {
 			layer.Index[plan.KeyId] = index

@@ -7,7 +7,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
-	"github.com/google/go-jsonnet/ast"
 )
 
 var constants = map[string]evaluator.Value{
@@ -135,6 +134,7 @@ var functions = map[string]func(evaluator.Context) evaluator.Function{
 	"objectValuesAll":     f(std_objectValuesAll, "o"),
 	"objectKeysValues":    f(std_objectKeysValues, "o"),
 	"objectKeysValuesAll": f(std_objectKeysValuesAll, "o"),
+	"mapWithKey":          f(std_mapWithkey, "func", "obj"),
 
 	// --- Manifestation ---
 	"manifestYamlDoc":      f(std_manifestYamlDoc, "value", "indent_array_in_object", "quote_keys"),
@@ -195,16 +195,14 @@ func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
 	fieldCount := len(functions) + len(constants)
 
 	layer := &evaluator.Layer{
-		Keys:  make([]uint32, 0, fieldCount),
-		Nodes: make(ast.Nodes, 0, fieldCount),
-		Meta:  make([]uint8, 0, fieldCount),
+		Keys:   make([]uint32, 0, fieldCount),
+		Values: make([]evaluator.Value, 0, fieldCount),
+		Meta:   make([]uint8, 0, fieldCount),
 
 		Index: make(map[uint32]int, fieldCount),
 	}
 
 	obj := evaluator.NewObject([]*evaluator.Layer{layer})
-
-	obj.Values = make([]evaluator.Value, fieldCount)
 
 	index := 0
 	for name, f := range functions {
@@ -214,10 +212,9 @@ func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
 
 		v := evaluator.MakeFunction(fVal, ctx)
 		layer.Keys = append(layer.Keys, keyId)
+		layer.Values = append(layer.Values, v)
 		layer.Meta = append(layer.Meta, 0)
 		layer.Index[keyId] = index
-
-		obj.Values[index] = v
 
 		index++
 	}
@@ -226,10 +223,9 @@ func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
 		keyId := ctx.Interner.Intern(name)
 
 		layer.Keys = append(layer.Keys, keyId)
+		layer.Values = append(layer.Values, v)
 		layer.Meta = append(layer.Meta, 0)
 		layer.Index[keyId] = index
-
-		obj.Values[index] = v
 
 		index++
 	}

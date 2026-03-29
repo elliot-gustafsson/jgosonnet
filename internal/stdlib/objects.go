@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
+	"github.com/google/go-jsonnet/ast"
 )
 
 func liftObjectToValueErr(f func(evaluator.Value, evaluator.Context) (evaluator.Value, error), name string) evaluator.Func {
@@ -174,3 +175,69 @@ var std_objectHasAll = liftObjectStringToValueErr(func(v evaluator.Value, s stri
 	}
 	return evaluator.MakeBool(!value.IsNone()), nil
 }, "std.objectHasAll")
+
+func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 2 {
+		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.mapWithkey %d, expected 2", len(args))
+	}
+
+	funcVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	if !funcVal.IsFunction() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.mapWithkey (arg 0): %s, expected function", funcVal.Type().String())
+	}
+
+	objVal, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	if !objVal.IsObject() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.mapWithkey (arg 1): %s, expected object", objVal.Type().String())
+	}
+
+	mapFunc := funcVal.Function(ctx)
+	mapFuncArgs := []evaluator.NamedValue{{}, {}}
+
+	obj := objVal.Object(ctx)
+
+	keys, vals, err := evaluator.GetObjectKeysValuesArray(obj, ctx, false)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	fieldCount := len(keys)
+
+	layer := &evaluator.Layer{
+		Keys:   make([]uint32, 0, fieldCount),
+		Values: make([]evaluator.Value, 0, fieldCount),
+		Meta:   make([]uint8, 0, fieldCount),
+	}
+
+	res := evaluator.NewObject([]*evaluator.Layer{layer})
+
+	m := evaluator.CreateFieldMeta(ast.ObjectFieldInherit, false)
+	for i, k := range keys {
+		v := vals[i]
+
+		keyString := ctx.Interner.Get(k)
+
+		mapFuncArgs[0] = evaluator.NamedValue{Value: evaluator.MakeString(keyString, ctx)}
+		mapFuncArgs[1] = evaluator.NamedValue{Value: v}
+
+		x, err := mapFunc.Exec(mapFuncArgs, ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+
+		layer.Keys = append(layer.Keys, k)
+		layer.Values = append(layer.Values, x)
+		layer.Meta = append(layer.Meta, m)
+
+	}
+
+	return evaluator.MakeObject(res, ctx), nil
+}
