@@ -517,7 +517,7 @@ func sortArray(arr []evaluator.Value, keyF evaluator.Function, ctx evaluator.Con
 	mapperFuncInput := []evaluator.NamedValue{{}}
 
 	// TODO: now we eval the values over and over, think abt this
-	slices.SortFunc(result, func(a, b evaluator.Value) int {
+	slices.SortStableFunc(result, func(a, b evaluator.Value) int {
 
 		if !keyF.Empty() {
 			mapperFuncInput[0] = evaluator.NamedValue{Value: a}

@@ -28,6 +28,7 @@ type YamlManifestConfig struct {
 	QuoteKeys            bool
 	QuoteValues          bool
 	SingleQuoteEscape    bool
+	NaturalSort          bool
 }
 
 func ManifestYaml(b *strings.Builder, value Value, ctx Context, config YamlManifestConfig) error {
@@ -139,7 +140,7 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, cindent string
 		return nil
 	case ValueTypeObject:
 		obj := value.Object(ctx)
-		plans := CompileObjectPlan(obj, ctx)
+		plans := CompileObjectPlanEx(obj, ctx, config.NaturalSort)
 		if len(plans) == 0 {
 			buf.WriteString("{}")
 			return nil

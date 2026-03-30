@@ -291,7 +291,7 @@ func (v Value) IsEmpty(ctx Context) bool {
 	case ValueTypeNull:
 		return true
 	case ValueTypeObject:
-		return len(v.Object(ctx).GetLayers()) == 0
+		return v.Object(ctx).Length(ctx) == 0
 	case ValueTypeArray:
 		return len(v.Array(ctx)) == 0
 	}
