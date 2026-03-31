@@ -13,6 +13,7 @@ type JsonManifestConfig struct {
 	Newline    string
 	KeyValSep  string
 	SpaceComma bool
+	Python     bool
 	hasNewline bool
 }
 
@@ -21,6 +22,7 @@ var (
 	JsonConfigPretty   = JsonManifestConfig{IndentStep: "    ", Newline: "\n", KeyValSep: ": ", SpaceComma: false}
 	JsonConfigMinified = JsonManifestConfig{IndentStep: "", Newline: "", KeyValSep: ":", SpaceComma: false}
 	JsonConfigToString = JsonManifestConfig{IndentStep: "", Newline: "", KeyValSep: ": ", SpaceComma: true}
+	JsonConfigPython   = JsonManifestConfig{IndentStep: "", Newline: "", KeyValSep: ": ", SpaceComma: true, Python: true}
 )
 
 type YamlManifestConfig struct {
@@ -52,8 +54,12 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, cindent string
 		return fmt.Errorf("unhandled value type: %s", value.Type().String())
 	case ValueTypeNumber:
 		data := value.Number()
-		// buf.WriteString(strconv.FormatFloat(data, 'f', -1, 64))
-		buf.WriteString(unparseNumber(data))
+		if data == math.Floor(data) {
+			fmt.Fprintf(buf, "%.0f", data)
+			return nil
+		}
+		buf.WriteString(strconv.FormatFloat(data, 'f', -1, 64))
+		// buf.WriteString(unparseNumber(data))
 		return nil
 	case ValueTypeNull:
 		buf.WriteString("null")
@@ -225,9 +231,21 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, cindent string, 
 		b.WriteString(unparseNumber(data))
 		return nil
 	case ValueTypeNull:
+		if config.Python {
+			b.WriteString("None")
+			return nil
+		}
 		b.WriteString("null")
 		return nil
 	case ValueTypeBool:
+		if config.Python {
+			if value.Bool() {
+				b.WriteString("True")
+			} else {
+				b.WriteString("False")
+			}
+			return nil
+		}
 		if value.Bool() {
 			b.WriteString("true")
 		} else {
@@ -240,14 +258,12 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, cindent string, 
 			b.WriteString(`""`)
 			return nil
 		}
-		// escaped := writeJsonString(data)
-		// buf.WriteString(escaped)
 		writeJsonString(b, data)
 		return nil
 	case ValueTypeArray:
 		data := value.Array(ctx)
 		if len(data) == 0 {
-			if config.SpaceComma {
+			if config.SpaceComma && !config.Python {
 				b.WriteString("[ ]")
 				return nil
 			}
@@ -304,7 +320,7 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, cindent string, 
 		obj := value.Object(ctx)
 		plans := CompileObjectPlan(obj, ctx)
 		if len(plans) == 0 {
-			if config.SpaceComma {
+			if config.SpaceComma && !config.Python {
 				b.WriteString("{ }")
 				return nil
 			}

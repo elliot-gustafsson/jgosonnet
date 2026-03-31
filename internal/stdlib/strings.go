@@ -33,6 +33,26 @@ func liftString(f func(string) string, name string) evaluator.Func {
 	}
 }
 
+func liftStringErr(f func(string) (string, error), name string) evaluator.Func {
+	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+		if len(args) != 1 {
+			return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to %s: %d, expected 1", name, len(args))
+		}
+		a, err := args[0].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+		if !a.IsString() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 0): %s, expected string", name, a.Type().String())
+		}
+		res, err := f(a.String(ctx))
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+		return evaluator.MakeString(res, ctx), nil
+	}
+}
+
 func liftString2(f func(string, string) string, name string) evaluator.Func {
 	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 		if len(args) != 2 {
@@ -85,7 +105,14 @@ var std_sha3 = liftString(func(s string) string {
 var std_base64 = liftString(func(s string) string {
 	hash := base64.StdEncoding.EncodeToString([]byte(s))
 	return hash
-}, "std.sha3")
+}, "std.base64")
+var std_base64Decode = liftStringErr(func(s string) (string, error) {
+	out, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		return "", err
+	}
+	return string(out), err
+}, "std.std_base64Decode")
 
 var std_asciiLower = liftString(strings.ToLower, "std.asciiLower")
 var std_asciiUpper = liftString(strings.ToUpper, "std.asciiUpper")
@@ -433,4 +460,78 @@ func std_splitLimit(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	}
 
 	return evaluator.MakeArray(res, ctx), nil
+}
+
+var std_escapeStringBash = liftString(func(s string) string {
+	var b strings.Builder
+	b.WriteByte('\'')
+
+	last := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] != '\'' {
+			continue
+		}
+		b.WriteString(s[last:i])
+		b.WriteString(`'"'"'`)
+		last = i + 1
+	}
+	b.WriteString(s[last:])
+
+	b.WriteByte('\'')
+	return b.String()
+
+}, "std.escapeStringBash")
+
+var std_escapeStringDollars = liftString(func(s string) string {
+	return strings.ReplaceAll(s, "$", "$$")
+}, "std.escapeStringDollars")
+
+var std_escapeStringXML = liftString(func(s string) string {
+	var b strings.Builder
+	last := 0
+	for i := 0; i < len(s); i++ {
+		var r string
+		switch s[i] {
+		default:
+			continue
+		case '<':
+			r = "&lt;"
+		case '>':
+			r = "&gt;"
+		case '&':
+			r = "&amp;"
+		case '"':
+			r = "&quot;"
+		case '\'':
+			r = "&apos;"
+		}
+		b.WriteString(s[last:i])
+		b.WriteString(r)
+		last = i + 1
+	}
+	b.WriteString(s[last:])
+	return b.String()
+}, "std.escapeStringXML")
+
+func std_escapeStringJson(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 1 {
+		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.escapeStringJson: %d, expected 3", len(args))
+	}
+
+	strVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !strVal.IsString() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.escapeStringJson (arg 0): %s, expected string", strVal.Type().String())
+	}
+
+	var b strings.Builder
+
+	err = evaluator.ManifestJson(&b, strVal, ctx, evaluator.JsonConfigMinified)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	return evaluator.MakeString(b.String(), ctx), nil
 }

@@ -1,6 +1,10 @@
-std.manifestIni({
-  main: { a: ['1', '2'] },
-  sections: {
-    s2: { p: ['yes', ''] },
-  },
+std.manifestPythonVars({
+  x: 'test',
+  y: [],
+  z: ['foo', 'bar'],
+  n: 1,
+  a: true,
+  b: false,
+  c: null,
+  o: { f1: 'foo', f2: 'bar' },
 })

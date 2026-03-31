@@ -2,41 +2,22 @@
 
 # OBS Not feature complete yet
 
-`jgosonnet` is a custom Jsonnet evaluator written in Go. It evaluates Jsonnet files and renders them into JSON, YAML, or Go data structures.
-For parsing, `jgosonnet` uses the upstream `github.com/google/go-jsonnet` parser to generate an Abstract Syntax Tree (AST). It then evaluates this AST using a custom Go evaluation engine.
+A high-performance evaluator for [Jsonnet](https://jsonnet.org/).
+This implementation is built from the ground up to be significantly faster than `go-jsonnet`. The primary motivation for this project is that `go-jsonnet` is too slow and consumes too much memory when evaluating exceptionally large files or highly complex, deeply nested configurations.
 
-## Architecture Overview
-The evaluation process has three main phases:
-1. **Parsing**: Jsonnet source code is parsed into an AST using the `go-jsonnet` parser.
-2. **Evaluation**: The AST is traversed by the custom runtime (`internal/evaluator`). This handles scopes, variables, lazy evaluation, and object inheritance to produce a final result.
-3. **Manifestation**: The evaluated result is serialized into formats like JSON or YAML (via `EvaluateJson`, `EvaluateYaml`, `EvaluateYamlMulti`).
+## Architecture
 
-## Core Components
-The evaluator uses specific designs to manage memory and performance:
+### Lexing and Parsing
+For the frontend, `jgosonnet` utilizes the upstream `github.com/google/go-jsonnet` implementation to handle lexing and parsing. The source code is parsed by `go-jsonnet` into an Abstract Syntax Tree (AST). Reusing the upstream parser ensures strict syntactic compatibility, while allowing this project to focus purely on completely overhauling the execution engine and memory model for speed.
 
-### Arena Allocator (`Arena`)
-`jgosonnet` uses an Arena-based memory management system to group related data and limit heap allocations.
-- Complex types (`Objects`, `Arrays`, `Funcs`, `Thunks`, and `Scopes`) are stored in continuous slices within the Arena.
-- The `Value` struct uses `uint32` IDs to reference these types in the Arena instead of Go pointers, which reduces garbage collection overhead.
+### String Interning
+Object keys and string values are passed through a central String Interner during evaluation. By translating strings into 32-bit reference IDs (`refId`), the evaluator avoids repetitive string allocations. String equality checks—which happen millions of times during object resolution and sorting—are reduced to simple integer comparisons.
 
-### String Interner (`Interner`)
-Strings are frequently used for object keys and variables in Jsonnet. `jgosonnet` maps unique strings to `uint32` IDs.
-- String comparisons are performed using these integer IDs instead of comparing the string values.
-- This prevents allocating duplicate strings in memory.
+### Arena Allocation
+Rather than independently allocating every JSON object, array, and function on the Go heap, the evaluator utilizes an Arena allocator. Runtime representations of Objects, Arrays, Thunks, and Functions are stored in contiguous memory slices within an evaluation `Context`. This drastically reduces the pressure on Go's Garbage Collector (GC) and improves cache locality, which is critical when parsing massive data structures.
 
-### Unified `Value` Representation
-All data types in the runtime use a single `Value` struct that is passed by value:
-- Small data types (like `float64` for numbers and booleans) are stored directly inside the struct.
-- Complex types store an integer ID pointing to the `Interner` or `Arena`.
-- The type is tracked using a `uint8` tag (`ValueType`).
+### Lazy Evaluation (Thunks)
+Adherence to Jsonnet's lazy evaluation semantics is achieved using Thunks. A Thunk bundles an AST node with its captured lexical scope and an identifier. Computations are deferred and only evaluated when explicitly requested (e.g., during final JSON/YAML manifestation or when strict typing is required by standard library functions).
 
-### Lazy Evaluation (`Thunk`)
-Jsonnet variables and fields are evaluated lazily. `jgosonnet` implements this using `Thunks`.
-- When an expression is defined, a `Thunk` is created instead of evaluating it immediately.
-- The `Thunk` stores the AST node, the scope ID, and the context (such as `self` and `super`).
-- When the value is required (for example, during output generation), the `Thunk` calculates the result and caches it.
-
-
-### Object Inheritance
-Jsonnet objects support inheritance, mixins (`+`), and field visibility modifiers (`::`, `:::`).
-- `jgosonnet` uses a layered `Object` struct to track merged keys, overridden nodes, and field visibility.
+### Object Resolution and Layers
+Jsonnet's object model supports complex inheritance (`+`, `super`, `self`) and field visibility constraints (`::`, `:::`, `:`). The architecture handles this by flattening inherited objects into `Layers` and compiling a `FieldPlan`. Instead of deeply copying or continuously merging objects during AST evaluation, the evaluator constructs a plan that points to the correct field layer and computes the final visibility mask. This flattens the inheritance tree and minimizes the computational overhead of object composition.

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
+	"github.com/google/go-jsonnet/ast"
 )
 
 const (
@@ -257,78 +258,84 @@ func std_manifestIni(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 	if !iniObjVal.IsObject() {
 		return evaluator.Value{}, fmt.Errorf("expected object passed to std.manifestIni, got %s", iniObjVal.Type().String())
 	}
+
 	var b strings.Builder
 	b.Grow(512)
 
 	iniObj := iniObjVal.Object(ctx)
-	// Handle 'main' section (top-level properties)
+
 	mainKeyId := ctx.Interner.Intern("main")
-	mainVal, _, err := iniObj.GetField(mainKeyId, ctx)
+	mainVal, visible, err := iniObj.GetField(mainKeyId, ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
 	// std.objectHas matches even hidden fields, so we only check if it exists (!IsNone)
-	if !mainVal.IsNone() {
+	if visible && !mainVal.IsNone() {
 		mainVal, err := mainVal.Eval(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
+		if !mainVal.IsObject() {
+			return evaluator.Value{}, fmt.Errorf("expected object for ini main section, got %s", mainVal.Type().String())
+		}
 
-		err = printIniSection(&b, mainVal, ctx)
+		err = printIniSection(&b, mainVal.Object(ctx), ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
 	}
-	// Handle 'sections' section (grouped properties)
+
 	sectionsKeyId := ctx.Interner.Intern("sections")
 	sectionsVal, _, err := iniObj.GetField(sectionsKeyId, ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !sectionsVal.IsNone() {
-		sectionsVal, err := sectionsVal.Eval(ctx)
+	if sectionsVal.IsNone() {
+		return evaluator.Value{}, fmt.Errorf("expected field 'sections' does not exist on object passed to std.manifestIni")
+	}
+
+	if !sectionsVal.IsObject() {
+		return evaluator.Value{}, fmt.Errorf("expected object for ini 'sections' field, got %s", sectionsVal.Type().String())
+	}
+
+	sectionsObj := sectionsVal.Object(ctx)
+	plans := evaluator.CompileObjectPlan(sectionsObj, ctx)
+
+	for _, plan := range plans {
+		if plan.IsHidden() {
+			continue
+		}
+
+		val, err := plan.GetValue(sectionsObj, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
-		if !sectionsVal.IsObject() {
-			return evaluator.Value{}, fmt.Errorf("expected object for 'sections' field")
-		}
-		sectionsObj := sectionsVal.Object(ctx)
-		plans := evaluator.CompileObjectPlan(sectionsObj, ctx)
 
-		for _, plan := range plans {
-			// jsonnet's std.objectFields skips hidden fields, so we do too!
-			if plan.IsHidden() {
-				continue
-			}
-			secVal, err := plan.GetValue(sectionsObj, ctx)
-			if err != nil {
-				return evaluator.Value{}, err
-			}
-			secVal, err = secVal.Eval(ctx)
-			if err != nil {
-				return evaluator.Value{}, err
-			}
-			keyStr := ctx.Interner.Get(plan.KeyId)
-			b.WriteString("[")
-			b.WriteString(keyStr)
-			b.WriteString("]\n")
-			err = printIniSection(&b, secVal, ctx)
-			if err != nil {
-				return evaluator.Value{}, err
-			}
+		val, err = val.Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
 		}
+
+		keyStr := ctx.Interner.Get(plan.KeyId)
+		if !val.IsObject() {
+			return evaluator.Value{}, fmt.Errorf("expected object for ini section field '%s', got %s", keyStr, val.Type().String())
+		}
+
+		b.WriteByte('[')
+		b.WriteString(keyStr)
+		b.WriteString("]\n")
+		err = printIniSection(&b, val.Object(ctx), ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+
 	}
 	return evaluator.MakeString(b.String(), ctx), nil
 }
 
 // printIniSection is our custom helper to loop through and print properties
-func printIniSection(b *strings.Builder, objVal evaluator.Value, ctx evaluator.Context) error {
-	if !objVal.IsObject() {
-		return fmt.Errorf("expected object for INI section")
-	}
+func printIniSection(b *strings.Builder, obj *evaluator.Object, ctx evaluator.Context) error {
 
-	obj := objVal.Object(ctx)
 	plans := evaluator.CompileObjectPlan(obj, ctx)
 
 	for _, plan := range plans {
@@ -346,17 +353,199 @@ func printIniSection(b *strings.Builder, objVal evaluator.Value, ctx evaluator.C
 			return err
 		}
 
-		// val.ToString gives us the raw representation just like `%s` does in Jsonnet
-		strVal, err := val.ToString(ctx)
+		keyStr := ctx.Interner.Get(plan.KeyId)
+
+		if val.IsArray() {
+			for _, v := range val.Array(ctx) {
+				err = printIniVal(b, keyStr, v, ctx)
+				if err != nil {
+					return err
+				}
+			}
+			continue
+		}
+
+		err = printIniVal(b, keyStr, val, ctx)
 		if err != nil {
 			return err
 		}
+	}
+	return nil
+}
 
-		keyStr := ctx.Interner.Get(plan.KeyId)
-		b.WriteString(keyStr)
+func printIniVal(b *strings.Builder, k string, v evaluator.Value, ctx evaluator.Context) error {
+
+	strVal, err := v.ToString(ctx)
+	if err != nil {
+		return err
+	}
+	b.WriteString(k)
+	b.WriteString(" = ")
+	b.WriteString(strVal)
+	b.WriteByte('\n')
+
+	return nil
+}
+
+func std_manifestPython(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 1 {
+		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.manifestPython: %d, expected 1", len(args))
+	}
+	v, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	var b strings.Builder
+	err = evaluator.ManifestJson(&b, v, ctx, evaluator.JsonConfigPython)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	return evaluator.MakeString(b.String(), ctx), nil
+}
+
+func std_manifestPythonVars(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 1 {
+		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.manifestPythonVars: %d, expected 1", len(args))
+	}
+	objVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	if !objVal.IsObject() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.manifestPythonVars (arg 0): %s, expected object", objVal.Type().String())
+	}
+	obj := objVal.Object(ctx)
+
+	plans := evaluator.CompileObjectPlan(obj, ctx)
+
+	var b strings.Builder
+	for _, plan := range plans {
+		keyId := plan.KeyId
+
+		if plan.Visibility == ast.ObjectFieldHidden {
+			continue
+		}
+
+		name := ctx.Interner.Get(keyId)
+		b.WriteString(name)
 		b.WriteString(" = ")
-		b.WriteString(strVal)
+
+		value, err := plan.GetValue(obj, ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+
+		err = evaluator.ManifestJson(&b, value, ctx, evaluator.JsonConfigPython)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+
 		b.WriteByte('\n')
 	}
+	return evaluator.MakeString(b.String(), ctx), nil
+}
+
+func std_manifestXmlJsonml(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 1 {
+		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.manifestXmlJsonml: %d, expected 1", len(args))
+	}
+	a, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !a.IsArray() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.manifestXmlJsonml (arg 0): %s, expected array", a.Type().String())
+	}
+	var b strings.Builder
+	b.Grow(1024)
+	err = auxManifestXmlJsonml(a, ctx, &b)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	return evaluator.MakeString(b.String(), ctx), nil
+}
+
+func auxManifestXmlJsonml(v evaluator.Value, ctx evaluator.Context, b *strings.Builder) error {
+	v, err := v.Eval(ctx)
+	if err != nil {
+		return err
+	}
+
+	if v.IsString() {
+		b.WriteString(v.String(ctx))
+		return nil
+	}
+
+	if !v.IsArray() {
+		return fmt.Errorf("unexpected type in array passed to std.manifestXmlJsonml: %s, expected string or array value", v.Type().String())
+	}
+
+	arr := v.Array(ctx)
+	if len(arr) == 0 {
+		return fmt.Errorf("empty array passed to std.manifestXmlJsonml")
+	}
+
+	tagVal, err := arr[0].Eval(ctx)
+	if err != nil {
+		return err
+	}
+
+	if !tagVal.IsString() {
+		return fmt.Errorf("unexpected type of tag value passed to std.manifestXmlJsonml: %s, expected string", tagVal.Type().String())
+	}
+
+	tag := tagVal.String(ctx)
+	hasAttrs := false
+	var attrs *evaluator.Object
+	childrenStart := 1
+	if len(arr) > 1 {
+		secondVal, err := arr[1].Eval(ctx)
+		if err != nil {
+			return err
+		}
+		if secondVal.IsObject() {
+			hasAttrs = true
+			attrs = secondVal.Object(ctx)
+			childrenStart = 2
+		}
+	}
+	b.WriteByte('<')
+	b.WriteString(tag)
+	if hasAttrs {
+		// CompileObjectPlan inherently sorts object keys alphabetically!
+		fps := evaluator.CompileObjectPlan(attrs, ctx)
+		for _, fp := range fps {
+			if fp.IsHidden() {
+				continue
+			}
+			keyStr := ctx.Interner.Get(fp.KeyId)
+			fieldValue, err := fp.GetValue(attrs, ctx)
+			if err != nil {
+				return err
+			}
+			// ToString identically mimics jsonnet's `%s` stringification coercion
+			strVal, err := fieldValue.ToString(ctx)
+			if err != nil {
+				return err
+			}
+			b.WriteByte(' ')
+			b.WriteString(keyStr)
+			b.WriteString(`="`)
+			b.WriteString(strVal)
+			b.WriteByte('"')
+		}
+	}
+	b.WriteByte('>')
+	for i := childrenStart; i < len(arr); i++ {
+		err = auxManifestXmlJsonml(arr[i], ctx, b)
+		if err != nil {
+			return err
+		}
+	}
+	b.WriteString("</")
+	b.WriteString(tag)
+	b.WriteByte('>')
 	return nil
 }
