@@ -1258,6 +1258,349 @@ func std_repeat(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 	return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.repeat (arg 0): %s, expected array or string", whatVal.Type().String())
 }
 
+func std_setUnion(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 3 {
+		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.setUnion %d, expected 3", len(args))
+	}
+
+	aVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !aVal.IsArray() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.setUnion (arg 0): %s, expected array", aVal.Type().String())
+	}
+
+	bVal, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !bVal.IsArray() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.setUnion (arg 1): %s, expected array", bVal.Type().String())
+	}
+
+	var keyF evaluator.Function
+	var funcArgs []evaluator.NamedValue
+	if !args[2].IsNone() {
+		f, err := args[2].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+		if !f.IsFunction() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.setUnion (arg 1): %s, expected function", f.Type().String())
+		}
+		keyF = f.Function(ctx)
+		funcArgs = []evaluator.NamedValue{{}}
+	}
+
+	aArr := aVal.Array(ctx)
+	bArr := bVal.Array(ctx)
+
+	i, j := 0, 0
+
+	res := make([]evaluator.Value, 0, (len(aArr)+len(bArr))/2)
+	for i < len(aArr) && j < len(bArr) {
+
+		aV, err := aArr[i].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+
+		bV, err := bArr[j].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+
+		var x int
+
+		if !keyF.Empty() {
+
+			funcArgs[0] = evaluator.NamedValue{Value: aV}
+			aVC, err := keyF.Exec(funcArgs, ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+			aVC, err = aVC.Eval(ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+
+			funcArgs[0] = evaluator.NamedValue{Value: bV}
+			bVC, err := keyF.Exec(funcArgs, ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+			bVC, err = bVC.Eval(ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+
+			x, err = aVC.Compare(bVC, ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+
+		} else {
+			x, err = aV.Compare(bV, ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+		}
+
+		if x < 0 {
+			res = append(res, aV)
+			i++
+		} else if x > 0 {
+			res = append(res, bV)
+			j++
+		} else { // x == 0
+			res = append(res, aV)
+			i++
+			j++
+		}
+	}
+
+	if i < len(aArr) {
+		for i < len(aArr) {
+			aV, err := aArr[i].Eval(ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+			// TODO: dont append duplicates
+			res = append(res, aV)
+			i++
+		}
+	}
+
+	if j < len(bArr) {
+		for j < len(bArr) {
+			bV, err := bArr[j].Eval(ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+			// TODO: dont append duplicates
+			res = append(res, bV)
+			j++
+		}
+	}
+
+	return evaluator.MakeArray(res, ctx), nil
+}
+
+func std_setInter(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 3 {
+		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.setInter %d, expected 3", len(args))
+	}
+
+	aVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !aVal.IsArray() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.setInter (arg 0): %s, expected array", aVal.Type().String())
+	}
+
+	bVal, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !bVal.IsArray() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.setInter (arg 1): %s, expected array", bVal.Type().String())
+	}
+
+	var keyF evaluator.Function
+	var funcArgs []evaluator.NamedValue
+	if !args[2].IsNone() {
+		f, err := args[2].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+		if !f.IsFunction() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.setInter (arg 1): %s, expected function", f.Type().String())
+		}
+		keyF = f.Function(ctx)
+		funcArgs = []evaluator.NamedValue{{}}
+	}
+
+	aArr := aVal.Array(ctx)
+	bArr := bVal.Array(ctx)
+
+	i, j := 0, 0
+
+	res := make([]evaluator.Value, 0, (len(aArr)+len(bArr))/2)
+	for i < len(aArr) && j < len(bArr) {
+
+		aV, err := aArr[i].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+
+		bV, err := bArr[j].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+
+		var x int
+
+		if !keyF.Empty() {
+
+			funcArgs[0] = evaluator.NamedValue{Value: aV}
+			aVC, err := keyF.Exec(funcArgs, ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+			aVC, err = aVC.Eval(ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+
+			funcArgs[0] = evaluator.NamedValue{Value: bV}
+			bVC, err := keyF.Exec(funcArgs, ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+			bVC, err = bVC.Eval(ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+
+			x, err = aVC.Compare(bVC, ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+
+		} else {
+			x, err = aV.Compare(bV, ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+		}
+
+		if x < 0 {
+			i++
+		} else if x > 0 {
+			j++
+		} else { // x == 0
+			res = append(res, aV)
+			i++
+			j++
+		}
+	}
+
+	return evaluator.MakeArray(res, ctx), nil
+}
+
+func std_setDiff(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 3 {
+		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.setDiff %d, expected 3", len(args))
+	}
+
+	aVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	if !aVal.IsArray() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.setDiff (arg 0): %s, expected array", aVal.Type().String())
+	}
+
+	bVal, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	if !bVal.IsArray() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.setDiff (arg 1): %s, expected array", bVal.Type().String())
+	}
+
+	var keyF evaluator.Function
+	var funcArgs []evaluator.NamedValue
+	if !args[2].IsNone() {
+		f, err := args[2].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+		if !f.IsFunction() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.setDiff (arg 2): %s, expected function", f.Type().String())
+		}
+		keyF = f.Function(ctx)
+		funcArgs = []evaluator.NamedValue{{}}
+	}
+
+	aArr := aVal.Array(ctx)
+	bArr := bVal.Array(ctx)
+
+	i, j := 0, 0
+	res := make([]evaluator.Value, 0, len(aArr))
+	for i < len(aArr) && j < len(bArr) {
+		aV, err := aArr[i].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+
+		bV, err := bArr[j].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+
+		var x int
+		if !keyF.Empty() {
+			funcArgs[0] = evaluator.NamedValue{Value: aV}
+			aVC, err := keyF.Exec(funcArgs, ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+
+			aVC, err = aVC.Eval(ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+
+			funcArgs[0] = evaluator.NamedValue{Value: bV}
+			bVC, err := keyF.Exec(funcArgs, ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+			bVC, err = bVC.Eval(ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+
+			x, err = aVC.Compare(bVC, ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+		} else {
+			x, err = aV.Compare(bV, ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+		}
+
+		if x < 0 {
+			res = append(res, aV)
+			i++
+		} else if x > 0 {
+			j++
+		} else { // x == 0
+			i++
+			j++
+		}
+	}
+
+	if i < len(aArr) {
+		for i < len(aArr) {
+			aV, err := aArr[i].Eval(ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+			res = append(res, aV)
+			i++
+		}
+	}
+	return evaluator.MakeArray(res, ctx), nil
+}
+
 func sliceArr[T any](arr []T, start, end, step int) ([]T, error) {
 
 	if step <= 0 {

@@ -128,6 +128,9 @@ var functions = map[string]func(evaluator.Context) evaluator.Function{
 	"flattenArrays":    f(std_flattenArrays, "arr"),
 	"flattenDeepArray": f(std_flattenDeepArray, "arr"),
 	"repeat":           f(std_repeat, "what", "count"),
+	"setUnion":         f(std_setUnion, "a", "b", "keyF"),
+	"setInter":         f(std_setInter, "a", "b", "keyF"),
+	"setDiff":          f(std_setDiff, "a", "b", "keyF"),
 
 	// -- Sets ---
 	"set": f(std_set, "arr", "keyF"),
