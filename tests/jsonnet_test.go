@@ -59,7 +59,10 @@ func TestStuff(t *testing.T) {
 func TestJsonnet(t *testing.T) {
 	testsLoc := filepath.Join("resources", "jsonnet-cpp", "test_suite")
 
-	filepath.WalkDir(testsLoc, func(path string, d fs.DirEntry, err error) error {
+	err := os.Chdir(testsLoc)
+	assert.NoError(t, err)
+
+	filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
