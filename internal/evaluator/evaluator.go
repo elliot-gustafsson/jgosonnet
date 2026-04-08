@@ -66,6 +66,28 @@ func ManifestValue(value Value, ctx Context) (any, error) {
 	}
 }
 
+func CreateFileScope(filename string, baseStd Value, ctx Context) uint32 {
+	keyId := ctx.Interner.Intern("thisFile")
+
+	layer := &Layer{
+		Keys:   []uint32{keyId},
+		Values: []Value{MakeString(filename, ctx)},
+		Meta:   []uint8{0},
+	}
+
+	fileObj := NewObject([]*Layer{layer})
+	fileObjVal := MakeObject(fileObj, ctx)
+
+	mergedObj := MergeObjects(baseStd.Object(ctx), fileObjVal.Object(ctx))
+	fileStd := MakeObject(mergedObj, ctx)
+
+	scopeId := ctx.Arena.NewScope(0, 2)
+	ctx.Arena.AddScopeBind(scopeId, NamedValue{Key: ctx.Interner.Intern("$std"), Value: fileStd})
+	ctx.Arena.AddScopeBind(scopeId, NamedValue{Key: ctx.Interner.Intern("std"), Value: fileStd})
+
+	return scopeId
+}
+
 func createErrorWithContext(err error, loc *ast.LocationRange) error {
 	return fmt.Errorf("%w\n\nlocation: %s", err, loc.String())
 }
@@ -89,10 +111,6 @@ func evaluateNodeLazy(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 		// 	return Value{}, errors.New("self not set")
 		// }
 		return ctx.Self, nil
-	// res := MakeThunk(Thunk{Node: node, ScopeId: scopeId, SkipMemoize: true}, ctx)
-	// return res, nil
-	// case *ast.Local:
-	// 	return handleLocal(node, scopeId, ctx)
 	default:
 		return MakeThunk(Thunk{
 			Node:                node,
@@ -671,7 +689,9 @@ func handleImport(node *ast.Import, scopeId uint32, ctx Context) (Value, error) 
 		return Value{}, errors.Join(errors.New("error resolving import"), rangeErr)
 	}
 
-	importScope := ctx.Importer.ImportScope
+	// importScope := ctx.Importer.ImportScope
+
+	importScope := CreateFileScope(file, ctx.Importer.BaseStd, ctx)
 
 	importCtx := ctx
 	importCtx.Self = Value{}

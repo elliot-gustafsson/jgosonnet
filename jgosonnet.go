@@ -174,11 +174,9 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 		return evaluator.Value{}, evaluator.Context{}, cleanup, err
 	}
 
-	scopeId := ctx.Arena.NewScope(0, 2)
-	ctx.Arena.AddScopeBind(scopeId, evaluator.NamedValue{Key: ctx.Interner.Intern("$std"), Value: std})
-	ctx.Arena.AddScopeBind(scopeId, evaluator.NamedValue{Key: ctx.Interner.Intern("std"), Value: std})
+	ctx.Importer = evaluator.NewImporter(t.jpaths, std, t.astImporter)
 
-	ctx.Importer = evaluator.NewImporter(scopeId, t.jpaths, t.astImporter)
+	scopeId := evaluator.CreateFileScope(file, std, ctx)
 
 	value, err := evaluator.EvaluateNode(node, scopeId, ctx)
 	if err != nil {

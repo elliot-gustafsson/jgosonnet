@@ -100,7 +100,7 @@ func TestEvaluator(t *testing.T) {
 	// }
 
 	// println("--- out ---")
-	// println(stuff)
+	println(stuff)
 	// println("--- end ---")
 	// println()
 }

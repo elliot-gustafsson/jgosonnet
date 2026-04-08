@@ -10,8 +10,8 @@ import (
 )
 
 type Importer struct {
-	JPaths      []string
-	ImportScope uint32
+	JPaths  []string
+	BaseStd Value
 
 	astImporter *AstImporter
 	cache       map[string]Value
@@ -22,10 +22,10 @@ type AstImporter struct {
 	astCache map[string]ast.Node
 }
 
-func NewImporter(scopeId uint32, jPaths []string, astImporter *AstImporter) *Importer {
+func NewImporter(jPaths []string, baseStd Value, astImporter *AstImporter) *Importer {
 	return &Importer{
-		ImportScope: scopeId,
-		JPaths:      jPaths,
+		JPaths:  jPaths,
+		BaseStd: baseStd,
 		// TODO: maybe use slices?
 		cache:       make(map[string]Value, 32),
 		astImporter: astImporter,

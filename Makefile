@@ -24,7 +24,7 @@ test-coverage:
 
 benchmark:
 	mkdir -p benchmarks/out
-	cd benchmarks && /usr/bin/time -v go test -benchmem -bench=. -cpuprofile=out/cpu.prof -memprofile=out/mem.prof -o=out/benchmarks.test -count=1 -v
+	cd benchmarks && go test -benchmem -bench=. -cpuprofile=out/cpu.prof -memprofile=out/mem.prof -o=out/benchmarks.test -count=1 -v
 
 
 benchmark-prof-cpu:
