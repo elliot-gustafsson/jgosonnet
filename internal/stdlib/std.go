@@ -17,6 +17,7 @@ var functions = map[string]func(evaluator.Context) evaluator.Function{
 	// --- General ---
 	"$flatMapArray":    f(builtin_flatMapArray, "func", "arr"),
 	"$objectFlatMerge": f(builtin_objectFlatMerge, "arr"),
+	"extVar":           f(std_extVar, "x"),
 	"trace":            f(std_trace, "str", "rest"),
 	"assertEqual":      f(std_assertEqual, "a", "b"),
 	"toString":         f(std_toString, "a"),
@@ -84,6 +85,7 @@ var functions = map[string]func(evaluator.Context) evaluator.Function{
 	"strReplace":          f(std_strReplace, "str", "from", "to"),
 	"split":               f(std_split, "str", "c"),
 	"splitLimit":          f(std_splitLimit, "str", "c", "maxsplits"),
+	"splitLimitR":         f(std_splitLimitR, "str", "c", "maxsplits"),
 	"stripChars":          f(std_stripChars, "str", "chars"),
 	"rstripChars":         f(std_rstripChars, "str", "chars"),
 	"lstripChars":         f(std_lstripChars, "str", "chars"),
@@ -107,6 +109,7 @@ var functions = map[string]func(evaluator.Context) evaluator.Function{
 
 	// --- Arrays ---
 	"join":             f(std_join, "sep", "arr"),
+	"deepJoin":         f(std_deepJoin, "arr"),
 	"range":            f(std_range, "from", "to"),
 	"makeArray":        f(std_makeArray, "sz", "func"),
 	"filter":           f(std_filter, "func", "arr"),
@@ -157,6 +160,7 @@ var functions = map[string]func(evaluator.Context) evaluator.Function{
 	"manifestPython":       f(std_manifestPython, "v"),
 	"manifestPythonVars":   f(std_manifestPythonVars, "conf"),
 	"manifestXmlJsonml":    f(std_manifestXmlJsonml, "value"),
+	"manifestTomlEx":       f(std_manifestTomlEx, "value", "indent"),
 }
 
 func f(f evaluator.Func, argn ...string) func(evaluator.Context) evaluator.Function {
@@ -261,6 +265,60 @@ func liftValueToBool(f func(evaluator.NamedValue) bool, name string) evaluator.F
 		res := f(evaluator.NamedValue{Value: a})
 		return evaluator.MakeBool(res), nil
 	}
+}
+
+func std_extVar(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 1 {
+		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.extVar: %d, expected 1", len(args))
+	}
+
+	nameVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !nameVal.IsString() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.extVar (arg 0): %s, expected string", nameVal.Type().String())
+	}
+	name := nameVal.String(ctx)
+
+	s, ok := ctx.Environment.ExtVars[name]
+	if ok {
+		return evaluator.MakeString(s, ctx), nil
+	}
+
+	s, ok = ctx.Environment.ExtCodes[name]
+	if ok {
+		name := "<extvar:" + name + ">"
+
+		importer := ctx.Environment.Importer
+
+		val := ctx.Environment.Importer.Get(name)
+		if !val.IsNone() {
+			return val, nil
+		}
+
+		n, err := importer.ResolveSnippet(name, s)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+
+		importCtx := ctx
+		importCtx.Self = evaluator.Value{}
+		importCtx.SuperOffset = 0
+
+		scopeId := evaluator.CreateFileScope(name, importer.BaseStd, importCtx)
+
+		val, err = evaluator.EvaluateNode(n, scopeId, ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+
+		importer.Set(name, val)
+
+		return val, nil
+	}
+
+	return evaluator.Value{}, fmt.Errorf("undefined external variable: %s", name)
 }
 
 func std_trace(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {

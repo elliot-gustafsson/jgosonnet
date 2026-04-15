@@ -652,24 +652,26 @@ func handleImport(node *ast.Import, scopeId uint32, ctx Context) (Value, error) 
 	var importedNode ast.Node
 	var finalPath string
 
+	importer := ctx.Environment.Importer
+
 	dirs := []string{""}
 	if !filepath.IsAbs(file) {
 		dirs = []string{currentFileDir}
-		dirs = append(dirs, ctx.Importer.JPaths...)
+		dirs = append(dirs, importer.JPaths...)
 	}
 
 	var rangeErr error
 	for _, dir := range dirs {
 		fp := filepath.Join(dir, file)
 
-		v := ctx.Importer.Get(fp)
+		v := importer.Get(fp)
 		if !v.IsNone() {
 			return v, nil
 		}
 
 		// TODO: check and mark fp loading to catch import loops
 
-		in, innerErr := ctx.Importer.ResolveImport(fp)
+		in, innerErr := importer.ResolveImport(fp)
 		if os.IsNotExist(innerErr) {
 			rangeErr = errors.Join(rangeErr, innerErr)
 			continue
@@ -691,7 +693,7 @@ func handleImport(node *ast.Import, scopeId uint32, ctx Context) (Value, error) 
 
 	// importScope := ctx.Importer.ImportScope
 
-	importScope := CreateFileScope(file, ctx.Importer.BaseStd, ctx)
+	importScope := CreateFileScope(file, importer.BaseStd, ctx)
 
 	importCtx := ctx
 	importCtx.Self = Value{}
@@ -701,7 +703,7 @@ func handleImport(node *ast.Import, scopeId uint32, ctx Context) (Value, error) 
 		return Value{}, createErrorWithContext(err, &node.LocRange)
 	}
 
-	ctx.Importer.Set(finalPath, v)
+	importer.Set(finalPath, v)
 
 	return v, nil
 

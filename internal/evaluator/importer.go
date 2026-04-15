@@ -47,8 +47,34 @@ func (i *Importer) Get(path string) Value {
 	return i.cache[path]
 }
 
+func (i *Importer) ResolveSnippet(name, data string) (ast.Node, error) {
+	return i.astImporter.ResolveSnippet(name, data)
+}
+
 func (i *Importer) ResolveImport(filePath string) (ast.Node, error) {
 	return i.astImporter.ResolveImport(filePath)
+}
+
+func (t *AstImporter) ResolveSnippet(name, data string) (ast.Node, error) {
+
+	t.cacheMu.RLock()
+	importedNode, exist := t.astCache[name]
+	t.cacheMu.RUnlock()
+
+	if exist {
+		return importedNode, nil
+	}
+
+	importedNode, err := jsonnet.SnippetToAST(name, string(data))
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve snippet %s, err: %w", name, err)
+	}
+
+	t.cacheMu.Lock()
+	t.astCache[name] = importedNode
+	t.cacheMu.Unlock()
+
+	return importedNode, nil
 }
 
 func (t *AstImporter) ResolveImport(filePath string) (ast.Node, error) {

@@ -12,51 +12,58 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestCompare(t *testing.T) {
+func TestGoJsonnetTests(t *testing.T) {
+	testsLoc := filepath.Join("resources", "go-jsonnet", "testdata")
 
-	file := filepath.Join("resources", "test.jsonnet")
-
-	ev := jgosonnet.NewEvaluator()
-
-	out, err := ev.EvaluateJson(file)
+	err := os.Chdir(testsLoc)
 	assert.NoError(t, err)
 
-	exp, err := GetExpected(file)
-	assert.NoError(t, err)
+	filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
 
-	assert.Equal(t, exp, out)
+		name := d.Name()
 
-	// if exp != out {
-	// 	println("--------------------")
-	// 	println("expected:")
-	// 	println("--------------------")
-	// 	println(out)
-	// 	println("--------------------")
+		if d.IsDir() {
+			return nil
+		}
 
-	// 	println("actual:")
-	// 	println("--------------------")
-	// 	println(exp)
-	// 	println("--------------------")
-	// }
+		if filepath.Ext(name) != ".jsonnet" {
+			return nil
+		}
+
+		if strings.HasPrefix(name, "error.") {
+			fmt.Println("skipping error test for now", name)
+			return nil
+		}
+
+		expectedOutputFile := strings.TrimSuffix(name, ".jsonnet") + ".golden"
+		_, err = os.Stat(expectedOutputFile)
+		if err != nil {
+			return nil
+		}
+
+		// fmt.Println(fi.Name())
+
+		t.Run(name, func(t *testing.T) {
+			ev := jgosonnet.NewEvaluator()
+
+			out, err := ev.EvaluateJson(name)
+			assert.NoError(t, err)
+
+			expectedOut, err := os.ReadFile(expectedOutputFile)
+			assert.NoError(t, err)
+
+			assert.Equal(t, string(expectedOut), out)
+		})
+
+		return nil
+
+	})
 }
 
-func TestStuff(t *testing.T) {
-
-	// file := filepath.Join("resources", "jsonnet-cpp", "test_suite", "array_comparison.jsonnet")
-	file := filepath.Join("resources", "jsonnet-cpp", "test_suite", "stdlib.jsonnet")
-
-	ev := jgosonnet.NewEvaluator()
-
-	out, err := ev.EvaluateJson(file)
-	assert.NoError(t, err)
-
-	expectedOut, err := os.ReadFile(file + ".golden")
-	assert.NoError(t, err)
-
-	assert.Equal(t, string(expectedOut), out)
-}
-
-func TestJsonnet(t *testing.T) {
+func TestJsonnetCppTests(t *testing.T) {
 	testsLoc := filepath.Join("resources", "jsonnet-cpp", "test_suite")
 
 	err := os.Chdir(testsLoc)
@@ -82,10 +89,7 @@ func TestJsonnet(t *testing.T) {
 			return nil
 		}
 
-		// fmt.Println(name)
-		inputFile := filepath.Join(testsLoc, name)
-
-		expectedOutputFile := filepath.Join(testsLoc, name) + ".golden"
+		expectedOutputFile := name + ".golden"
 		_, err = os.Stat(expectedOutputFile)
 		if err != nil {
 			return nil
@@ -96,7 +100,7 @@ func TestJsonnet(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ev := jgosonnet.NewEvaluator()
 
-			out, err := ev.EvaluateJson(inputFile)
+			out, err := ev.EvaluateJson(name)
 			assert.NoError(t, err)
 
 			expectedOut, err := os.ReadFile(expectedOutputFile)
@@ -108,4 +112,27 @@ func TestJsonnet(t *testing.T) {
 		return nil
 
 	})
+}
+
+func TestSpecific(t *testing.T) {
+	testsLoc := filepath.Join("resources", "jsonnet-cpp", "test_suite")
+	name := "stdlib.jsonnet"
+	expectedOutputFile := "stdlib.jsonnet.golden"
+
+	err := os.Chdir(testsLoc)
+	assert.NoError(t, err)
+
+	ev := jgosonnet.NewEvaluator()
+
+	ev.ExtVar("var1", "test")
+	ev.ExtCode("var2", `{"x": 1, "y": 2}`)
+
+	out, err := ev.EvaluateJson(name)
+	assert.NoError(t, err)
+
+	expectedOut, err := os.ReadFile(expectedOutputFile)
+	assert.NoError(t, err)
+
+	assert.Equal(t, string(expectedOut), out)
+
 }

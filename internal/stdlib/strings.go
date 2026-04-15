@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
@@ -338,6 +339,10 @@ func std_findSubstr(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 
 	res := []evaluator.Value{}
 
+	if substr == "" {
+		return evaluator.MakeArray(res, ctx), nil
+	}
+
 	offset := 0
 	for {
 		i := strings.Index(full[offset:], substr)
@@ -345,7 +350,7 @@ func std_findSubstr(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 			break
 		}
 		res = append(res, evaluator.MakeNumber(float64(offset+i)))
-		offset += i + len(substr)
+		offset += i + 1
 	}
 
 	return evaluator.MakeArray(res, ctx), nil
@@ -445,19 +450,89 @@ func std_splitLimit(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	}
 	split := splitVal.String(ctx)
 
-	maxCountVal, err := args[2].Eval(ctx)
+	maxSplitsVal, err := args[2].Eval(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !maxCountVal.IsNumber() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.splitLimit (arg 2): %s, expected number", maxCountVal.Type().String())
+	if !maxSplitsVal.IsNumber() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.splitLimit (arg 2): %s, expected number", maxSplitsVal.Type().String())
 	}
-	maxCount := maxCountVal.Number()
+	maxSplits := maxSplitsVal.Number()
+
+	var arr []string
+	if maxSplits < 0 {
+		arr = strings.Split(full, split)
+	} else {
+		arr = strings.SplitN(full, split, int(maxSplits)+1)
+	}
 
 	res := []evaluator.Value{}
-	for _, v := range strings.SplitN(full, split, int(maxCount)+1) {
+	for _, v := range arr {
 		res = append(res, evaluator.MakeString(v, ctx))
 	}
+
+	return evaluator.MakeArray(res, ctx), nil
+}
+
+func std_splitLimitR(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+
+	if len(args) != 3 {
+		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.splitLimitR: %d, expected 3", len(args))
+	}
+
+	fullVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !fullVal.IsString() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.splitLimitR (arg 0): %s, expected string", fullVal.Type().String())
+	}
+	full := fullVal.String(ctx)
+
+	splitVal, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !splitVal.IsString() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.splitLimitR (arg 1): %s, expected string", splitVal.Type().String())
+	}
+	split := splitVal.String(ctx)
+
+	maxSplitsVal, err := args[2].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !maxSplitsVal.IsNumber() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.splitLimitR (arg 2): %s, expected number", maxSplitsVal.Type().String())
+	}
+	maxSplits := maxSplitsVal.Number()
+
+	if maxSplits < 0 {
+		arr := strings.Split(full, split)
+		res := make([]evaluator.Value, 0, len(arr))
+		for _, v := range arr {
+			res = append(res, evaluator.MakeString(v, ctx))
+		}
+		return evaluator.MakeArray(res, ctx), nil
+	}
+
+	s := full
+
+	res := make([]evaluator.Value, 0, int(maxSplits))
+	for range int(maxSplits) {
+		idx := strings.LastIndex(full, split)
+		if idx < 0 {
+			break // No more separators found
+		}
+		x := s[idx+len(split):]
+		res = append(res, evaluator.MakeString(x, ctx))
+		// Truncate the string
+		s = s[:idx]
+	}
+
+	res = append(res, evaluator.MakeString(s, ctx))
+
+	slices.Reverse(res)
 
 	return evaluator.MakeArray(res, ctx), nil
 }

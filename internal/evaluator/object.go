@@ -300,21 +300,7 @@ type LayerRef struct {
 }
 
 func CompileObjectPlan(obj *Object, ctx Context) []*FieldPlan {
-	plans := compileObjectPlan(obj)
-
-	slices.SortFunc(plans, func(a, b *FieldPlan) int {
-		aName := ctx.Interner.Get(a.KeyId)
-		bName := ctx.Interner.Get(b.KeyId)
-		if aName > bName {
-			return 1
-		}
-		if aName < bName {
-			return -1
-		}
-		return 0
-	})
-
-	return plans
+	return CompileObjectPlanEx(obj, ctx, false)
 }
 
 func CompileObjectPlanEx(obj *Object, ctx Context, naturalSort bool) []*FieldPlan {
@@ -707,9 +693,6 @@ func (t *Object) Prune(ctx Context) (Value, error) {
 	}
 
 	plans := CompileObjectPlan(t, ctx)
-	if len(plans) == 0 {
-		return MakeNull(), nil
-	}
 
 	layer := &Layer{
 		Keys: make([]uint32, 0, len(plans)),

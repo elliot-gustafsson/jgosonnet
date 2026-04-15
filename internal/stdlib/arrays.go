@@ -207,6 +207,60 @@ func std_join(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 	return evaluator.MakeArray(res, ctx), nil
 }
 
+func std_deepJoin(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 1 {
+		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.deepJoin %d, expected 1", len(args))
+	}
+
+	arrVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	if arrVal.IsString() {
+		return evaluator.MakeString(arrVal.String(ctx), ctx), nil
+	}
+
+	if !arrVal.IsArray() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.deepJoin (arg 0): %s, expected string or array", arrVal.Type().String())
+	}
+	arr := arrVal.Array(ctx)
+
+	var b strings.Builder
+
+	err = flattenArray(&b, arr, ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	return evaluator.MakeString(b.String(), ctx), nil
+}
+
+func flattenArray(b *strings.Builder, arr []evaluator.Value, ctx evaluator.Context) error {
+
+	for _, v := range arr {
+		v, err := v.Eval(ctx)
+		if err != nil {
+			return err
+		}
+		if v.IsArray() {
+			err := flattenArray(b, v.Array(ctx), ctx)
+			if err != nil {
+				return err
+			}
+			continue
+		}
+
+		if v.IsString() {
+			b.WriteString(v.String(ctx))
+			continue
+		}
+
+		return fmt.Errorf("expected string or array, got %s", v.Type().String())
+	}
+
+	return nil
+}
+
 func std_filter(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	if len(args) != 2 {
 		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.filter %d, expected 2", len(args))

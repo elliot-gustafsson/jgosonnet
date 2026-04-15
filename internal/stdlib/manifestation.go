@@ -64,7 +64,6 @@ func std_manifestYamlDoc(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 }
 
 func std_manifestYamlStream(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	// std.manifestYamlStream(value, indent_array_in_object=false, c_document_end=false, quote_keys=true)
 	if len(args) != 4 {
 		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.manifestYamlStream: %d, expected 4", len(args))
 	}
@@ -89,8 +88,8 @@ func std_manifestYamlStream(args []evaluator.NamedValue, ctx evaluator.Context) 
 		indent_array_in_object = v.Bool()
 	}
 
-	c_document_end := false
-	if !args[1].IsNone() {
+	c_document_end := true
+	if !args[2].IsNone() {
 		v, err := args[2].Eval(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
@@ -548,4 +547,37 @@ func auxManifestXmlJsonml(v evaluator.Value, ctx evaluator.Context, b *strings.B
 	b.WriteString(tag)
 	b.WriteByte('>')
 	return nil
+}
+
+func std_manifestTomlEx(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 2 {
+		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.manifestTomlEx: %d, expected 2", len(args))
+	}
+	// Evaluate the value
+	val, err := args[0].Value.Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	// TOML root must be an object
+	if !val.IsObject() {
+		return evaluator.Value{}, fmt.Errorf("TOML body must be an object. Got %s", val.Type().String())
+	}
+	// Evaluate the indent string
+	vindent, err := args[1].Value.Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !vindent.IsString() {
+		return evaluator.Value{}, fmt.Errorf("std.manifestTomlEx expects indent to be a string")
+	}
+	sindent := vindent.String(ctx)
+
+	var b strings.Builder
+
+	err = evaluator.ManifestToml(&b, val, ctx, sindent)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	return evaluator.MakeString(b.String(), ctx), nil
 }

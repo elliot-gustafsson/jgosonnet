@@ -12,25 +12,45 @@ import (
 )
 
 type Evaluator struct {
-	// interner *evaluator.Interner
 	jpaths   []string
 	traceOut io.Writer
 
 	astImporter *evaluator.AstImporter
-	// nativeFuncs map[string]*NativeFunction // TODO: make it possible to pass custom funcs
+	extVars     map[string]string
+	extCodes    map[string]string
+	nativeFuncs map[string]evaluator.Function
+}
+
+type NativeFunction struct {
+	Args map[string]any
+	Fn   func(args []any) (any, error)
 }
 
 func NewEvaluator() *Evaluator {
 	return &Evaluator{
-		// interner:    evaluator.NewInterner(),
 		traceOut:    os.Stdout,
 		astImporter: evaluator.NewAstImporter(),
+		extVars:     make(map[string]string),
+		extCodes:    make(map[string]string),
+		nativeFuncs: make(map[string]evaluator.Function),
 	}
 }
 
 func (t *Evaluator) JPaths(paths []string) {
 	t.jpaths = paths
 }
+
+func (t *Evaluator) ExtVar(key, val string) {
+	t.extVars[key] = val
+}
+
+func (t *Evaluator) ExtCode(key, val string) {
+	t.extCodes[key] = val
+}
+
+// func (t *Evaluator) NativeFunction(key string, f NativeFunction) {
+// 		t.nativeFuncs[key] = f
+// }
 
 // Get output as a go struct, map[string]any || []any ...
 func (t *Evaluator) Evaluate(file string) (any, error) {
@@ -174,7 +194,20 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 		return evaluator.Value{}, evaluator.Context{}, cleanup, err
 	}
 
-	ctx.Importer = evaluator.NewImporter(t.jpaths, std, t.astImporter)
+	env := &evaluator.Environment{
+		Importer:        evaluator.NewImporter(t.jpaths, std, t.astImporter),
+		ExtVars:         t.extVars,
+		ExtCodes:        t.extCodes,
+		NativeFunctions: make(map[string]evaluator.Function, len(t.nativeFuncs)),
+	}
+
+	// TODO: handle native funcs
+	// for k, v := range t.nativeFuncs {
+	// 	vars
+	// 	env.NativeFunctions[k] = evaluator.Function{}
+	// }
+
+	ctx.Environment = env
 
 	scopeId := evaluator.CreateFileScope(file, std, ctx)
 

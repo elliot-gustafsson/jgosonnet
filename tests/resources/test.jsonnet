@@ -1,3 +1,5 @@
-// std.setUnion(['a', 'b'], ['b', 'c'])
+// std.parseYaml('1\n---')
 
-std.setInter(['a', 'b'], ['b', 'c'])
+// std.findSubstr('', 'a')
+// std.findSubstr('aa', '')
+std.findSubstr('aa', 'bbaabaaa')

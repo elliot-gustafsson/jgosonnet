@@ -1,3 +1,6 @@
 [submodule "tests/resources/jsonnet-cpp"]
 	path = tests/resources/jsonnet-cpp
 	url = https://github.com/google/jsonnet.git
+[submodule "tests/resources/go-jsonnet"]
+	path = tests/resources/go-jsonnet
+	url = git@github.com:google/go-jsonnet.git

@@ -1,10 +1,14 @@
 package evaluator
 
+import (
+	"github.com/google/go-jsonnet"
+	"github.com/google/go-jsonnet/ast"
+)
+
 type Context struct {
-	// Cwd      string
-	Interner *Interner
-	Importer *Importer
-	Arena    *Arena
+	Interner    *Interner
+	Arena       *Arena
+	Environment *Environment
 
 	Self Value // self
 
@@ -144,4 +148,48 @@ func (a *Arena) Reset() {
 	a.Functions = a.Functions[:0]
 	a.Scopes = a.Scopes[:0]
 	a.bindings = a.bindings[:0]
+}
+
+type ExtVar interface {
+	Eval(scopeId uint32, ctx Context) (Value, error)
+}
+
+type ExtString struct {
+	Key, Val string
+	v        Value
+}
+
+func (t *ExtString) Eval(scopeId uint32, ctx Context) (Value, error) {
+	if !t.v.IsNone() {
+		return t.v, nil
+	}
+	return MakeString(t.Val, ctx), nil
+}
+
+type ExtCode struct {
+	Key, Val string
+	n        ast.Node
+	v        Value
+}
+
+func (t *ExtCode) Eval(scopeId uint32, ctx Context) (Value, error) {
+	if !t.v.IsNone() {
+		return t.v, nil
+	}
+
+	if t.n == nil {
+		n, err := jsonnet.SnippetToAST(t.Key, t.Val)
+		if err != nil {
+			return Value{}, err
+		}
+		t.n = n
+	}
+	return EvaluateNode(t.n, scopeId, ctx)
+}
+
+type Environment struct {
+	Importer        *Importer
+	ExtVars         map[string]string
+	ExtCodes        map[string]string
+	NativeFunctions map[string]Function
 }

@@ -1,8 +1,10 @@
 package stdlib
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strconv"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
@@ -80,12 +82,31 @@ func std_parseYaml(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 	if !a.IsString() {
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.parseYaml (arg 0): %s, expected string", a.Type().String())
 	}
-	var data any
-	err = yaml.Unmarshal([]byte(a.String(ctx)), &data)
-	if err != nil {
-		return evaluator.Value{}, fmt.Errorf("failed to parse yaml, err: %w", err)
+
+	yamlString := a.String(ctx)
+	dec := yaml.NewDecoder(bytes.NewReader([]byte(yamlString)))
+
+	var documents []any
+	for {
+
+		var data any
+		err := dec.Decode(&data)
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return evaluator.Value{}, fmt.Errorf("failed to parse yaml, err: %w", err)
+		}
+
+		documents = append(documents, data)
 	}
-	return rawDataToValue(data, ctx)
+	if len(documents) == 0 {
+		return evaluator.MakeNull(), nil
+	}
+
+	if len(documents) > 1 {
+		return rawDataToValue(documents, ctx)
+	}
+	return rawDataToValue(documents[0], ctx)
 }
 
 func rawDataToValue(x any, ctx evaluator.Context) (evaluator.Value, error) {
