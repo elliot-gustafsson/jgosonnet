@@ -100,6 +100,9 @@ func TestJsonnetCppTests(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ev := jgosonnet.NewEvaluator()
 
+			ev.ExtVar("var1", "test")
+			ev.ExtCode("var2", `{"x": 1, "y": 2}`)
+
 			out, err := ev.EvaluateJson(name)
 			assert.NoError(t, err)
 
@@ -118,8 +121,10 @@ func TestSpecific(t *testing.T) {
 	testsLoc := filepath.Join("resources", "jsonnet-cpp", "test_suite")
 	// name := "stdlib.jsonnet"
 	// expectedOutputFile := "stdlib.jsonnet.golden"
-	name := "trace.jsonnet"
-	expectedOutputFile := "trace.jsonnet.golden"
+	// name := "trace.jsonnet"
+	// expectedOutputFile := "trace.jsonnet.golden"
+	name := "unicode_bmp.jsonnet"
+	expectedOutputFile := "unicode_bmp.jsonnet.golden"
 
 	err := os.Chdir(testsLoc)
 	assert.NoError(t, err)

@@ -246,9 +246,48 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 			}
 			res := -unary.Number()
 			return MakeNumber(res), nil
+		case ast.UopBitwiseNot:
+			if !unary.IsNumber() {
+				return Value{}, fmt.Errorf("unexpected unary type %s for op %s, expected number", unary.Type().String(), node.Op.String())
+			}
+			val32 := int64(unary.Number())
+			notVal32 := ^val32
+			return MakeNumber(float64(notVal32)), nil
 		}
 	case *ast.Import:
 		return handleImport(node, scopeId, ctx)
+	case *ast.ImportStr:
+
+		// TODO: make string cache
+		// importer := ctx.Environment.Importer
+
+		// TODO: take full path here?
+		filePath := string(node.File.Value)
+
+		// currentFileDir := filepath.Dir(node.NodeBase.LocRange.FileName)
+
+		// fp := filepath.Join(currentFileDir, filePath)
+		fp := filePath
+		// fmt.Println(currentFileDir)
+
+		// val := importer.Get(fp)
+		// if !val.IsNone() {
+		// 	return val, nil
+		// }
+
+		fileData, err := os.ReadFile(fp)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return Value{}, err
+			}
+			return Value{}, fmt.Errorf("failed importing file: %s, err: %w", fp, err)
+		}
+
+		res := MakeString(string(fileData), ctx)
+
+		// importer.Set(fp, res)
+
+		return res, nil
 	case *ast.Self:
 		// if ctx.Self.IsNone() {
 		// 	return Value{}, errors.New("self not set")
@@ -647,6 +686,7 @@ func handleImport(node *ast.Import, scopeId uint32, ctx Context) (Value, error) 
 
 	file := fileVal.String(ctx)
 
+	// TODO: take full path here?
 	currentFileDir := filepath.Dir(node.NodeBase.LocRange.FileName)
 
 	var importedNode ast.Node

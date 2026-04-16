@@ -28,7 +28,7 @@ type NativeFunction struct {
 
 func NewEvaluator() *Evaluator {
 	return &Evaluator{
-		traceOut:    os.Stdout,
+		traceOut:    os.Stderr,
 		astImporter: evaluator.NewAstImporter(),
 		extVars:     make(map[string]string),
 		extCodes:    make(map[string]string),
@@ -38,6 +38,10 @@ func NewEvaluator() *Evaluator {
 
 func (t *Evaluator) JPaths(paths []string) {
 	t.jpaths = paths
+}
+
+func (t *Evaluator) TraceOut(w io.Writer) {
+	t.traceOut = w
 }
 
 func (t *Evaluator) ExtVar(key, val string) {
@@ -195,6 +199,7 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 	}
 
 	env := &evaluator.Environment{
+		TraceOut:        t.traceOut,
 		Importer:        evaluator.NewImporter(t.jpaths, std, t.astImporter),
 		ExtVars:         t.extVars,
 		ExtCodes:        t.extCodes,

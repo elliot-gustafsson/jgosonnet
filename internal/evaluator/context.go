@@ -1,6 +1,8 @@
 package evaluator
 
 import (
+	"io"
+
 	"github.com/google/go-jsonnet"
 	"github.com/google/go-jsonnet/ast"
 )
@@ -188,8 +190,11 @@ func (t *ExtCode) Eval(scopeId uint32, ctx Context) (Value, error) {
 }
 
 type Environment struct {
+	TraceOut        io.Writer
 	Importer        *Importer
 	ExtVars         map[string]string
 	ExtCodes        map[string]string
 	NativeFunctions map[string]Function
+
+	Location *ast.LocationRange
 }

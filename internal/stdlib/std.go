@@ -3,7 +3,6 @@ package stdlib
 import (
 	"fmt"
 	"math"
-	"os"
 	"unicode/utf8"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
@@ -351,7 +350,7 @@ func std_trace(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.trace (arg 0): %s, expected string", str.Type().String())
 	}
 
-	_, err = fmt.Fprint(os.Stdout, "TRACE: "+str.String(ctx))
+	_, err = fmt.Fprint(ctx.Environment.TraceOut, "TRACE: "+str.String(ctx)+"\n")
 	if err != nil {
 		return evaluator.Value{}, err
 	}
