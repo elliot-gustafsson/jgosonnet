@@ -116,8 +116,10 @@ func TestJsonnetCppTests(t *testing.T) {
 
 func TestSpecific(t *testing.T) {
 	testsLoc := filepath.Join("resources", "jsonnet-cpp", "test_suite")
-	name := "stdlib.jsonnet"
-	expectedOutputFile := "stdlib.jsonnet.golden"
+	// name := "stdlib.jsonnet"
+	// expectedOutputFile := "stdlib.jsonnet.golden"
+	name := "trace.jsonnet"
+	expectedOutputFile := "trace.jsonnet.golden"
 
 	err := os.Chdir(testsLoc)
 	assert.NoError(t, err)

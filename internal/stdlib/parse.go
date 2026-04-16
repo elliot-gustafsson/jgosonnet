@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 	"github.com/google/go-jsonnet/ast"
@@ -167,4 +168,59 @@ func rawDataToValue(x any, ctx evaluator.Context) (evaluator.Value, error) {
 		return evaluator.Value{}, fmt.Errorf("unahandled type %T when converting data to value", x)
 	}
 
+}
+
+func std_encodeUTF8(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 1 {
+		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.encodeUTF8: %d, expected 1", len(args))
+	}
+
+	strVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !strVal.IsString() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.encodeUTF8 (arg 0): %s, expected string", strVal.Type().String())
+	}
+	str := strVal.String(ctx)
+
+	res := make([]evaluator.Value, 0, len(str))
+	for _, b := range []byte(str) {
+		res = append(res, evaluator.MakeNumber(float64(b)))
+	}
+
+	return evaluator.MakeArray(res, ctx), nil
+}
+
+func std_decodeUTF8(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 1 {
+		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.decodeUTF8: %d, expected 1", len(args))
+	}
+
+	arrVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !arrVal.IsArray() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.decodeUTF8 (arg 0): %s, expected array", arrVal.Type().String())
+	}
+	arr := arrVal.Array(ctx)
+
+	var b strings.Builder
+	for _, v := range arr {
+		v, err := v.Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+		if !v.IsNumber() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type in std.encodeUTF8 (arg 0) array: %s, expected number", v.Type().String())
+		}
+		num := v.Number()
+		if num < 0 || num > 255 {
+			return evaluator.Value{}, fmt.Errorf("Bytes must be integers in range [0, 255], got %.0f", v.Number())
+		}
+		b.WriteByte(byte(num))
+	}
+
+	return evaluator.MakeString(b.String(), ctx), nil
 }

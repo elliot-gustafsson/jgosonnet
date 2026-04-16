@@ -227,9 +227,18 @@ func (v Value) ToString(ctx Context) (string, error) {
 			return "true", nil
 		}
 		return "false", nil
-	case ValueTypeObject, ValueTypeArray:
+	case ValueTypeArray:
 		var b strings.Builder
 		err := ManifestJson(&b, v, ctx, JsonConfigToString)
+		if err != nil {
+			return "", err
+		}
+		return b.String(), nil
+	case ValueTypeObject:
+		subCtx := ctx
+		subCtx.Self = v
+		var b strings.Builder
+		err := ManifestJson(&b, v, subCtx, JsonConfigToString)
 		if err != nil {
 			return "", err
 		}

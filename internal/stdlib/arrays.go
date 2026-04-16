@@ -1655,6 +1655,373 @@ func std_setDiff(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.
 	return evaluator.MakeArray(res, ctx), nil
 }
 
+func std_find(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 2 {
+		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.find %d, expected 2", len(args))
+	}
+
+	valueVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	arrVal, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !arrVal.IsArray() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.find (arg 1): %s, expected array", arrVal.Type().String())
+	}
+	arr := arrVal.Array(ctx)
+
+	res := []evaluator.Value{}
+	for i, v := range arr {
+		v, err := v.Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+
+		if valueVal.Type() != v.Type() {
+			continue
+		}
+
+		eq, err := valueVal.Equal(v, ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+		if eq {
+			res = append(res, evaluator.MakeNumber(float64(i)))
+		}
+	}
+
+	return evaluator.MakeArray(res, ctx), nil
+}
+
+func std_any(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 1 {
+		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.any %d, expected 1", len(args))
+	}
+
+	arrVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !arrVal.IsArray() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.any (arg 0): %s, expected array", arrVal.Type().String())
+	}
+	arr := arrVal.Array(ctx)
+
+	for _, v := range arr {
+		v, err := v.Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+
+		if !v.IsBool() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type in std.any (arg 0) array: %s, expected boolean", v.Type().String())
+		}
+
+		if v.Bool() {
+			return evaluator.MakeBool(true), nil
+		}
+	}
+
+	return evaluator.MakeBool(false), nil
+}
+
+func std_all(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 1 {
+		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.all %d, expected 1", len(args))
+	}
+
+	arrVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !arrVal.IsArray() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.all (arg 0): %s, expected array", arrVal.Type().String())
+	}
+	arr := arrVal.Array(ctx)
+
+	for _, v := range arr {
+		v, err := v.Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+
+		if !v.IsBool() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type in std.all (arg 0) array: %s, expected boolean", v.Type().String())
+		}
+
+		if !v.Bool() {
+			return evaluator.MakeBool(false), nil
+		}
+	}
+
+	return evaluator.MakeBool(true), nil
+}
+
+func std_avg(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 1 {
+		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.avg %d, expected 1", len(args))
+	}
+
+	arrVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !arrVal.IsArray() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.avg (arg 0): %s, expected array", arrVal.Type().String())
+	}
+	arr := arrVal.Array(ctx)
+
+	var total float64
+	for _, v := range arr {
+		v, err := v.Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+
+		if !v.IsNumber() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type in std.avg (arg 0) array: %s, expected boolean", v.Type().String())
+		}
+
+		total += v.Number()
+	}
+
+	avg := total / float64(len(arr))
+	return evaluator.MakeNumber(avg), nil
+}
+
+func std_minArray(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	return minMaxArray(args, ctx, false, "std.minArray")
+}
+
+func std_maxArray(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	return minMaxArray(args, ctx, true, "std.maxArray")
+}
+
+func minMaxArray(args []evaluator.NamedValue, ctx evaluator.Context, max bool, name string) (evaluator.Value, error) {
+	if len(args) != 3 {
+		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to %s %d, expected 3", name, len(args))
+	}
+
+	arrVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !arrVal.IsArray() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 0): %s, expected array", name, arrVal.Type().String())
+	}
+	arr := arrVal.Array(ctx)
+
+	var keyF evaluator.Function
+	var funcArgs []evaluator.NamedValue
+	if !args[1].IsNone() {
+		f, err := args[1].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+		if !f.IsFunction() {
+			return evaluator.Value{}, fmt.Errorf("unexpected type passed to  %s (arg 1): %s, expected function", name, f.Type().String())
+		}
+		keyF = f.Function(ctx)
+		funcArgs = []evaluator.NamedValue{{}}
+	}
+
+	var defaultValue evaluator.Value
+	if !args[2].IsNone() {
+		d, err := args[2].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+		defaultValue = d
+	}
+
+	if len(arr) == 0 {
+		if defaultValue.IsNone() {
+			return evaluator.Value{}, fmt.Errorf("Expected at least one element in array. Got none")
+		}
+		return defaultValue, nil
+	}
+
+	var last evaluator.Value
+	for _, v := range arr {
+		v, err := v.Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+		if last.IsNone() {
+			last = v
+			continue
+		}
+
+		x, y := last, v
+		if !keyF.Empty() {
+			funcArgs[0] = evaluator.NamedValue{Value: last}
+			x, err = keyF.Exec(funcArgs, ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+
+			funcArgs[0] = evaluator.NamedValue{Value: v}
+			y, err = keyF.Exec(funcArgs, ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+		}
+
+		if x.Type() != y.Type() {
+			return evaluator.Value{}, fmt.Errorf("Unexpected type %s, expected %s", y.Type().String(), x.Type().String())
+		}
+
+		cmp, err := x.Compare(y, ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+
+		if max {
+			if cmp < 0 {
+				last = v
+				continue
+			}
+		} else {
+			if cmp > 0 {
+				last = v
+				continue
+			}
+		}
+
+	}
+
+	return last, nil
+}
+
+func std_contains(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 2 {
+		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.contains %d, expected 2", len(args))
+	}
+
+	arrVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !arrVal.IsArray() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.contains (arg 0): %s, expected array", arrVal.Type().String())
+	}
+	arr := arrVal.Array(ctx)
+
+	elem, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	for _, v := range arr {
+		v, err := v.Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+
+		if elem.Type() != v.Type() {
+			continue
+		}
+
+		eq, err := elem.Equal(v, ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+		if eq {
+			return evaluator.MakeBool(true), nil
+		}
+	}
+
+	return evaluator.MakeBool(false), nil
+}
+
+func std_remove(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 2 {
+		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.remove %d, expected 2", len(args))
+	}
+
+	arrVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !arrVal.IsArray() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.remove (arg 0): %s, expected array", arrVal.Type().String())
+	}
+	arr := arrVal.Array(ctx)
+
+	elem, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	i := 0
+	res := make([]evaluator.Value, 0, len(arr))
+	for _, v := range arr {
+		i++
+
+		v, err := v.Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+
+		if elem.Type() != v.Type() {
+			continue
+		}
+
+		eq, err := elem.Equal(v, ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+		if eq {
+			// Break on first match
+			break
+		}
+		res = append(res, v)
+	}
+
+	// Add rest
+	res = append(res, arr[i:]...)
+
+	return evaluator.MakeArray(res, ctx), nil
+}
+
+func std_removeAt(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 2 {
+		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.removeAt %d, expected 2", len(args))
+	}
+
+	arrVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !arrVal.IsArray() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.removeAt (arg 0): %s, expected array", arrVal.Type().String())
+	}
+	arr := arrVal.Array(ctx)
+
+	idxVal, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !idxVal.IsNumber() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.removeAt (arg 1): %s, expected number", idxVal.Type().String())
+	}
+	idx := int(idxVal.Number())
+
+	if idx > len(arr)-1 {
+		return evaluator.Value{}, fmt.Errorf("idx %d is out of bound for array with length %d", idx, len(arr))
+	}
+
+	res := make([]evaluator.Value, len(arr)-1)
+	copy(res, arr[:idx])
+	copy(res[idx:], arr[idx+1:])
+
+	return evaluator.MakeArray(res, ctx), nil
+}
+
 func sliceArr[T any](arr []T, start, end, step int) ([]T, error) {
 
 	if step <= 0 {

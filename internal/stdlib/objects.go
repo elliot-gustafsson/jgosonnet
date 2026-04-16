@@ -241,3 +241,136 @@ func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 
 	return evaluator.MakeObject(res, ctx), nil
 }
+
+func std_objectRemoveKey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	if len(args) != 2 {
+		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.objectRemoveKey %d, expected 2", len(args))
+	}
+
+	objVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !objVal.IsObject() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.objectRemoveKey (arg 0): %s, expected object", objVal.Type().String())
+	}
+	obj := objVal.Object(ctx)
+
+	keyVal, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !keyVal.IsString() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.objectRemoveKey (arg 1): %s, expected string", keyVal.Type().String())
+	}
+	key := keyVal.String(ctx)
+
+	keyId := ctx.Interner.Intern(key)
+
+	// ----------------
+
+	// objLayers := obj.GetLayers()
+
+	// resLayers := make([]*evaluator.Layer, 0, len(objLayers))
+
+	// for _, l := range objLayers {
+
+	// 	fieldCount := len(l.Keys) - 1
+
+	// 	newLayer := &evaluator.Layer{
+	// 		Keys:  make([]uint32, 0, fieldCount),
+	// 		Nodes: make(ast.Nodes, 0, fieldCount),
+	// 		Meta:  make([]uint8, 0, fieldCount),
+	// 	}
+
+	// 	useMap := len(l.Keys) > evaluator.MaxLinearKeys
+	// 	if useMap {
+	// 		newLayer.Index = make(map[uint32]int, fieldCount)
+	// 	}
+
+	// 	index := 0
+	// 	for i, k := range l.Keys {
+	// 		if keyId == k {
+	// 			continue
+	// 		}
+
+	// 		var v evaluator.Value
+	// 		if l.Values != nil {
+	// 			v = l.Values[fieldId]
+	// 		} else {
+	// 			x, err := evaluator.EvaluateNode()
+	// 		}
+
+	// 		newLayer.Keys = append(newLayer.Keys, k)
+	// 		newLayer.Meta = append(newLayer.Meta, l.Meta[i])
+	// 		newLayer.Nodes = append(newLayer.Nodes, v)
+
+	// 		if useMap {
+	// 			newLayer.Index[k] = index
+	// 		}
+	// 		index++
+	// 	}
+	// 	resLayers = append(resLayers, newLayer)
+	// }
+
+	// resObj := evaluator.NewObject(resLayers)
+	// return evaluator.MakeObject(resObj, ctx), nil
+
+	// ----------------
+
+	// TODO: look over this, fairly sure is doesnt work for all cases...
+
+	val, _, err := obj.GetField(keyId, ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	if val.IsNone() {
+		// If key doesnt exist, just copy the object
+		objLayers := obj.GetLayers()
+		newLayers := make([]*evaluator.Layer, len(objLayers))
+		copy(newLayers, objLayers)
+		res := evaluator.NewObject(newLayers)
+		return evaluator.MakeObject(res, ctx), nil
+	}
+
+	plans := evaluator.CompileObjectPlan(obj, ctx)
+
+	fieldCount := len(plans) - 1
+	layer := &evaluator.Layer{
+		Keys:   make([]uint32, 0, fieldCount),
+		Values: make([]evaluator.Value, 0, fieldCount),
+		Meta:   make([]uint8, 0, fieldCount),
+	}
+
+	useMap := len(plans) > evaluator.MaxLinearKeys
+	if useMap {
+		layer.Index = make(map[uint32]int, fieldCount)
+	}
+
+	evalCtx := ctx
+	evalCtx.Self = objVal
+
+	for i, plan := range plans {
+		if plan.KeyId == keyId {
+			continue
+		}
+
+		v, err := plan.GetValue(obj, evalCtx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+
+		layer.Keys = append(layer.Keys, plan.KeyId)
+		layer.Values = append(layer.Values, v)
+		layer.Meta = append(layer.Meta, evaluator.CreateFieldMeta(plan.Visibility, false))
+
+		if useMap {
+			layer.Index[plan.KeyId] = i
+		}
+
+	}
+
+	resObj := evaluator.NewObject([]*evaluator.Layer{layer})
+	return evaluator.MakeObject(resObj, ctx), nil
+}

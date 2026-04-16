@@ -771,11 +771,19 @@ func (a *Object) Equal(b *Object, ctx Context) (bool, error) {
 		if planAs[i].KeyId != planBs[j].KeyId {
 			return false, nil
 		}
-		valA, err := planAs[i].GetValue(a, ctx)
+
+		// TODO: Think over this, feels hacky...
+		subCtx := ctx
+		subCtx.Self = MakeObject(*a, ctx)
+
+		valA, err := planAs[i].GetValue(a, subCtx)
 		if err != nil {
 			return false, err
 		}
-		valB, err := planBs[j].GetValue(b, ctx)
+
+		// TODO: Think over this, feels hacky...
+		subCtx.Self = MakeObject(*b, ctx)
+		valB, err := planBs[j].GetValue(b, subCtx)
 		if err != nil {
 			return false, err
 		}

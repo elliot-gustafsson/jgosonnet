@@ -610,3 +610,22 @@ func std_escapeStringJson(args []evaluator.NamedValue, ctx evaluator.Context) (e
 
 	return evaluator.MakeString(b.String(), ctx), nil
 }
+
+func std_equalsIgnoreCase(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	b, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !a.IsString() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.equalsIgnoreCase (arg 0): %s, expected string", a.Type().String())
+	}
+	if !b.IsString() {
+		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.equalsIgnoreCase (arg 1): %s, expected string", b.Type().String())
+	}
+
+	return evaluator.MakeBool(strings.EqualFold(a.String(ctx), b.String(ctx))), nil
+}

@@ -41,6 +41,8 @@ var functions = map[string]func(evaluator.Context) evaluator.Function{
 	"parseHex":   f(std_parseHex, "str"),
 	"parseJson":  f(std_parseJson, "str"),
 	"parseYaml":  f(std_parseYaml, "str"),
+	"encodeUTF8": f(std_encodeUTF8, "str"),
+	"decodeUTF8": f(std_decodeUTF8, "str"),
 
 	// --- Math ---
 	"floor":     f(std_floor, "x"),
@@ -106,6 +108,7 @@ var functions = map[string]func(evaluator.Context) evaluator.Function{
 	"escapeStringDollars": f(std_escapeStringDollars, "str"),
 	"escapeStringJson":    f(std_escapeStringJson, "str"),
 	"escapeStringXML":     f(std_escapeStringXML, "str"),
+	"equalsIgnoreCase":    f(std_equalsIgnoreCase, "str1", "str2"),
 
 	// --- Arrays ---
 	"join":             f(std_join, "sep", "arr"),
@@ -134,6 +137,19 @@ var functions = map[string]func(evaluator.Context) evaluator.Function{
 	"setUnion":         f(std_setUnion, "a", "b", "keyF"),
 	"setInter":         f(std_setInter, "a", "b", "keyF"),
 	"setDiff":          f(std_setDiff, "a", "b", "keyF"),
+	"find":             f(std_find, "value", "arr"),
+	"any":              f(std_any, "arr"),
+	"all":              f(std_all, "arr"),
+	"avg":              f(std_avg, "arr"),
+	"minArray":         f(std_minArray, "arr", "keyF", "onEmpty"),
+	"maxArray":         f(std_maxArray, "arr", "keyF", "onEmpty"),
+	"contains":         f(std_contains, "arr", "elem"),
+	"remove":           f(std_remove, "arr", "elem"),
+	"removeAt":         f(std_removeAt, "arr", "idx"),
+
+	// -- Booleans ---
+	"xor":  f(std_xor, "x", "y"),
+	"xnor": f(std_xnor, "x", "y"),
 
 	// -- Sets ---
 	"set": f(std_set, "arr", "keyF"),
@@ -149,6 +165,7 @@ var functions = map[string]func(evaluator.Context) evaluator.Function{
 	"objectKeysValues":    f(std_objectKeysValues, "o"),
 	"objectKeysValuesAll": f(std_objectKeysValuesAll, "o"),
 	"mapWithKey":          f(std_mapWithkey, "func", "obj"),
+	"objectRemoveKey":     f(std_objectRemoveKey, "obj", "key"),
 
 	// --- Manifestation ---
 	"manifestYamlDoc":      f(std_manifestYamlDoc, "value", "indent_array_in_object", "quote_keys"),
