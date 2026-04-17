@@ -104,6 +104,19 @@ var std_objectFieldsAll = liftObjectToValueErr(func(v evaluator.Value, ctx evalu
 	return evaluator.MakeArray(res, ctx), nil
 })
 
+func std_objectFieldsEx(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	obj, err := args[0].EvalObject(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	inclHidden, err := args[1].EvalBool(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	res := evaluator.GetObjectFields(obj, ctx, inclHidden)
+	return evaluator.MakeArray(res, ctx), nil
+}
+
 var std_objectValues = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
 	res, err := evaluator.GetObjectValues(v.Object(ctx), ctx, false)
 	if err != nil {
@@ -157,6 +170,41 @@ var std_objectHasAll = liftObjectStringToValueErr(func(v evaluator.Value, s stri
 	}
 	return evaluator.MakeBool(!value.IsNone()), nil
 })
+
+func std_objectHasEx(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	objVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !objVal.IsObject() {
+		return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, objVal.Type())
+	}
+
+	fname, err := args[1].EvalString(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	hidden, err := args[2].EvalBool(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	keyId := ctx.Interner.Intern(fname)
+
+	subCtx := ctx
+	subCtx.Self = objVal
+
+	value, visible, err := objVal.Object(ctx).GetField(keyId, subCtx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if value.IsNone() || (!visible && !hidden) {
+		return evaluator.MakeBool(false), nil
+	}
+
+	return evaluator.MakeBool(true), nil
+}
 
 func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
