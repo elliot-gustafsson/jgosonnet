@@ -3,22 +3,25 @@ package evaluator
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 )
 
 type JsonManifestConfig struct {
-	IndentStep string
-	Newline    string
-	KeyValSep  string
-	SpaceComma bool
-	Python     bool
+	IndentStep  string
+	Newline     string
+	KeyValSep   string
+	SpaceComma  bool
+	Python      bool
+	StrictFloat bool
+
 	hasNewline bool
 }
 
 // Pre-defined configurations matching Jsonnet's standard library.
 var (
-	JsonConfigPretty   = JsonManifestConfig{IndentStep: "    ", Newline: "\n", KeyValSep: ": ", SpaceComma: false}
-	JsonConfigMinified = JsonManifestConfig{IndentStep: "", Newline: "", KeyValSep: ":", SpaceComma: false}
+	JsonConfigPretty   = JsonManifestConfig{IndentStep: "    ", Newline: "\n", KeyValSep: ": ", SpaceComma: false, StrictFloat: true}
+	JsonConfigMinified = JsonManifestConfig{IndentStep: "", Newline: "", KeyValSep: ":", SpaceComma: false, StrictFloat: true}
 	JsonConfigToString = JsonManifestConfig{IndentStep: "", Newline: "", KeyValSep: ": ", SpaceComma: true}
 	JsonConfigPython   = JsonManifestConfig{IndentStep: "", Newline: "", KeyValSep: ": ", SpaceComma: true, Python: true}
 )
@@ -40,7 +43,10 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, cindent string, 
 		return fmt.Errorf("unhandled value type: %s", value.Type().String())
 	case ValueTypeNumber:
 		data := value.Number()
-		// buf.WriteString(strconv.FormatFloat(data, 'f', -1, 64))
+		if config.StrictFloat {
+			b.WriteString(strconv.FormatFloat(data, 'f', -1, 64))
+			return nil
+		}
 		b.WriteString(unparseNumber(data))
 		return nil
 	case ValueTypeNull:

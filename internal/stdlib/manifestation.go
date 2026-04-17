@@ -187,9 +187,10 @@ func std_manifestJsonEx(args []evaluator.NamedValue, ctx evaluator.Context) (eva
 	b.Grow(1024)
 
 	c := evaluator.JsonManifestConfig{
-		IndentStep: indent,
-		Newline:    newline,
-		KeyValSep:  key_val_sep,
+		IndentStep:  indent,
+		Newline:     newline,
+		KeyValSep:   key_val_sep,
+		StrictFloat: true,
 	}
 	v, err := args[0].Eval(ctx)
 	if err != nil {

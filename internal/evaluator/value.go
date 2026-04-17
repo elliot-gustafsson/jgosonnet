@@ -3,7 +3,6 @@ package evaluator
 import (
 	"cmp"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/google/go-jsonnet/ast"
@@ -52,6 +51,8 @@ func (t ValueType) String() string {
 	}
 }
 
+type ThunkEvalFunc func(Context) (Value, error)
+
 type Thunk struct {
 	Node                ast.Node
 	ScopeId             uint32
@@ -59,6 +60,15 @@ type Thunk struct {
 	CapturedSuperOffset int
 
 	Value Value
+}
+
+func NewThunk(node ast.Node, scopeId uint32, ctx Context) Thunk {
+	return Thunk{
+		Node:                node,
+		ScopeId:             scopeId,
+		CapturedSelf:        ctx.Self,
+		CapturedSuperOffset: ctx.SuperOffset,
+	}
 }
 
 type Func = func(args []NamedValue, ctx Context) (Value, error)
@@ -321,7 +331,7 @@ func (v Value) ToString(ctx Context) (string, error) {
 	case ValueTypeString:
 		return v.String(ctx), nil
 	case ValueTypeNumber:
-		res := strconv.FormatFloat(v.Number(), 'f', -1, 64)
+		res := unparseNumber(v.Number())
 		return res, nil
 	case ValueTypeBool:
 		if v.Bool() {

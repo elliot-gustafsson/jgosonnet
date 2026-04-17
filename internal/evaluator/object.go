@@ -780,10 +780,18 @@ func (a *Object) Equal(b *Object, ctx Context) (bool, error) {
 		if err != nil {
 			return false, err
 		}
+		valA, err = valA.Eval(ctx)
+		if err != nil {
+			return false, err
+		}
 
 		// TODO: Think over this, feels hacky...
 		subCtx.Self = MakeObject(*b, ctx)
 		valB, err := planBs[j].GetValue(b, subCtx)
+		if err != nil {
+			return false, err
+		}
+		valB, err = valB.Eval(ctx)
 		if err != nil {
 			return false, err
 		}

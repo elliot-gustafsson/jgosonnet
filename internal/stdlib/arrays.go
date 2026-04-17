@@ -43,17 +43,21 @@ func std_makeArray(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	mapperFuncInput := []evaluator.NamedValue{{}}
+
+	allArgs := make([]evaluator.NamedValue, size)
 
 	res := make([]evaluator.Value, size)
 	for i := range size {
-		v := evaluator.MakeNumber(float64(i))
-		mapperFuncInput[0] = evaluator.NamedValue{Value: v}
-		out, err := mapperFunc.Exec(mapperFuncInput, ctx)
-		if err != nil {
-			return evaluator.Value{}, err
+
+		allArgs[i] = evaluator.NamedValue{Value: evaluator.MakeNumber(float64(i))}
+
+		n := &evaluator.GoCallbackNode{
+			Func: mapperFunc,
+			Args: allArgs[i : i+1],
 		}
-		res[i] = out
+
+		res[i] = evaluator.MakeThunk(evaluator.NewThunk(n, 0, ctx), ctx)
+
 	}
 
 	return evaluator.MakeArray(res, ctx), nil
@@ -549,25 +553,26 @@ func std_map(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 		return evaluator.Value{}, err
 	}
 
-	mapperFuncInput := []evaluator.NamedValue{{}}
+	allArgs := make([]evaluator.NamedValue, len(arr))
 
-	res := make([]evaluator.Value, 0, len(arr))
-	for _, v := range arr {
-		mapperFuncInput[0] = evaluator.NamedValue{Value: v}
-		out, err := mapFunc.Exec(mapperFuncInput, ctx)
-		if err != nil {
-			return evaluator.Value{}, err
+	res := make([]evaluator.Value, len(arr))
+	for i, v := range arr {
+
+		allArgs[i] = evaluator.NamedValue{Value: v}
+
+		n := &evaluator.GoCallbackNode{
+			Func: mapFunc,
+			Args: allArgs[i : i+1],
 		}
-		res = append(res, out)
+
+		res[i] = evaluator.MakeThunk(evaluator.NewThunk(n, 0, ctx), ctx)
+
 	}
 
 	return evaluator.MakeArray(res, ctx), nil
 }
 
 func std_mapWithIndex(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 2 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.mapWithIndex %d, expected 2", len(args))
-	}
 
 	mapFunc, err := args[0].EvalFunction(ctx)
 	if err != nil {
@@ -580,17 +585,35 @@ func std_mapWithIndex(args []evaluator.NamedValue, ctx evaluator.Context) (evalu
 	}
 
 	// Create the array once and mutate it to reduce objects on the heap
-	mapperFuncInput := []evaluator.NamedValue{{}, {}}
+	// mapperFuncInput := []evaluator.NamedValue{{}, {}}
 
-	res := make([]evaluator.Value, 0, len(arr))
+	// res := make([]evaluator.Value, 0, len(arr))
+	// for i, v := range arr {
+	// 	mapperFuncInput[0] = evaluator.NamedValue{Value: evaluator.MakeNumber(float64(i))}
+	// 	mapperFuncInput[1] = evaluator.NamedValue{Value: v}
+	// 	out, err := mapFunc.Exec(mapperFuncInput, ctx)
+	// 	if err != nil {
+	// 		return evaluator.Value{}, err
+	// 	}
+	// 	res = append(res, out)
+	// }
+
+	allArgs := make([]evaluator.NamedValue, len(arr)*2)
+
+	res := make([]evaluator.Value, len(arr))
 	for i, v := range arr {
-		mapperFuncInput[0] = evaluator.NamedValue{Value: evaluator.MakeNumber(float64(i))}
-		mapperFuncInput[1] = evaluator.NamedValue{Value: v}
-		out, err := mapFunc.Exec(mapperFuncInput, ctx)
-		if err != nil {
-			return evaluator.Value{}, err
+		idx := i * 2
+
+		allArgs[idx] = evaluator.NamedValue{Value: evaluator.MakeNumber(float64(i))}
+		allArgs[idx+1] = evaluator.NamedValue{Value: v}
+
+		n := &evaluator.GoCallbackNode{
+			Func: mapFunc,
+			Args: allArgs[idx : idx+2],
 		}
-		res = append(res, out)
+
+		res[i] = evaluator.MakeThunk(evaluator.NewThunk(n, 0, ctx), ctx)
+
 	}
 
 	return evaluator.MakeArray(res, ctx), nil

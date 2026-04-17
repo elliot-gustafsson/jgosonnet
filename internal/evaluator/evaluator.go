@@ -113,12 +113,7 @@ func evaluateNodeLazy(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 		// }
 		return ctx.Self, nil
 	default:
-		return MakeThunk(Thunk{
-			Node:                node,
-			ScopeId:             scopeId,
-			CapturedSelf:        ctx.Self,
-			CapturedSuperOffset: ctx.SuperOffset,
-		}, ctx), nil
+		return MakeThunk(NewThunk(node, scopeId, ctx), ctx), nil
 	}
 }
 
@@ -305,8 +300,22 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 			return Value{}, createErrorWithContext(fmt.Errorf("unexpected value type '%s', expected string", msg.Type().String()), &node.LocRange)
 		}
 		return Value{}, errors.New(msg.String(ctx))
+	case *GoCallbackNode:
+		return node.Func.Exec(node.Args, ctx)
 	}
 }
+
+type GoCallbackNode struct {
+	Func Function
+	Args []NamedValue
+}
+
+func (n *GoCallbackNode) Context() ast.Context             { return nil }
+func (n *GoCallbackNode) Loc() *ast.LocationRange          { return nil }
+func (n *GoCallbackNode) FreeVariables() ast.Identifiers   { return nil }
+func (n *GoCallbackNode) SetFreeVariables(ast.Identifiers) {}
+func (n *GoCallbackNode) SetContext(ast.Context)           {}
+func (n *GoCallbackNode) OpenFodder() *ast.Fodder          { return nil }
 
 func evaluateValue(value *Value, ctx Context) error {
 	if !value.IsThunk() {

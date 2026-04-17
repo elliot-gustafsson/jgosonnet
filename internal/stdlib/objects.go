@@ -5,7 +5,7 @@ import (
 	"github.com/google/go-jsonnet/ast"
 )
 
-func liftObjectToValueErr(f func(evaluator.Value, evaluator.Context) (evaluator.Value, error), name string) evaluator.Func {
+func liftObjectToValueErr(f func(evaluator.Value, evaluator.Context) (evaluator.Value, error)) evaluator.Func {
 	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
 		a, err := args[0].Eval(ctx)
@@ -23,7 +23,7 @@ func liftObjectToValueErr(f func(evaluator.Value, evaluator.Context) (evaluator.
 	}
 }
 
-func liftObjectStringToValueErr(f func(evaluator.Value, string, evaluator.Context) (evaluator.Value, error), name string) evaluator.Func {
+func liftObjectStringToValueErr(f func(evaluator.Value, string, evaluator.Context) (evaluator.Value, error)) evaluator.Func {
 	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
 		a, err := args[0].Eval(ctx)
@@ -97,12 +97,12 @@ func std_get(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 var std_objectFields = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
 	res := evaluator.GetObjectFields(v.Object(ctx), ctx, false)
 	return evaluator.MakeArray(res, ctx), nil
-}, "std.objectFields")
+})
 
 var std_objectFieldsAll = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
 	res := evaluator.GetObjectFields(v.Object(ctx), ctx, true)
 	return evaluator.MakeArray(res, ctx), nil
-}, "std.objectFieldsAll")
+})
 
 var std_objectValues = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
 	res, err := evaluator.GetObjectValues(v.Object(ctx), ctx, false)
@@ -110,7 +110,7 @@ var std_objectValues = liftObjectToValueErr(func(v evaluator.Value, ctx evaluato
 		return evaluator.Value{}, err
 	}
 	return evaluator.MakeArray(res, ctx), nil
-}, "std.objectValues")
+})
 
 var std_objectValuesAll = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
 	res, err := evaluator.GetObjectValues(v.Object(ctx), ctx, true)
@@ -118,7 +118,7 @@ var std_objectValuesAll = liftObjectToValueErr(func(v evaluator.Value, ctx evalu
 		return evaluator.Value{}, err
 	}
 	return evaluator.MakeArray(res, ctx), nil
-}, "std.objectValuesAll")
+})
 
 var std_objectKeysValues = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
 	res, err := evaluator.GetObjectKeysValues(v.Object(ctx), ctx, false)
@@ -126,7 +126,7 @@ var std_objectKeysValues = liftObjectToValueErr(func(v evaluator.Value, ctx eval
 		return evaluator.Value{}, err
 	}
 	return evaluator.MakeArray(res, ctx), nil
-}, "std.objectKeysValues")
+})
 
 var std_objectKeysValuesAll = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
 	res, err := evaluator.GetObjectKeysValues(v.Object(ctx), ctx, true)
@@ -134,7 +134,7 @@ var std_objectKeysValuesAll = liftObjectToValueErr(func(v evaluator.Value, ctx e
 		return evaluator.Value{}, err
 	}
 	return evaluator.MakeArray(res, ctx), nil
-}, "std.objectKeysValuesAll")
+})
 
 var std_objectHas = liftObjectStringToValueErr(func(v evaluator.Value, s string, ctx evaluator.Context) (evaluator.Value, error) {
 	keyId := ctx.Interner.Intern(s)
@@ -145,7 +145,7 @@ var std_objectHas = liftObjectStringToValueErr(func(v evaluator.Value, s string,
 		return evaluator.Value{}, err
 	}
 	return evaluator.MakeBool(!value.IsNone()), nil
-}, "std.objectHas")
+})
 
 var std_objectHasAll = liftObjectStringToValueErr(func(v evaluator.Value, s string, ctx evaluator.Context) (evaluator.Value, error) {
 	keyId := ctx.Interner.Intern(s)
@@ -156,7 +156,7 @@ var std_objectHasAll = liftObjectStringToValueErr(func(v evaluator.Value, s stri
 		return evaluator.Value{}, err
 	}
 	return evaluator.MakeBool(!value.IsNone()), nil
-}, "std.objectHasAll")
+})
 
 func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
@@ -169,8 +169,6 @@ func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-
-	mapFuncArgs := []evaluator.NamedValue{{}, {}}
 
 	keys, vals, err := evaluator.GetObjectKeysValuesArray(obj, ctx, false)
 	if err != nil {
@@ -187,27 +185,37 @@ func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 
 	res := evaluator.NewObject([]*evaluator.Layer{layer})
 
+	resObjVal := evaluator.MakeObject(res, ctx)
+
 	m := evaluator.CreateFieldMeta(ast.ObjectFieldInherit, false)
+
+	mapCtx := ctx
+	mapCtx.Self = resObjVal
+
+	allArgs := make([]evaluator.NamedValue, len(keys)*2)
 	for i, k := range keys {
 		v := vals[i]
+		idx := i * 2
 
 		keyString := ctx.Interner.Get(k)
 
-		mapFuncArgs[0] = evaluator.NamedValue{Value: evaluator.MakeString(keyString, ctx)}
-		mapFuncArgs[1] = evaluator.NamedValue{Value: v}
+		allArgs[idx] = evaluator.NamedValue{Value: evaluator.MakeString(keyString, ctx)}
+		allArgs[idx+1] = evaluator.NamedValue{Value: v}
 
-		x, err := mapFunc.Exec(mapFuncArgs, ctx)
-		if err != nil {
-			return evaluator.Value{}, err
+		n := &evaluator.GoCallbackNode{
+			Func: mapFunc,
+			Args: allArgs[idx : idx+2],
 		}
 
+		thunk := evaluator.NewThunk(n, 0, mapCtx)
+
 		layer.Keys = append(layer.Keys, k)
-		layer.Values = append(layer.Values, x)
+		layer.Values = append(layer.Values, evaluator.MakeThunk(thunk, mapCtx))
 		layer.Meta = append(layer.Meta, m)
 
 	}
 
-	return evaluator.MakeObject(res, ctx), nil
+	return resObjVal, nil
 }
 
 func std_objectRemoveKey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {

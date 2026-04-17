@@ -14,6 +14,7 @@ type YamlManifestConfig struct {
 	QuoteValues          bool
 	SingleQuoteEscape    bool
 	NaturalSort          bool
+	FormatIntegers       bool
 }
 
 func ManifestYaml(b *strings.Builder, value Value, ctx Context, config YamlManifestConfig) error {
@@ -31,7 +32,7 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, cindent string
 		return fmt.Errorf("unhandled value type: %s", value.Type().String())
 	case ValueTypeNumber:
 		data := value.Number()
-		if data == math.Floor(data) {
+		if config.FormatIntegers && data == math.Floor(data) {
 			fmt.Fprintf(buf, "%.0f", data)
 			return nil
 		}

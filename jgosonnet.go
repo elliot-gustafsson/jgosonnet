@@ -113,6 +113,7 @@ func (t *Evaluator) EvaluateYaml(file string) (string, error) {
 		IndentArrayInObjects: true,
 		SingleQuoteEscape:    true,
 		NaturalSort:          true,
+		FormatIntegers:       true,
 	}
 
 	err = evaluator.ManifestYaml(&b, value, ctx, c)
@@ -148,6 +149,7 @@ func (t *Evaluator) EvaluateYamlMulti(file string) (map[string]string, error) {
 		IndentArrayInObjects: true,
 		SingleQuoteEscape:    true,
 		NaturalSort:          true,
+		FormatIntegers:       true,
 	}
 
 	res := make(map[string]string, len(root))
