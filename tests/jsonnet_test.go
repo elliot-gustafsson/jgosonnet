@@ -135,8 +135,8 @@ func TestSpecific(t *testing.T) {
 	// expectedOutputFile := "trace.jsonnet.golden"
 
 	testsLoc := filepath.Join("resources", "go-jsonnet", "testdata")
-	name := "builtinObjectFieldsEx.jsonnet"
-	expectedOutputFile := "builtinObjectFieldsEx.golden"
+	name := "stdlib_smoke_test.jsonnet"
+	expectedOutputFile := "stdlib_smoke_test.golden"
 
 	err := os.Chdir(testsLoc)
 	assert.NoError(t, err)

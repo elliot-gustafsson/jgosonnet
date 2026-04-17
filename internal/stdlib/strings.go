@@ -439,7 +439,23 @@ func std_splitLimitR(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 	return evaluator.MakeArray(res, ctx), nil
 }
 
-var std_escapeStringBash = liftString(func(s string) string {
+func liftCastString(f func(string) string) evaluator.Func {
+	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+		val, err := args[0].Eval(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+
+		strval, err := val.ToString(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+		res := f(strval)
+		return evaluator.MakeString(res, ctx), nil
+	}
+}
+
+var std_escapeStringBash = liftCastString(func(s string) string {
 	var b strings.Builder
 	b.WriteByte('\'')
 
@@ -459,11 +475,11 @@ var std_escapeStringBash = liftString(func(s string) string {
 
 })
 
-var std_escapeStringDollars = liftString(func(s string) string {
+var std_escapeStringDollars = liftCastString(func(s string) string {
 	return strings.ReplaceAll(s, "$", "$$")
 })
 
-var std_escapeStringXML = liftString(func(s string) string {
+var std_escapeStringXML = liftCastString(func(s string) string {
 	var b strings.Builder
 	last := 0
 	for i := 0; i < len(s); i++ {
@@ -492,17 +508,19 @@ var std_escapeStringXML = liftString(func(s string) string {
 
 func std_escapeStringJson(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
-	strVal, err := args[0].Eval(ctx)
+	val, err := args[0].Eval(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !strVal.IsString() {
-		return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeString, strVal.Type())
+
+	strval, err := val.ToString(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
 	}
 
 	var b strings.Builder
 
-	err = evaluator.ManifestJson(&b, strVal, ctx, evaluator.JsonConfigMinified)
+	err = evaluator.ManifestJson(&b, evaluator.MakeString(strval, ctx), ctx, evaluator.JsonConfigMinified)
 	if err != nil {
 		return evaluator.Value{}, err
 	}

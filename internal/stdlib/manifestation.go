@@ -485,7 +485,7 @@ func auxManifestXmlJsonml(v evaluator.Value, ctx evaluator.Context, b *strings.B
 func std_manifestTomlEx(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
 	// Evaluate the value
-	val, err := args[0].Value.Eval(ctx)
+	val, err := args[0].Eval(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
@@ -501,7 +501,10 @@ func std_manifestTomlEx(args []evaluator.NamedValue, ctx evaluator.Context) (eva
 
 	var b strings.Builder
 
-	err = evaluator.ManifestToml(&b, val, ctx, sindent)
+	evalCtx := ctx
+	evalCtx.Self = val
+
+	err = evaluator.ManifestToml(&b, val, evalCtx, sindent)
 	if err != nil {
 		return evaluator.Value{}, err
 	}

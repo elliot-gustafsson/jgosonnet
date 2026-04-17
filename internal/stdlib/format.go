@@ -305,10 +305,10 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 			fmtBuilder.WriteRune(verb)
 			if currentArg.IsNumber() {
 				n := currentArg.Number()
-				if verb == 'f' || verb == 'F' {
-					// Add small epsilon to "fix" IEEE 754
-					n += 1e-9
-				}
+				// if verb == 'f' || verb == 'F' {
+				// 	// Add small epsilon to "fix" IEEE 754
+				// 	n += 1e-9
+				// }
 				fmt.Fprintf(buf, fmtBuilder.String(), n) // +1e-9
 			} else {
 				return "", fmt.Errorf("format %%%c requires number", verb)

@@ -54,7 +54,7 @@ var functions = map[string]func(evaluator.Context) evaluator.Function{
 	"parseJson":  f(std_parseJson, req("str")),
 	"parseYaml":  f(std_parseYaml, req("str")),
 	"encodeUTF8": f(std_encodeUTF8, req("str")),
-	"decodeUTF8": f(std_decodeUTF8, req("str")),
+	"decodeUTF8": f(std_decodeUTF8, req("arr")),
 
 	// --- Math ---
 	"floor":     f(std_floor, req("x")),
@@ -117,10 +117,11 @@ var functions = map[string]func(evaluator.Context) evaluator.Function{
 	"base64DecodeBytes":   f(std_base64DecodeBytes, req("str")),
 	"asciiLower":          f(std_asciiLower, req("str")),
 	"asciiUpper":          f(std_asciiUpper, req("str")),
-	"escapeStringBash":    f(std_escapeStringBash, req("str")),
-	"escapeStringDollars": f(std_escapeStringDollars, req("str")),
-	"escapeStringJson":    f(std_escapeStringJson, req("str")),
-	"escapeStringXML":     f(std_escapeStringXML, req("str")),
+	"escapeStringBash":    f(std_escapeStringBash, req("str_")),
+	"escapeStringDollars": f(std_escapeStringDollars, req("str_")),
+	"escapeStringJson":    f(std_escapeStringJson, req("str_")),
+	"escapeStringPython":  f(std_escapeStringJson, req("str")), // Intentionally same as function as escapeStringJson
+	"escapeStringXML":     f(std_escapeStringXML, req("str_")),
 	"equalsIgnoreCase":    f(std_equalsIgnoreCase, req("str1"), req("str2")),
 
 	// --- Arrays ---

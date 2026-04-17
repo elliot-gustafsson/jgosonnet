@@ -63,7 +63,7 @@ func renderTomlTable(b *strings.Builder, obj *Object, ctx Context, sindent strin
 		writeTomlKey(b, fieldName)
 		b.WriteString(" = ")
 
-		err = writeTomlValue(b, val, ctx, "", sindent, false)
+		err = writeTomlValue(b, val, ctx, cindent, sindent, false)
 		if err != nil {
 			return err
 		}
@@ -166,7 +166,7 @@ func writeTomlValue(b *strings.Builder, value Value, ctx Context, cindent, sinde
 
 		}
 		b.WriteString(separator)
-		if inline {
+		if !inline {
 			b.WriteString(cindent)
 		}
 		b.WriteByte(']')

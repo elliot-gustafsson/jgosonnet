@@ -242,7 +242,7 @@ func TestFormat(t *testing.T) {
 				"x": 10,
 				"y": 20.555,
 			},
-			expected: "10 + 20.56",
+			expected: "10 + 20.55",
 		},
 		{
 			name:   "Named with Flags",

@@ -6,10 +6,4 @@
 
 // { a: 1 } + std.objectRemoveKey({ b: super.a }, 'a')
 
-// local tolerance(x) = '%.15f' % x;
-
-// // tolerance(std.atan(1))
-// tolerance(123)
-
-
-'%.15f' % 123
+std.mergePatch(target={ a: 42 }, patch={ b: 123 })
