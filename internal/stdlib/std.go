@@ -114,6 +114,7 @@ var functions = map[string]func(evaluator.Context) evaluator.Function{
 	"codepoint":           f(std_codepoint, req("str")),
 	"base64":              f(std_base64, req("input")),
 	"base64Decode":        f(std_base64Decode, req("str")),
+	"base64DecodeBytes":   f(std_base64DecodeBytes, req("str")),
 	"asciiLower":          f(std_asciiLower, req("str")),
 	"asciiUpper":          f(std_asciiUpper, req("str")),
 	"escapeStringBash":    f(std_escapeStringBash, req("str")),

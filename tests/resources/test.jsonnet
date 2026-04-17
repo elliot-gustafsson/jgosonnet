@@ -8,5 +8,4 @@
 
 // std.assertEqual({ a: 1 } + std.objectRemoveKey({ b: super.a }, 'a'), { a: 1, b: 1 })
 
-// std.manifestYamlDoc({ asdf: 'asdf' }, quote_keys=false)
-std.length(false)
+std.foldr(function(v, i) i + v, ['b', 'c', 'asdd'], 'a')

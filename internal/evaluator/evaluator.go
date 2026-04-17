@@ -209,7 +209,7 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 			return Value{}, createErrorWithContext(err, &node.LocRange)
 		}
 		if !cond.IsBool() {
-			return Value{}, fmt.Errorf("(%T) unexpected conditional type '%s'", node, cond.Type().String())
+			return Value{}, TypeErrorSpecific(ValueTypeBool, cond.Type())
 		}
 
 		if cond.Bool() {
@@ -626,11 +626,13 @@ func handleIndex(node *ast.Index, scopeId uint32, ctx Context) (Value, error) {
 		return val, nil
 	case ValueTypeArray:
 		if !index.IsNumber() {
-			return Value{}, createErrorWithContext(fmt.Errorf("unexpected index type for indexing array, expected number, got %s", index.Type().String()), &node.LocRange)
+			return Value{}, TypeErrorSpecific(ValueTypeNumber, index.Type())
 		}
 		i := int(index.Number())
-		if len(target.Array(ctx)) <= i {
-			return Value{}, createErrorWithContext(fmt.Errorf("index (%d) out of bounds, array length %d", i, len(target.Array(ctx))), &node.LocRange)
+
+		arr := target.Array(ctx)
+		if i < 0 || len(arr) <= i {
+			return Value{}, MakeRuntimeError(fmt.Errorf("Index %d out of bounds, not within [0, %d)", i, len(arr)))
 		}
 		return target.Array(ctx)[i], nil
 	}

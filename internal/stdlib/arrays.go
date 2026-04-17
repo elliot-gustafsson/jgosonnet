@@ -977,13 +977,13 @@ func std_foldr(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 	if arrVal.IsString() {
 		runes := []rune(arrVal.String(ctx))
 
-		for i := len(runes); i >= 0; i-- {
+		for i := len(runes) - 1; i >= 0; i-- {
 			v := runes[i]
 
 			str := evaluator.MakeString(string(v), ctx)
 
-			foldFuncArgs[0] = evaluator.NamedValue{Value: state}
-			foldFuncArgs[1] = evaluator.NamedValue{Value: str}
+			foldFuncArgs[0] = evaluator.NamedValue{Value: str}
+			foldFuncArgs[1] = evaluator.NamedValue{Value: state}
 
 			val, err := foldFunc.Exec(foldFuncArgs, ctx)
 			if err != nil {

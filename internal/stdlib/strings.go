@@ -82,10 +82,46 @@ var std_sha3 = liftString(func(s string) string {
 	hash := sha3.Sum512([]byte(s))
 	return hex.EncodeToString(hash[:])
 })
-var std_base64 = liftString(func(s string) string {
-	hash := base64.StdEncoding.EncodeToString([]byte(s))
-	return hash
-})
+
+func std_base64(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	inputVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	var toEncode []byte
+	if inputVal.IsString() {
+		toEncode = []byte(inputVal.String(ctx))
+	} else if inputVal.IsArray() {
+		arr := inputVal.Array(ctx)
+		toEncode = make([]byte, 0, len(arr))
+		for _, v := range arr {
+			v, err := v.Eval(ctx)
+			if err != nil {
+				return evaluator.Value{}, err
+			}
+
+			numInt := int(v.Number())
+			if !v.IsNumber() || float64(numInt) != v.Number() {
+				err := fmt.Errorf("base64 encountered a non-integer value in the array, got %s", v.Type())
+				return evaluator.Value{}, evaluator.MakeRuntimeError(err)
+			}
+
+			if numInt < 0 || 255 < numInt {
+				err := fmt.Errorf("base64 encountered invalid codepoint value in the array (must be 0 <= X <= 255), got %d", numInt)
+				return evaluator.Value{}, evaluator.MakeRuntimeError(err)
+			}
+			toEncode = append(toEncode, byte(numInt))
+		}
+	} else {
+		err := fmt.Errorf("base64 can only base64 encode strings / arrays of single bytes, got %s", inputVal.Type())
+		return evaluator.Value{}, evaluator.MakeRuntimeError(err)
+	}
+
+	res := base64.StdEncoding.EncodeToString(toEncode)
+	return evaluator.MakeString(res, ctx), nil
+}
+
 var std_base64Decode = liftStringErr(func(s string) (string, error) {
 	out, err := base64.StdEncoding.DecodeString(s)
 	if err != nil {
@@ -93,6 +129,22 @@ var std_base64Decode = liftStringErr(func(s string) (string, error) {
 	}
 	return string(out), err
 })
+
+func std_base64DecodeBytes(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	arg, err := args[0].EvalString(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	out, err := base64.StdEncoding.DecodeString(arg)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	res := make([]evaluator.Value, 0, len(out))
+	for _, v := range out {
+		res = append(res, evaluator.MakeNumber(float64(v)))
+	}
+	return evaluator.MakeArray(res, ctx), nil
+}
 
 var std_asciiLower = liftString(strings.ToLower)
 var std_asciiUpper = liftString(strings.ToUpper)
@@ -370,7 +422,7 @@ func std_splitLimitR(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 
 	res := make([]evaluator.Value, 0, maxSplits)
 	for range maxSplits {
-		idx := strings.LastIndex(full, split)
+		idx := strings.LastIndex(s, split)
 		if idx < 0 {
 			break // No more separators found
 		}

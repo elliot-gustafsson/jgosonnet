@@ -1,7 +1,9 @@
 package evaluator
 
 import (
+	"errors"
 	"fmt"
+	"math"
 
 	"github.com/google/go-jsonnet/ast"
 )
@@ -82,7 +84,7 @@ func bopPlus(left, right Value, ctx Context) (Value, error) {
 	}
 
 	if left.Type() != right.Type() {
-		return Value{}, fmt.Errorf("non matching types passed to binary op plus (%s,%s)", left.Type().String(), right.Type().String())
+		return Value{}, TypeErrorSpecific(left.Type(), right.Type())
 	}
 
 	switch left.Type() {
@@ -175,15 +177,51 @@ func handleNumberOp(left, right float64, op ast.BinaryOp) (val float64, err erro
 	case ast.BopMult:
 		val = left * right
 	case ast.BopBitwiseAnd:
-		val = float64(int64(left) & int64(right))
+		val, err = builtinBitwiseAnd(left, right)
 	case ast.BopBitwiseOr:
-		val = float64(int64(left) | int64(right))
+		val, err = builtinBitwiseOr(left, right)
 	case ast.BopBitwiseXor:
-		val = float64(int64(left) ^ int64(right))
+		val, err = builtinBitwiseXor(left, right)
 	case ast.BopShiftL:
-		val = float64(int64(left) << int64(right))
+		val, err = builtinShiftL(left, right)
 	case ast.BopShiftR:
-		val = float64(int64(left) >> int64(right))
+		val, err = builtinShiftR(left, right)
 	}
 	return
 }
+
+const (
+	maxSafeIntValue float64 = (1 << 53) - 1
+	minSafeIntValue float64 = -maxSafeIntValue
+)
+
+func liftBitwise(f func(int64, int64) int64, positiveRightArg bool) func(float64, float64) (float64, error) {
+	return func(left, right float64) (float64, error) {
+
+		if left < minSafeIntValue || left > maxSafeIntValue {
+			err := fmt.Errorf("Bitwise operator argument %v outside of range [%v, %v]", left, int64(minSafeIntValue), int64(maxSafeIntValue))
+			return 0, MakeRuntimeError(err)
+		}
+		if right < minSafeIntValue || right > maxSafeIntValue {
+			err := fmt.Errorf("Bitwise operator argument %v outside of range [%v, %v]", right, int64(minSafeIntValue), int64(maxSafeIntValue))
+			return 0, MakeRuntimeError(err)
+		}
+		if positiveRightArg && right < 0 {
+			return 0, MakeRuntimeError(errors.New("Shift by negative exponent."))
+		}
+		res := float64(f(int64(left), int64(right)))
+		if math.IsNaN(res) {
+			return 0, MakeRuntimeError(errors.New("Not a number"))
+		}
+		if math.IsInf(res, 0) {
+			return 0, MakeRuntimeError(errors.New("Overflow"))
+		}
+		return res, nil
+	}
+}
+
+var builtinShiftL = liftBitwise(func(x, y int64) int64 { return x << uint(y%64) }, true)
+var builtinShiftR = liftBitwise(func(x, y int64) int64 { return x >> uint(y%64) }, true)
+var builtinBitwiseAnd = liftBitwise(func(x, y int64) int64 { return x & y }, false)
+var builtinBitwiseOr = liftBitwise(func(x, y int64) int64 { return x | y }, false)
+var builtinBitwiseXor = liftBitwise(func(x, y int64) int64 { return x ^ y }, false)

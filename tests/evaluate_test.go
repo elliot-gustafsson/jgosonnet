@@ -54,7 +54,7 @@ func TestEvaluator(t *testing.T) {
 
 	assert.Equal(t, og, stuff)
 
-	// println(stuff)
+	println(stuff)
 
 }
 
