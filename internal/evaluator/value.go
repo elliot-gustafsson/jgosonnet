@@ -78,12 +78,12 @@ func NewFunction(args []uint32, fn Func) Function {
 
 func (t Function) Exec(args []NamedValue, ctx Context) (Value, error) {
 	if t.fn == nil {
-		return Value{}, fmt.Errorf("function no instantiated")
+		return Value{}, fmt.Errorf("function not instantiated")
 	}
 	return t.fn(args, ctx)
 }
 
-func (t Function) Empty() bool {
+func (t Function) Noop() bool {
 	return t.fn == nil
 }
 
@@ -208,6 +208,107 @@ func (v Value) Eval(ctx Context) (Value, error) {
 	thunk = v.Thunk(ctx)
 	thunk.Value = evaledVal
 	return evaledVal, nil
+}
+
+type RuntimeError struct {
+	err error
+}
+
+func (e RuntimeError) Error() string {
+	return "RUNTIME ERROR: " + e.err.Error()
+}
+
+func MakeRuntimeError(err error) RuntimeError {
+	return RuntimeError{err}
+}
+
+func TypeErrorSpecific(good, bad ValueType) error {
+	return MakeRuntimeError(fmt.Errorf("Unexpected type %s, expected %s", bad, good))
+}
+
+func TypeErrorGeneral(bad ValueType) error {
+	return MakeRuntimeError(fmt.Errorf("Unexpected type %s", bad))
+}
+
+func (v Value) EvalString(ctx Context) (string, error) {
+	x, err := v.Eval(ctx)
+	if err != nil {
+		return "", err
+	}
+	if !x.IsString() {
+		return "", TypeErrorSpecific(ValueTypeString, x.Type())
+	}
+	return x.String(ctx), nil
+}
+
+func (v Value) EvalNumber(ctx Context) (float64, error) {
+	x, err := v.Eval(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if !x.IsNumber() {
+		return 0, TypeErrorSpecific(ValueTypeNumber, x.Type())
+	}
+	return x.Number(), nil
+}
+
+func (v Value) EvalInteger(ctx Context) (int, error) {
+	x, err := v.Eval(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if !x.IsNumber() {
+		return 0, TypeErrorSpecific(ValueTypeNumber, x.Type())
+	}
+	intNum := int(x.Number())
+	if float64(intNum) != x.Number() {
+		return 0, MakeRuntimeError(fmt.Errorf("Expected an integer, but got %v", x.Number()))
+	}
+	return intNum, nil
+}
+
+func (v Value) EvalBool(ctx Context) (bool, error) {
+	x, err := v.Eval(ctx)
+	if err != nil {
+		return false, err
+	}
+	if !x.IsBool() {
+		return false, TypeErrorSpecific(ValueTypeBool, x.Type())
+	}
+	return x.Bool(), nil
+}
+
+func (v Value) EvalArray(ctx Context) ([]Value, error) {
+	x, err := v.Eval(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !x.IsArray() {
+		return nil, TypeErrorSpecific(ValueTypeArray, x.Type())
+	}
+	return x.Array(ctx), nil
+}
+
+func (v Value) EvalObject(ctx Context) (*Object, error) {
+	x, err := v.Eval(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !x.IsObject() {
+		return nil, TypeErrorSpecific(ValueTypeObject, x.Type())
+	}
+	return x.Object(ctx), nil
+}
+
+func (v Value) EvalFunction(ctx Context) (Function, error) {
+	x, err := v.Eval(ctx)
+	if err != nil {
+		return Function{}, err
+	}
+	if !x.IsFunction() {
+		return Function{}, TypeErrorSpecific(ValueTypeFunction, x.Type())
+	}
+	return x.Function(ctx), nil
 }
 
 func (v Value) ToString(ctx Context) (string, error) {

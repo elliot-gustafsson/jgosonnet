@@ -88,6 +88,7 @@ func CreateFileScope(filename string, baseStd Value, ctx Context) uint32 {
 	return scopeId
 }
 
+// TODO: write location to traceOut writer
 func createErrorWithContext(err error, loc *ast.LocationRange) error {
 	return fmt.Errorf("%w\n\nlocation: %s", err, loc.String())
 }

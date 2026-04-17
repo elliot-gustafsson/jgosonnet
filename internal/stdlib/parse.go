@@ -13,19 +13,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func liftStringToValueErr(f func(string) (evaluator.Value, error), name string) evaluator.Func {
+func liftStringToValueErr(f func(string) (evaluator.Value, error)) evaluator.Func {
 	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-		if len(args) != 1 {
-			return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to %s: %d, expected 1", name, len(args))
-		}
-		a, err := args[0].Eval(ctx)
+
+		a, err := args[0].EvalString(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
-		if !a.IsString() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 0): %s, expected string", name, a.Type().String())
-		}
-		return f(a.String(ctx))
+		return f(a)
 	}
 }
 
@@ -35,7 +30,7 @@ var std_parseInt = liftStringToValueErr(func(s string) (evaluator.Value, error) 
 		return evaluator.Value{}, fmt.Errorf("error: %s is not a base 10 integer", s)
 	}
 	return evaluator.MakeNumber(float64(num)), nil
-}, "std.parseInt")
+})
 
 var std_parseOctal = liftStringToValueErr(func(s string) (evaluator.Value, error) {
 	num, err := strconv.ParseInt(s, 8, 64)
@@ -43,7 +38,7 @@ var std_parseOctal = liftStringToValueErr(func(s string) (evaluator.Value, error
 		return evaluator.Value{}, fmt.Errorf("error: %s is not a base 8 integer", s)
 	}
 	return evaluator.MakeNumber(float64(num)), nil
-}, "std.parseOctal")
+})
 
 var std_parseHex = liftStringToValueErr(func(s string) (evaluator.Value, error) {
 	num, err := strconv.ParseInt(s, 16, 64)
@@ -51,21 +46,17 @@ var std_parseHex = liftStringToValueErr(func(s string) (evaluator.Value, error) 
 		return evaluator.Value{}, fmt.Errorf("error: %s is not a base 16 integer", s)
 	}
 	return evaluator.MakeNumber(float64(num)), nil
-}, "std.parseHex")
+})
 
 func std_parseJson(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 1 {
-		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.parseJson: %d, expected 1", len(args))
-	}
-	a, err := args[0].Eval(ctx)
+
+	jsonString, err := args[0].EvalString(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !a.IsString() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.parseJson (arg 0): %s, expected string", a.Type().String())
-	}
+
 	var data any
-	err = json.Unmarshal([]byte(a.String(ctx)), &data)
+	err = json.Unmarshal([]byte(jsonString), &data)
 	if err != nil {
 		return evaluator.Value{}, fmt.Errorf("failed to parse json, err: %w", err)
 	}
@@ -73,18 +64,12 @@ func std_parseJson(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 }
 
 func std_parseYaml(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 1 {
-		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.parseYaml: %d, expected 1", len(args))
-	}
-	a, err := args[0].Eval(ctx)
+
+	yamlString, err := args[0].EvalString(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !a.IsString() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.parseYaml (arg 0): %s, expected string", a.Type().String())
-	}
 
-	yamlString := a.String(ctx)
 	dec := yaml.NewDecoder(bytes.NewReader([]byte(yamlString)))
 
 	var documents []any
@@ -171,18 +156,11 @@ func rawDataToValue(x any, ctx evaluator.Context) (evaluator.Value, error) {
 }
 
 func std_encodeUTF8(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 1 {
-		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.encodeUTF8: %d, expected 1", len(args))
-	}
 
-	strVal, err := args[0].Eval(ctx)
+	str, err := args[0].EvalString(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !strVal.IsString() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.encodeUTF8 (arg 0): %s, expected string", strVal.Type().String())
-	}
-	str := strVal.String(ctx)
 
 	res := make([]evaluator.Value, 0, len(str))
 	for _, b := range []byte(str) {
@@ -193,18 +171,11 @@ func std_encodeUTF8(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 }
 
 func std_decodeUTF8(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 1 {
-		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.decodeUTF8: %d, expected 1", len(args))
-	}
 
-	arrVal, err := args[0].Eval(ctx)
+	arr, err := args[0].EvalArray(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !arrVal.IsArray() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.decodeUTF8 (arg 0): %s, expected array", arrVal.Type().String())
-	}
-	arr := arrVal.Array(ctx)
 
 	var b strings.Builder
 	for _, v := range arr {

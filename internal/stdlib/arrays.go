@@ -9,35 +9,23 @@ import (
 )
 
 func std_range(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 2 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.range  %d, expected 2", len(args))
-	}
 
-	from, err := args[0].Eval(ctx)
+	from, err := args[0].EvalInteger(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !from.IsNumber() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.range (arg 0): %s, expected number", from.Type().String())
-	}
 
-	to, err := args[1].Eval(ctx)
+	to, err := args[1].EvalInteger(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !to.IsNumber() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.range (arg 1): %s, expected number", to.Type().String())
-	}
 
-	fromIndex := int(from.Number())
-	toIndex := int(to.Number())
-
-	if toIndex < fromIndex {
+	if to < from {
 		return evaluator.MakeArray(make([]evaluator.Value, 0), ctx), nil
 	}
 
-	res := make([]evaluator.Value, 0, toIndex-fromIndex)
-	for i := fromIndex; i <= toIndex; i++ {
+	res := make([]evaluator.Value, 0, int(to-from))
+	for i := from; i <= to; i++ {
 		res = append(res, evaluator.MakeNumber(float64(i)))
 	}
 
@@ -45,32 +33,20 @@ func std_range(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 }
 
 func std_makeArray(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 2 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.makeArray %d, expected 2", len(args))
-	}
 
-	val, err := args[0].Eval(ctx)
+	size, err := args[0].EvalInteger(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !val.IsNumber() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.makeArray (arg 0): %s, expected number", val.Type().String())
-	}
 
-	f, err := args[1].Eval(ctx)
+	mapperFunc, err := args[1].EvalFunction(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !f.IsFunction() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.makeArray (arg 1): %s, expected function", f.Type().String())
-	}
-
-	// Create the array once and mutate it to reduce objects on the heap
 	mapperFuncInput := []evaluator.NamedValue{{}}
-	mapperFunc := f.Function(ctx)
 
-	res := make([]evaluator.Value, int(val.Number()))
-	for i := range int(val.Number()) {
+	res := make([]evaluator.Value, size)
+	for i := range size {
 		v := evaluator.MakeNumber(float64(i))
 		mapperFuncInput[0] = evaluator.NamedValue{Value: v}
 		out, err := mapperFunc.Exec(mapperFuncInput, ctx)
@@ -84,9 +60,6 @@ func std_makeArray(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 }
 
 func std_join(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 2 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.join %d, expected 2", len(args))
-	}
 
 	sep, err := args[0].Eval(ctx)
 	if err != nil {
@@ -97,15 +70,13 @@ func std_join(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 		return evaluator.Value{}, err
 	}
 
-	// TODO: Think, is pre-calculate worth it
-
-	inputArray := arr.Array(ctx) // Avoid calling .Array() repeatedly
+	inputArray := arr.Array(ctx)
 	inputLen := len(inputArray)
 
 	if sep.IsString() {
 
 		if !arr.IsArray() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.join (arg 1): %s, expected array if arg 0 is string", arr.Type().String())
+			return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeArray, arr.Type())
 		}
 
 		totalLen := 0
@@ -120,7 +91,7 @@ func std_join(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 				continue
 			}
 			if !v.IsString() {
-				return evaluator.Value{}, fmt.Errorf("second parameter to std.join must be an array of strings if first argument is a string, got %s", v.Type().String())
+				return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeString, v.Type())
 			}
 
 			totalLen += len(v.String(ctx))
@@ -156,7 +127,7 @@ func std_join(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 	}
 
 	if !sep.IsArray() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.join (arg 0): %s, expected number or array", sep.Type().String())
+		return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeArray, sep.Type())
 	}
 
 	sepArray := sep.Array(ctx)
@@ -175,7 +146,7 @@ func std_join(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 		}
 
 		if !v.IsArray() {
-			return evaluator.Value{}, fmt.Errorf("second parameter to std.join must be an array of arrays if first argument is an array")
+			return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeArray, v.Type())
 		}
 		totalCap += len(v.Array(ctx))
 	}
@@ -208,9 +179,6 @@ func std_join(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 }
 
 func std_deepJoin(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 1 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.deepJoin %d, expected 1", len(args))
-	}
 
 	arrVal, err := args[0].Eval(ctx)
 	if err != nil {
@@ -222,7 +190,7 @@ func std_deepJoin(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator
 	}
 
 	if !arrVal.IsArray() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.deepJoin (arg 0): %s, expected string or array", arrVal.Type().String())
+		return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeArray, arrVal.Type())
 	}
 	arr := arrVal.Array(ctx)
 
@@ -255,38 +223,25 @@ func flattenArray(b *strings.Builder, arr []evaluator.Value, ctx evaluator.Conte
 			continue
 		}
 
-		return fmt.Errorf("expected string or array, got %s", v.Type().String())
+		return fmt.Errorf("Expected string or array, got %s", v.Type().String())
 	}
 
 	return nil
 }
 
 func std_filter(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 2 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.filter %d, expected 2", len(args))
-	}
 
-	f, err := args[0].Eval(ctx)
+	mapperFunc, err := args[0].EvalFunction(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !f.IsFunction() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.filter (arg 0): %s, expected function", f.Type().String())
-	}
 
-	arr, err := args[1].Eval(ctx)
+	inputArray, err := args[1].EvalArray(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !arr.IsArray() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.filter (arg 1): %s, expected array", arr.Type().String())
-	}
 
-	inputArray := arr.Array(ctx)
-
-	// Create the array once and mutate it to reduce objects on the heap
 	mapperFuncInput := []evaluator.NamedValue{{}}
-	mapperFunc := f.Function(ctx)
 
 	res := []evaluator.Value{}
 	for _, v := range inputArray {
@@ -296,11 +251,12 @@ func std_filter(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 			return evaluator.Value{}, err
 		}
 
-		if !out.IsBool() {
-			return evaluator.Value{}, fmt.Errorf("unexpected responser from std.filter func: %s, expected bool", arr.Type().String())
+		b, err := out.EvalBool(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
 		}
 
-		if out.Bool() {
+		if b {
 			res = append(res, v)
 		}
 
@@ -310,114 +266,82 @@ func std_filter(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 }
 
 func std_flatMap(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 2 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.flatMap %d, expected 2", len(args))
-	}
 
-	funcVal, err := args[0].Eval(ctx)
+	mapFunc, err := args[0].EvalFunction(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !funcVal.IsFunction() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.flatMap (arg 0): %s, expected function", funcVal.Type().String())
-	}
 
-	arrVal, err := args[1].Eval(ctx)
+	arr, err := args[1].EvalArray(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !arrVal.IsArray() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.flatMap (arg 1): %s, expected array", arrVal.Type().String())
-	}
 
-	mapFunc := funcVal.Function(ctx)
 	mapFuncArgs := []evaluator.NamedValue{{}}
-
-	arr := arrVal.Array(ctx)
 
 	res := make([]evaluator.Value, 0, len(arr))
 	for _, v := range arr {
 
 		mapFuncArgs[0] = evaluator.NamedValue{Value: v}
 
-		x, err := mapFunc.Exec(mapFuncArgs, ctx)
+		out, err := mapFunc.Exec(mapFuncArgs, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
 
-		x, err = x.Eval(ctx)
+		outArr, err := out.EvalArray(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
 
-		if !x.IsArray() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type received to std.flatMap map func: %s, expected array", x.Type().String())
-		}
-
-		res = append(res, x.Array(ctx)...)
+		res = append(res, outArr...)
 	}
 
 	return evaluator.MakeArray(res, ctx), nil
 }
 
 func std_filterMap(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 3 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.filterMap %d, expected 3", len(args))
-	}
 
-	filterFunc, err := args[0].Eval(ctx)
+	filterFunc, err := args[0].EvalFunction(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !filterFunc.IsFunction() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.filterMap (arg 0): %s, expected function", filterFunc.Type().String())
-	}
 
-	mapFunc, err := args[1].Eval(ctx)
+	mapFunc, err := args[1].EvalFunction(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !mapFunc.IsFunction() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.filterMap (arg 1): %s, expected function", mapFunc.Type().String())
-	}
 
-	arr, err := args[2].Eval(ctx)
+	inputArray, err := args[2].EvalArray(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !arr.IsArray() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.filterMap (arg 2): %s, expected array", arr.Type().String())
-	}
 
-	inputArray := arr.Array(ctx)
-
-	// Create the array once and mutate it to reduce objects on the heap
-	mapperFuncInput := []evaluator.NamedValue{{}}
-	fFunc := filterFunc.Function(ctx)
+	funcArgs := []evaluator.NamedValue{{}}
 
 	filteredArr := make([]evaluator.Value, 0, len(inputArray)/2)
 	for _, v := range inputArray {
-		mapperFuncInput[0] = evaluator.NamedValue{Value: v}
-		out, err := fFunc.Exec(mapperFuncInput, ctx)
+		funcArgs[0] = evaluator.NamedValue{Value: v}
+		out, err := filterFunc.Exec(funcArgs, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
 
-		if !out.IsBool() {
-			return evaluator.Value{}, fmt.Errorf("unexpected responser from std.filter func: %s, expected bool", arr.Type().String())
+		b, err := out.EvalBool(ctx)
+		if err != nil {
+			return evaluator.Value{}, err
 		}
 
-		if out.Bool() {
+		if b {
 			filteredArr = append(filteredArr, v)
 		}
 
 	}
 
-	mFunc := mapFunc.Function(ctx)
 	res := make([]evaluator.Value, 0, len(filteredArr))
 	for _, v := range filteredArr {
-		mapperFuncInput[0] = evaluator.NamedValue{Value: v}
-		out, err := mFunc.Exec(mapperFuncInput, ctx)
+		funcArgs[0] = evaluator.NamedValue{Value: v}
+		out, err := mapFunc.Exec(funcArgs, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
@@ -428,38 +352,27 @@ func std_filterMap(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 }
 
 func std_uniq(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 2 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.uniq %d, expected 2", len(args))
-	}
 
-	arr, err := args[0].Eval(ctx)
+	arr, err := args[0].EvalArray(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
-	}
-	if !arr.IsArray() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.uniq (arg 0): %s, expected array", arr.Type().String())
 	}
 
 	var keyF evaluator.Function
 	if !args[1].IsNone() {
-		f, err := args[1].Eval(ctx)
+		f, err := args[1].EvalFunction(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
-		if !f.IsFunction() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.uniq (arg 1): %s, expected function", f.Type().String())
-		}
-		keyF = f.Function(ctx)
+		keyF = f
 	}
-
-	inputArr := arr.Array(ctx)
 
 	// Create the array once and mutate it to reduce objects on the heap
 	mapperFuncInput := []evaluator.NamedValue{{}}
 
 	var last evaluator.Value
-	res := make([]evaluator.Value, 0, len(inputArr))
-	for _, v := range inputArr {
+	res := make([]evaluator.Value, 0, len(arr))
+	for _, v := range arr {
 
 		if last.IsNone() {
 			res = append(res, v)
@@ -471,7 +384,7 @@ func std_uniq(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 		var y evaluator.Value
 		var err error
 
-		if !keyF.Empty() {
+		if !keyF.Noop() {
 
 			mapperFuncInput[0] = evaluator.NamedValue{Value: last}
 			x, err = keyF.Exec(mapperFuncInput, ctx)
@@ -520,33 +433,22 @@ func std_uniq(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 }
 
 func std_sort(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 2 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.sort %d, expected 2", len(args))
-	}
 
-	arr, err := args[0].Eval(ctx)
+	arr, err := args[0].EvalArray(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
-	}
-	if !arr.IsArray() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.sort (arg 0): %s, expected array", arr.Type().String())
 	}
 
 	var keyF evaluator.Function
 	if !args[1].IsNone() {
-		f, err := args[1].Eval(ctx)
+		f, err := args[1].EvalFunction(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
-		if !f.IsFunction() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.sort (arg 1): %s, expected function", f.Type().String())
-		}
-		keyF = f.Function(ctx)
+		keyF = f
 	}
 
-	inputArr := arr.Array(ctx)
-
-	res, err := sortArray(inputArr, keyF, ctx)
+	res, err := sortArray(arr, keyF, ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
@@ -573,7 +475,7 @@ func sortArray(arr []evaluator.Value, keyF evaluator.Function, ctx evaluator.Con
 	// TODO: now we eval the values over and over, think abt this
 	slices.SortStableFunc(result, func(a, b evaluator.Value) int {
 
-		if !keyF.Empty() {
+		if !keyF.Noop() {
 			mapperFuncInput[0] = evaluator.NamedValue{Value: a}
 			a, err = keyF.Exec(mapperFuncInput, ctx)
 			if err != nil {
@@ -619,9 +521,6 @@ func sortArray(arr []evaluator.Value, keyF evaluator.Function, ctx evaluator.Con
 
 // Shortcut for std.uniq(std.sort(arr)).
 func std_set(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 2 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.set %d, expected 2", len(args))
-	}
 
 	sorted, err := std_sort(args, ctx)
 	if err != nil {
@@ -639,36 +538,23 @@ func std_set(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 }
 
 func std_map(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 2 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.map %d, expected 2", len(args))
-	}
 
-	f, err := args[0].Eval(ctx)
+	mapFunc, err := args[0].EvalFunction(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !f.IsFunction() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.map (arg 0): %s, expected function", f.Type().String())
-	}
 
-	arr, err := args[1].Eval(ctx)
+	arr, err := args[1].EvalArray(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !arr.IsArray() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.map (arg 1): %s, expected array", arr.Type().String())
-	}
 
-	inputArr := arr.Array(ctx)
-
-	// Create the array once and mutate it to reduce objects on the heap
 	mapperFuncInput := []evaluator.NamedValue{{}}
-	mapperFunc := f.Function(ctx)
 
-	res := make([]evaluator.Value, 0, len(inputArr))
-	for _, v := range inputArr {
+	res := make([]evaluator.Value, 0, len(arr))
+	for _, v := range arr {
 		mapperFuncInput[0] = evaluator.NamedValue{Value: v}
-		out, err := mapperFunc.Exec(mapperFuncInput, ctx)
+		out, err := mapFunc.Exec(mapperFuncInput, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
@@ -683,33 +569,24 @@ func std_mapWithIndex(args []evaluator.NamedValue, ctx evaluator.Context) (evalu
 		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.mapWithIndex %d, expected 2", len(args))
 	}
 
-	f, err := args[0].Eval(ctx)
+	mapFunc, err := args[0].EvalFunction(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !f.IsFunction() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.mapWithIndex (arg 0): %s, expected function", f.Type().String())
-	}
 
-	arr, err := args[1].Eval(ctx)
+	arr, err := args[1].EvalArray(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !arr.IsArray() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.mapWithIndex (arg 1): %s, expected array", arr.Type().String())
-	}
-
-	inputArr := arr.Array(ctx)
 
 	// Create the array once and mutate it to reduce objects on the heap
 	mapperFuncInput := []evaluator.NamedValue{{}, {}}
-	mapperFunc := f.Function(ctx)
 
-	res := make([]evaluator.Value, 0, len(inputArr))
-	for i, v := range inputArr {
+	res := make([]evaluator.Value, 0, len(arr))
+	for i, v := range arr {
 		mapperFuncInput[0] = evaluator.NamedValue{Value: evaluator.MakeNumber(float64(i))}
 		mapperFuncInput[1] = evaluator.NamedValue{Value: v}
-		out, err := mapperFunc.Exec(mapperFuncInput, ctx)
+		out, err := mapFunc.Exec(mapperFuncInput, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
@@ -720,9 +597,6 @@ func std_mapWithIndex(args []evaluator.NamedValue, ctx evaluator.Context) (evalu
 }
 
 func std_member(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 2 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.member %d, expected 2", len(args))
-	}
 
 	indexable, err := args[0].Eval(ctx)
 	if err != nil {
@@ -736,7 +610,7 @@ func std_member(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 	if indexable.IsString() {
 
 		if !arg.IsString() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.member (arg 1): %s, expected string", arg.Type().String())
+			return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeString, arg.Type())
 		}
 
 		for _, s := range indexable.String(ctx) {
@@ -754,7 +628,7 @@ func std_member(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 	}
 
 	if !indexable.IsArray() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.member (arg 0): %s, expected array or string", indexable.Type().String())
+		return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeArray, arg.Type())
 	}
 
 	inputArr := indexable.Array(ctx)
@@ -792,30 +666,23 @@ func std_setMember(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 		return evaluator.Value{}, err
 	}
 
-	arr, err := args[1].Eval(ctx)
+	arr, err := args[1].EvalArray(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
-	}
-	if !arr.IsArray() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.member (arg 1): %s, expected array", arr.Type().String())
 	}
 
 	var keyF evaluator.Function
 	if !args[2].IsNone() {
-		f, err := args[2].Eval(ctx)
+		f, err := args[2].EvalFunction(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
-		if !f.IsFunction() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.member (arg 2): %s, expected function", f.Type().String())
-		}
-		keyF = f.Function(ctx)
+		keyF = f
 	}
 
-	// Create the array once and mutate it to reduce objects on the heap
 	mapperFuncInput := []evaluator.NamedValue{{}}
 
-	for _, v := range arr.Array(ctx) {
+	for _, v := range arr {
 		v, err := v.Eval(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
@@ -824,7 +691,7 @@ func std_setMember(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 		ar := v
 		br := member
 
-		if !keyF.Empty() {
+		if !keyF.Noop() {
 			mapperFuncInput[0] = evaluator.NamedValue{Value: v}
 			ar, err = keyF.Exec(mapperFuncInput, ctx)
 			if err != nil {
@@ -857,16 +724,10 @@ func std_setMember(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 }
 
 func std_count(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 2 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.count %d, expected 2", len(args))
-	}
 
-	indexable, err := args[0].Eval(ctx)
+	indexable, err := args[0].EvalArray(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
-	}
-	if !indexable.IsArray() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.count (arg 0): %s, expected array", indexable.Type().String())
 	}
 
 	arg, err := args[1].Eval(ctx)
@@ -875,7 +736,7 @@ func std_count(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 	}
 
 	count := 0
-	for _, v := range indexable.Array(ctx) {
+	for _, v := range indexable {
 		v, err := v.Eval(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
@@ -900,23 +761,16 @@ func std_count(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 
 func std_slice(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
-	if len(args) != 4 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.slice %d, expected 4", len(args))
-	}
-
 	indexable, err := args[0].Eval(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
 
-	index, err := args[1].Eval(ctx)
+	index, err := args[1].EvalNumber(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !index.IsNumber() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.slice (arg 1): %s, expected number", index.Type().String())
-	}
-	indexInt := int(index.Number())
+	indexInt := int(index)
 
 	end, err := args[2].Eval(ctx)
 	if err != nil {
@@ -1367,7 +1221,7 @@ func std_setUnion(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator
 
 		var x int
 
-		if !keyF.Empty() {
+		if !keyF.Noop() {
 
 			funcArgs[0] = evaluator.NamedValue{Value: aV}
 			aVC, err := keyF.Exec(funcArgs, ctx)
@@ -1496,7 +1350,7 @@ func std_setInter(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator
 
 		var x int
 
-		if !keyF.Empty() {
+		if !keyF.Noop() {
 
 			funcArgs[0] = evaluator.NamedValue{Value: aV}
 			aVC, err := keyF.Exec(funcArgs, ctx)
@@ -1549,40 +1403,26 @@ func std_setDiff(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.
 		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.setDiff %d, expected 3", len(args))
 	}
 
-	aVal, err := args[0].Eval(ctx)
+	aArr, err := args[0].EvalArray(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
 
-	if !aVal.IsArray() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.setDiff (arg 0): %s, expected array", aVal.Type().String())
-	}
-
-	bVal, err := args[1].Eval(ctx)
+	bArr, err := args[1].EvalArray(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
-	}
-
-	if !bVal.IsArray() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.setDiff (arg 1): %s, expected array", bVal.Type().String())
 	}
 
 	var keyF evaluator.Function
 	var funcArgs []evaluator.NamedValue
 	if !args[2].IsNone() {
-		f, err := args[2].Eval(ctx)
+		f, err := args[2].EvalFunction(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
-		if !f.IsFunction() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.setDiff (arg 2): %s, expected function", f.Type().String())
-		}
-		keyF = f.Function(ctx)
+		keyF = f
 		funcArgs = []evaluator.NamedValue{{}}
 	}
-
-	aArr := aVal.Array(ctx)
-	bArr := bVal.Array(ctx)
 
 	i, j := 0, 0
 	res := make([]evaluator.Value, 0, len(aArr))
@@ -1598,7 +1438,7 @@ func std_setDiff(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.
 		}
 
 		var x int
-		if !keyF.Empty() {
+		if !keyF.Noop() {
 			funcArgs[0] = evaluator.NamedValue{Value: aV}
 			aVC, err := keyF.Exec(funcArgs, ctx)
 			if err != nil {
@@ -1656,23 +1496,16 @@ func std_setDiff(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.
 }
 
 func std_find(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 2 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.find %d, expected 2", len(args))
-	}
 
 	valueVal, err := args[0].Eval(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
 
-	arrVal, err := args[1].Eval(ctx)
+	arr, err := args[1].EvalArray(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !arrVal.IsArray() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.find (arg 1): %s, expected array", arrVal.Type().String())
-	}
-	arr := arrVal.Array(ctx)
 
 	res := []evaluator.Value{}
 	for i, v := range arr {
@@ -1698,30 +1531,19 @@ func std_find(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 }
 
 func std_any(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 1 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.any %d, expected 1", len(args))
-	}
 
-	arrVal, err := args[0].Eval(ctx)
+	arr, err := args[0].EvalArray(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !arrVal.IsArray() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.any (arg 0): %s, expected array", arrVal.Type().String())
-	}
-	arr := arrVal.Array(ctx)
 
 	for _, v := range arr {
-		v, err := v.Eval(ctx)
+		b, err := v.EvalBool(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
 
-		if !v.IsBool() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type in std.any (arg 0) array: %s, expected boolean", v.Type().String())
-		}
-
-		if v.Bool() {
+		if b {
 			return evaluator.MakeBool(true), nil
 		}
 	}
@@ -1734,26 +1556,18 @@ func std_all(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.all %d, expected 1", len(args))
 	}
 
-	arrVal, err := args[0].Eval(ctx)
+	arr, err := args[0].EvalArray(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !arrVal.IsArray() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.all (arg 0): %s, expected array", arrVal.Type().String())
-	}
-	arr := arrVal.Array(ctx)
 
 	for _, v := range arr {
-		v, err := v.Eval(ctx)
+		b, err := v.EvalBool(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
 
-		if !v.IsBool() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type in std.all (arg 0) array: %s, expected boolean", v.Type().String())
-		}
-
-		if !v.Bool() {
+		if !b {
 			return evaluator.MakeBool(false), nil
 		}
 	}
@@ -1762,31 +1576,20 @@ func std_all(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 }
 
 func std_avg(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 1 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.avg %d, expected 1", len(args))
-	}
 
-	arrVal, err := args[0].Eval(ctx)
+	arr, err := args[0].EvalArray(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !arrVal.IsArray() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.avg (arg 0): %s, expected array", arrVal.Type().String())
-	}
-	arr := arrVal.Array(ctx)
 
 	var total float64
 	for _, v := range arr {
-		v, err := v.Eval(ctx)
+		n, err := v.EvalNumber(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
 
-		if !v.IsNumber() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type in std.avg (arg 0) array: %s, expected boolean", v.Type().String())
-		}
-
-		total += v.Number()
+		total += n
 	}
 
 	avg := total / float64(len(arr))
@@ -1802,30 +1605,20 @@ func std_maxArray(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator
 }
 
 func minMaxArray(args []evaluator.NamedValue, ctx evaluator.Context, max bool, name string) (evaluator.Value, error) {
-	if len(args) != 3 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to %s %d, expected 3", name, len(args))
-	}
 
-	arrVal, err := args[0].Eval(ctx)
+	arr, err := args[0].EvalArray(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !arrVal.IsArray() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 0): %s, expected array", name, arrVal.Type().String())
-	}
-	arr := arrVal.Array(ctx)
 
 	var keyF evaluator.Function
 	var funcArgs []evaluator.NamedValue
 	if !args[1].IsNone() {
-		f, err := args[1].Eval(ctx)
+		f, err := args[1].EvalFunction(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
-		if !f.IsFunction() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to  %s (arg 1): %s, expected function", name, f.Type().String())
-		}
-		keyF = f.Function(ctx)
+		keyF = f
 		funcArgs = []evaluator.NamedValue{{}}
 	}
 
@@ -1857,7 +1650,7 @@ func minMaxArray(args []evaluator.NamedValue, ctx evaluator.Context, max bool, n
 		}
 
 		x, y := last, v
-		if !keyF.Empty() {
+		if !keyF.Noop() {
 			funcArgs[0] = evaluator.NamedValue{Value: last}
 			x, err = keyF.Exec(funcArgs, ctx)
 			if err != nil {
@@ -1902,14 +1695,10 @@ func std_contains(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator
 		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.contains %d, expected 2", len(args))
 	}
 
-	arrVal, err := args[0].Eval(ctx)
+	arr, err := args[0].EvalArray(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !arrVal.IsArray() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.contains (arg 0): %s, expected array", arrVal.Type().String())
-	}
-	arr := arrVal.Array(ctx)
 
 	elem, err := args[1].Eval(ctx)
 	if err != nil {
@@ -1943,14 +1732,10 @@ func std_remove(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.remove %d, expected 2", len(args))
 	}
 
-	arrVal, err := args[0].Eval(ctx)
+	arr, err := args[0].EvalArray(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !arrVal.IsArray() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.remove (arg 0): %s, expected array", arrVal.Type().String())
-	}
-	arr := arrVal.Array(ctx)
 
 	elem, err := args[1].Eval(ctx)
 	if err != nil {
@@ -1993,23 +1778,15 @@ func std_removeAt(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator
 		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.removeAt %d, expected 2", len(args))
 	}
 
-	arrVal, err := args[0].Eval(ctx)
+	arr, err := args[0].EvalArray(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !arrVal.IsArray() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.removeAt (arg 0): %s, expected array", arrVal.Type().String())
-	}
-	arr := arrVal.Array(ctx)
 
-	idxVal, err := args[1].Eval(ctx)
+	idx, err := args[1].EvalInteger(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !idxVal.IsNumber() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.removeAt (arg 1): %s, expected number", idxVal.Type().String())
-	}
-	idx := int(idxVal.Number())
 
 	if idx > len(arr)-1 {
 		return evaluator.Value{}, fmt.Errorf("idx %d is out of bound for array with length %d", idx, len(arr))

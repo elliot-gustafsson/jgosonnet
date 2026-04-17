@@ -7,21 +7,13 @@ import (
 )
 
 func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 1 {
-		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to builtin_objectFlatMerge: %d, expected 1", len(args))
-	}
 
-	val, err := args[0].Eval(ctx)
+	inputArr, err := args[0].EvalArray(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
 
-	if !val.IsArray() {
-		return evaluator.Value{}, fmt.Errorf("(builtin objectFlatMerge) unexpected type of arg 1: %s, expected array", val.Type().String())
-	}
-
 	// TODO: Think. Either just add layers or put all fields in a single layer. Test this later
-	inputArr := val.Array(ctx)
 	layers := make([]*evaluator.Layer, 0, len(inputArr))
 	for _, v := range inputArr {
 
@@ -43,36 +35,23 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 }
 
 func builtin_flatMapArray(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 2 {
-		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to builtin flatMapArray: %d, expected 2", len(args))
-	}
 
-	mapperFunc, err := args[0].Eval(ctx)
+	mapperFunc, err := args[0].EvalFunction(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !mapperFunc.IsFunction() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type of arg 0: %s, expected function", mapperFunc.Type().String())
-	}
 
-	val, err := args[1].Eval(ctx)
+	inputArr, err := args[1].EvalArray(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !val.IsArray() {
-		return evaluator.Value{}, fmt.Errorf("(builtin flatMapArray) unexpected type of arg 1: %s, expected array", mapperFunc.Type().String())
-	}
 
-	inputArr := val.Array(ctx)
-
-	// Create the array once and mutate it to reduce objects on the heap
 	mapperFuncInput := []evaluator.NamedValue{{}}
-	mFunc := mapperFunc.Function(ctx)
 
 	res := make([]evaluator.Value, 0, len(inputArr))
 	for _, v := range inputArr {
 		mapperFuncInput[0] = evaluator.NamedValue{Value: v}
-		out, err := mFunc.Exec(mapperFuncInput, ctx)
+		out, err := mapperFunc.Exec(mapperFuncInput, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}

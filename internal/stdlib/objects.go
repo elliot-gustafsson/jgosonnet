@@ -1,23 +1,19 @@
 package stdlib
 
 import (
-	"fmt"
-
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 	"github.com/google/go-jsonnet/ast"
 )
 
 func liftObjectToValueErr(f func(evaluator.Value, evaluator.Context) (evaluator.Value, error), name string) evaluator.Func {
 	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-		if len(args) != 1 {
-			return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to %s: %d, expected 1", name, len(args))
-		}
+
 		a, err := args[0].Eval(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
 		if !a.IsObject() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 0): %s, expected object", name, a.Type().String())
+			return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, a.Type())
 		}
 		res, err := f(a, ctx)
 		if err != nil {
@@ -29,24 +25,19 @@ func liftObjectToValueErr(f func(evaluator.Value, evaluator.Context) (evaluator.
 
 func liftObjectStringToValueErr(f func(evaluator.Value, string, evaluator.Context) (evaluator.Value, error), name string) evaluator.Func {
 	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-		if len(args) != 2 {
-			return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to %s: %d, expected 2", name, len(args))
-		}
+
 		a, err := args[0].Eval(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
 		if !a.IsObject() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 0): %s, expected object", name, a.Type().String())
+			return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, a.Type())
 		}
-		b, err := args[1].Eval(ctx)
+		b, err := args[1].EvalString(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
-		if !b.IsString() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to %s (arg 1): %s, expected string", name, b.Type().String())
-		}
-		res, err := f(a, b.String(ctx), ctx)
+		res, err := f(a, b, ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
@@ -56,24 +47,18 @@ func liftObjectStringToValueErr(f func(evaluator.Value, string, evaluator.Contex
 
 func std_get(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	// std.get(o, f, default=null, inc_hidden=true)
-	if len(args) != 4 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.get %d, expected 4", len(args))
-	}
 
 	obj, err := args[0].Eval(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
 	if !obj.IsObject() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.get (arg 0): %s, expected object", obj.Type().String())
+		return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, obj.Type())
 	}
 
-	field, err := args[1].Eval(ctx)
+	field, err := args[1].EvalString(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
-	}
-	if !field.IsString() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.get (arg 1): %s, expected string", field.Type().String())
 	}
 
 	defaultVal := evaluator.MakeNull()
@@ -87,17 +72,14 @@ func std_get(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 
 	inclHidden := true
 	if !args[3].IsNone() {
-		v, err := args[3].Eval(ctx)
+		v, err := args[3].EvalBool(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
-		if !v.IsBool() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.get (arg 3): %s, expected boolean", v.Type().String())
-		}
-		inclHidden = v.Bool()
+		inclHidden = v
 	}
 
-	keyId := ctx.Interner.Intern(field.String(ctx))
+	keyId := ctx.Interner.Intern(field)
 
 	childCtx := ctx
 	childCtx.Self = obj
@@ -177,32 +159,18 @@ var std_objectHasAll = liftObjectStringToValueErr(func(v evaluator.Value, s stri
 }, "std.objectHasAll")
 
 func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 2 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.mapWithkey %d, expected 2", len(args))
-	}
 
-	funcVal, err := args[0].Eval(ctx)
+	mapFunc, err := args[0].EvalFunction(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
 
-	if !funcVal.IsFunction() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.mapWithkey (arg 0): %s, expected function", funcVal.Type().String())
-	}
-
-	objVal, err := args[1].Eval(ctx)
+	obj, err := args[1].EvalObject(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
 
-	if !objVal.IsObject() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.mapWithkey (arg 1): %s, expected object", objVal.Type().String())
-	}
-
-	mapFunc := funcVal.Function(ctx)
 	mapFuncArgs := []evaluator.NamedValue{{}, {}}
-
-	obj := objVal.Object(ctx)
 
 	keys, vals, err := evaluator.GetObjectKeysValuesArray(obj, ctx, false)
 	if err != nil {
@@ -243,27 +211,20 @@ func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 }
 
 func std_objectRemoveKey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 2 {
-		return evaluator.Value{}, fmt.Errorf("unexpected number of args passed to std.objectRemoveKey %d, expected 2", len(args))
-	}
 
 	objVal, err := args[0].Eval(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
 	if !objVal.IsObject() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.objectRemoveKey (arg 0): %s, expected object", objVal.Type().String())
+		return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, objVal.Type())
 	}
 	obj := objVal.Object(ctx)
 
-	keyVal, err := args[1].Eval(ctx)
+	key, err := args[1].EvalString(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !keyVal.IsString() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.objectRemoveKey (arg 1): %s, expected string", keyVal.Type().String())
-	}
-	key := keyVal.String(ctx)
 
 	keyId := ctx.Interner.Intern(key)
 

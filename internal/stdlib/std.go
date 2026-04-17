@@ -8,213 +8,255 @@ import (
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 )
 
+type param struct {
+	Name     string
+	Optional bool
+}
+
+func req(name string) param {
+	return param{Name: name}
+}
+
+func opt(name string) param {
+	return param{Name: name, Optional: true}
+}
+
 var constants = map[string]evaluator.Value{
 	"pi": evaluator.MakeNumber(math.Pi),
 }
 
 var functions = map[string]func(evaluator.Context) evaluator.Function{
 	// --- General ---
-	"$flatMapArray":    f(builtin_flatMapArray, "func", "arr"),
-	"$objectFlatMerge": f(builtin_objectFlatMerge, "arr"),
-	"extVar":           f(std_extVar, "x"),
-	"trace":            f(std_trace, "str", "rest"),
-	"assertEqual":      f(std_assertEqual, "a", "b"),
-	"toString":         f(std_toString, "a"),
-	"length":           f(std_length, "x"),
-	"mod":              f(std_mod, "a", "b"),
+	"$flatMapArray":    f(builtin_flatMapArray, req("func"), req("arr")),
+	"$objectFlatMerge": f(builtin_objectFlatMerge, req("arr")),
+	"extVar":           f(std_extVar, req("x")),
+	"trace":            f(std_trace, req("str"), req("rest")),
+	"assertEqual":      f(std_assertEqual, req("a"), req("b")),
+	"toString":         f(std_toString, req("a")),
+	"length":           f(std_length, req("x")),
+	"mod":              f(std_mod, req("a"), req("b")),
 
 	// --- Types ---
-	"type":       f(std_type, "x"),
-	"isString":   f(std_isString, "v"),
-	"isNumber":   f(std_isNumber, "v"),
-	"isBoolean":  f(std_isBoolean, "v"),
-	"isObject":   f(std_isObject, "v"),
-	"isArray":    f(std_isArray, "v"),
-	"isFunction": f(std_isFunction, "v"),
-	"isNull":     f(std_isNull, "x"),
-	"prune":      f(std_prune, "a"),
+	"type":       f(std_type, req("x")),
+	"isString":   f(std_isString, req("v")),
+	"isNumber":   f(std_isNumber, req("v")),
+	"isBoolean":  f(std_isBoolean, req("v")),
+	"isObject":   f(std_isObject, req("v")),
+	"isArray":    f(std_isArray, req("v")),
+	"isFunction": f(std_isFunction, req("v")),
+	"isNull":     f(std_isNull, req("x")),
+	"prune":      f(std_prune, req("a")),
 
 	// --- Parse ---
-	"parseInt":   f(std_parseInt, "str"),
-	"parseOctal": f(std_parseOctal, "str"),
-	"parseHex":   f(std_parseHex, "str"),
-	"parseJson":  f(std_parseJson, "str"),
-	"parseYaml":  f(std_parseYaml, "str"),
-	"encodeUTF8": f(std_encodeUTF8, "str"),
-	"decodeUTF8": f(std_decodeUTF8, "str"),
+	"parseInt":   f(std_parseInt, req("str")),
+	"parseOctal": f(std_parseOctal, req("str")),
+	"parseHex":   f(std_parseHex, req("str")),
+	"parseJson":  f(std_parseJson, req("str")),
+	"parseYaml":  f(std_parseYaml, req("str")),
+	"encodeUTF8": f(std_encodeUTF8, req("str")),
+	"decodeUTF8": f(std_decodeUTF8, req("str")),
 
 	// --- Math ---
-	"floor":     f(std_floor, "x"),
-	"ceil":      f(std_ceil, "x"),
-	"round":     f(std_round, "x"),
-	"pow":       f(std_pow, "x", "n"),
-	"sqrt":      f(std_sqrt, "x"),
-	"hypot":     f(std_hypot, "a", "b"),
-	"modulo":    f(std_modulo, "a", "b"),
-	"mantissa":  f(std_mantissa, "x"),
-	"exponent":  f(std_exponent, "x"),
-	"sin":       f(std_sin, "x"),
-	"cos":       f(std_cos, "x"),
-	"tan":       f(std_tan, "x"),
-	"asin":      f(std_asin, "x"),
-	"acos":      f(std_acos, "x"),
-	"atan":      f(std_atan, "x"),
-	"atan2":     f(std_atan2, "y", "x"),
-	"deg2rad":   f(std_deg2rad, "x"),
-	"rad2deg":   f(std_rad2deg, "x"),
-	"log":       f(std_log, "x"),
-	"log2":      f(std_log2, "x"),
-	"log10":     f(std_log10, "x"),
-	"exp":       f(std_exp, "x"),
-	"isEven":    f(std_isEven, "x"),
-	"isOdd":     f(std_isOdd, "x"),
-	"isInteger": f(std_isInteger, "x"),
-	"isDecimal": f(std_isDecimal, "x"),
-	"max":       f(std_max, "a", "b"),
-	"min":       f(std_min, "a", "b"),
-	"abs":       f(std_abs, "n"),
-	"sign":      f(std_sign, "n"),
-	"clamp":     f(std_clamp, "x", "minVal", "maxVal"),
+	"floor":     f(std_floor, req("x")),
+	"ceil":      f(std_ceil, req("x")),
+	"round":     f(std_round, req("x")),
+	"pow":       f(std_pow, req("x"), req("n")),
+	"sqrt":      f(std_sqrt, req("x")),
+	"hypot":     f(std_hypot, req("a"), req("b")),
+	"modulo":    f(std_modulo, req("a"), req("b")),
+	"mantissa":  f(std_mantissa, req("x")),
+	"exponent":  f(std_exponent, req("x")),
+	"sin":       f(std_sin, req("x")),
+	"cos":       f(std_cos, req("x")),
+	"tan":       f(std_tan, req("x")),
+	"asin":      f(std_asin, req("x")),
+	"acos":      f(std_acos, req("x")),
+	"atan":      f(std_atan, req("x")),
+	"atan2":     f(std_atan2, req("y"), req("x")),
+	"deg2rad":   f(std_deg2rad, req("x")),
+	"rad2deg":   f(std_rad2deg, req("x")),
+	"log":       f(std_log, req("x")),
+	"log2":      f(std_log2, req("x")),
+	"log10":     f(std_log10, req("x")),
+	"exp":       f(std_exp, req("x")),
+	"isEven":    f(std_isEven, req("x")),
+	"isOdd":     f(std_isOdd, req("x")),
+	"isInteger": f(std_isInteger, req("x")),
+	"isDecimal": f(std_isDecimal, req("x")),
+	"max":       f(std_max, req("a"), req("b")),
+	"min":       f(std_min, req("a"), req("b")),
+	"abs":       f(std_abs, req("n")),
+	"sign":      f(std_sign, req("n")),
+	"clamp":     f(std_clamp, req("x"), req("minVal"), req("maxVal")),
 
 	// --- Strings ---
-	"format":              f(std_format, "str", "vals"),
-	"stringChars":         f(std_stringChars, "str"),
-	"startsWith":          f(std_startsWith, "a", "b"),
-	"endsWith":            f(std_endsWith, "a", "b"),
-	"substr":              f(std_substr, "str", "from", "len"),
-	"findSubstr":          f(std_findSubstr, "pat", "str"),
-	"strReplace":          f(std_strReplace, "str", "from", "to"),
-	"split":               f(std_split, "str", "c"),
-	"splitLimit":          f(std_splitLimit, "str", "c", "maxsplits"),
-	"splitLimitR":         f(std_splitLimitR, "str", "c", "maxsplits"),
-	"stripChars":          f(std_stripChars, "str", "chars"),
-	"rstripChars":         f(std_rstripChars, "str", "chars"),
-	"lstripChars":         f(std_lstripChars, "str", "chars"),
-	"isEmpty":             f(std_isEmpty, "str"),
-	"trim":                f(std_trim, "str"),
-	"md5":                 f(std_md5, "s"),
-	"sha1":                f(std_sha1, "s"),
-	"sha256":              f(std_sha256, "s"),
-	"sha512":              f(std_sha512, "s"),
-	"sha3":                f(std_sha3, "s"),
-	"char":                f(std_char, "n"),
-	"codepoint":           f(std_codepoint, "str"),
-	"base64":              f(std_base64, "input"),
-	"base64Decode":        f(std_base64Decode, "str"),
-	"asciiLower":          f(std_asciiLower, "str"),
-	"asciiUpper":          f(std_asciiUpper, "str"),
-	"escapeStringBash":    f(std_escapeStringBash, "str"),
-	"escapeStringDollars": f(std_escapeStringDollars, "str"),
-	"escapeStringJson":    f(std_escapeStringJson, "str"),
-	"escapeStringXML":     f(std_escapeStringXML, "str"),
-	"equalsIgnoreCase":    f(std_equalsIgnoreCase, "str1", "str2"),
+	"format":              f(std_format, req("str"), req("vals")),
+	"stringChars":         f(std_stringChars, req("str")),
+	"startsWith":          f(std_startsWith, req("a"), req("b")),
+	"endsWith":            f(std_endsWith, req("a"), req("b")),
+	"substr":              f(std_substr, req("str"), req("from"), req("len")),
+	"findSubstr":          f(std_findSubstr, req("pat"), req("str")),
+	"strReplace":          f(std_strReplace, req("str"), req("from"), req("to")),
+	"split":               f(std_split, req("str"), req("c")),
+	"splitLimit":          f(std_splitLimit, req("str"), req("c"), req("maxsplits")),
+	"splitLimitR":         f(std_splitLimitR, req("str"), req("c"), req("maxsplits")),
+	"stripChars":          f(std_stripChars, req("str"), req("chars")),
+	"rstripChars":         f(std_rstripChars, req("str"), req("chars")),
+	"lstripChars":         f(std_lstripChars, req("str"), req("chars")),
+	"isEmpty":             f(std_isEmpty, req("str")),
+	"trim":                f(std_trim, req("str")),
+	"md5":                 f(std_md5, req("s")),
+	"sha1":                f(std_sha1, req("s")),
+	"sha256":              f(std_sha256, req("s")),
+	"sha512":              f(std_sha512, req("s")),
+	"sha3":                f(std_sha3, req("s")),
+	"char":                f(std_char, req("n")),
+	"codepoint":           f(std_codepoint, req("str")),
+	"base64":              f(std_base64, req("input")),
+	"base64Decode":        f(std_base64Decode, req("str")),
+	"asciiLower":          f(std_asciiLower, req("str")),
+	"asciiUpper":          f(std_asciiUpper, req("str")),
+	"escapeStringBash":    f(std_escapeStringBash, req("str")),
+	"escapeStringDollars": f(std_escapeStringDollars, req("str")),
+	"escapeStringJson":    f(std_escapeStringJson, req("str")),
+	"escapeStringXML":     f(std_escapeStringXML, req("str")),
+	"equalsIgnoreCase":    f(std_equalsIgnoreCase, req("str1"), req("str2")),
 
 	// --- Arrays ---
-	"join":             f(std_join, "sep", "arr"),
-	"deepJoin":         f(std_deepJoin, "arr"),
-	"range":            f(std_range, "from", "to"),
-	"makeArray":        f(std_makeArray, "sz", "func"),
-	"filter":           f(std_filter, "func", "arr"),
-	"uniq":             f(std_uniq, "arr", "keyF"),
-	"sort":             f(std_sort, "arr", "keyF"),
-	"map":              f(std_map, "func", "arr"),
-	"mapWithIndex":     f(std_mapWithIndex, "func", "arr"),
-	"flatMap":          f(std_flatMap, "func", "arr"),
-	"filterMap":        f(std_filterMap, "filter_func", "map_func", "arr"),
-	"member":           f(std_member, "arr", "x"),
-	"setMember":        f(std_setMember, "x", "arr", "keyF"),
-	"slice":            f(std_slice, "indexable", "index", "end", "step"),
-	"count":            f(std_count, "arr", "x"),
-	"lines":            f(std_lines, "arr"),
-	"reverse":          f(std_reverse, "arrs"),
-	"foldl":            f(std_foldl, "func", "arr", "init"),
-	"foldr":            f(std_foldr, "func", "arr", "init"),
-	"sum":              f(std_sum, "arr"),
-	"flattenArrays":    f(std_flattenArrays, "arr"),
-	"flattenDeepArray": f(std_flattenDeepArray, "arr"),
-	"repeat":           f(std_repeat, "what", "count"),
-	"setUnion":         f(std_setUnion, "a", "b", "keyF"),
-	"setInter":         f(std_setInter, "a", "b", "keyF"),
-	"setDiff":          f(std_setDiff, "a", "b", "keyF"),
-	"find":             f(std_find, "value", "arr"),
-	"any":              f(std_any, "arr"),
-	"all":              f(std_all, "arr"),
-	"avg":              f(std_avg, "arr"),
-	"minArray":         f(std_minArray, "arr", "keyF", "onEmpty"),
-	"maxArray":         f(std_maxArray, "arr", "keyF", "onEmpty"),
-	"contains":         f(std_contains, "arr", "elem"),
-	"remove":           f(std_remove, "arr", "elem"),
-	"removeAt":         f(std_removeAt, "arr", "idx"),
+	"join":             f(std_join, req("sep"), req("arr")),
+	"deepJoin":         f(std_deepJoin, req("arr")),
+	"range":            f(std_range, req("from"), req("to")),
+	"makeArray":        f(std_makeArray, req("sz"), req("func")),
+	"filter":           f(std_filter, req("func"), req("arr")),
+	"uniq":             f(std_uniq, req("arr"), opt("keyF")),
+	"sort":             f(std_sort, req("arr"), opt("keyF")),
+	"map":              f(std_map, req("func"), req("arr")),
+	"mapWithIndex":     f(std_mapWithIndex, req("func"), req("arr")),
+	"flatMap":          f(std_flatMap, req("func"), req("arr")),
+	"filterMap":        f(std_filterMap, req("filter_func"), req("map_func"), req("arr")),
+	"member":           f(std_member, req("arr"), req("x")),
+	"setMember":        f(std_setMember, req("x"), req("arr"), opt("keyF")),
+	"slice":            f(std_slice, req("indexable"), opt("index"), opt("end"), opt("step")),
+	"count":            f(std_count, req("arr"), req("x")),
+	"lines":            f(std_lines, req("arr")),
+	"reverse":          f(std_reverse, req("arrs")),
+	"foldl":            f(std_foldl, req("func"), req("arr"), req("init")),
+	"foldr":            f(std_foldr, req("func"), req("arr"), req("init")),
+	"sum":              f(std_sum, req("arr")),
+	"flattenArrays":    f(std_flattenArrays, req("arr")),
+	"flattenDeepArray": f(std_flattenDeepArray, req("arr")),
+	"repeat":           f(std_repeat, req("what"), req("count")),
+	"setUnion":         f(std_setUnion, req("a"), req("b"), opt("keyF")),
+	"setInter":         f(std_setInter, req("a"), req("b"), opt("keyF")),
+	"setDiff":          f(std_setDiff, req("a"), req("b"), opt("keyF")),
+	"find":             f(std_find, req("value"), req("arr")),
+	"any":              f(std_any, req("arr")),
+	"all":              f(std_all, req("arr")),
+	"avg":              f(std_avg, req("arr")),
+	"minArray":         f(std_minArray, req("arr"), opt("keyF"), opt("onEmpty")),
+	"maxArray":         f(std_maxArray, req("arr"), opt("keyF"), opt("onEmpty")),
+	"contains":         f(std_contains, req("arr"), req("elem")),
+	"remove":           f(std_remove, req("arr"), req("elem")),
+	"removeAt":         f(std_removeAt, req("arr"), req("idx")),
 
 	// -- Booleans ---
-	"xor":  f(std_xor, "x", "y"),
-	"xnor": f(std_xnor, "x", "y"),
+	"xor":  f(std_xor, req("x"), req("y")),
+	"xnor": f(std_xnor, req("x"), req("y")),
 
 	// -- Sets ---
-	"set": f(std_set, "arr", "keyF"),
+	"set": f(std_set, req("arr"), opt("keyF")),
 
 	// --- Objects ---
-	"get":                 f(std_get, "o", "f", "default", "inc_hidden"),
-	"objectFields":        f(std_objectFields, "o"),
-	"objectFieldsAll":     f(std_objectFieldsAll, "o"),
-	"objectHas":           f(std_objectHas, "o", "f"),
-	"objectHasAll":        f(std_objectHasAll, "o", "f"),
-	"objectValues":        f(std_objectValues, "o"),
-	"objectValuesAll":     f(std_objectValuesAll, "o"),
-	"objectKeysValues":    f(std_objectKeysValues, "o"),
-	"objectKeysValuesAll": f(std_objectKeysValuesAll, "o"),
-	"mapWithKey":          f(std_mapWithkey, "func", "obj"),
-	"objectRemoveKey":     f(std_objectRemoveKey, "obj", "key"),
+	"get":                 f(std_get, req("o"), req("f"), opt("default"), opt("inc_hidden")),
+	"objectFields":        f(std_objectFields, req("o")),
+	"objectFieldsAll":     f(std_objectFieldsAll, req("o")),
+	"objectHas":           f(std_objectHas, req("o"), req("f")),
+	"objectHasAll":        f(std_objectHasAll, req("o"), req("f")),
+	"objectValues":        f(std_objectValues, req("o")),
+	"objectValuesAll":     f(std_objectValuesAll, req("o")),
+	"objectKeysValues":    f(std_objectKeysValues, req("o")),
+	"objectKeysValuesAll": f(std_objectKeysValuesAll, req("o")),
+	"mapWithKey":          f(std_mapWithkey, req("func"), req("obj")),
+	"objectRemoveKey":     f(std_objectRemoveKey, req("obj"), req("key")),
 
 	// --- Manifestation ---
-	"manifestYamlDoc":      f(std_manifestYamlDoc, "value", "indent_array_in_object", "quote_keys"),
-	"manifestYamlStream":   f(std_manifestYamlStream, "value", "indent_array_in_object", "c_document_end", "quote_keys"),
-	"manifestJson":         f(std_manifestJson, "value"),
-	"manifestJsonEx":       f(std_manifestJsonEx, "value", "indent", "newline", "key_val_sep"),
-	"manifestJsonMinified": f(std_manifestJsonMinified, "value"),
-	"manifestIni":          f(std_manifestIni, "ini"),
-	"manifestPython":       f(std_manifestPython, "v"),
-	"manifestPythonVars":   f(std_manifestPythonVars, "conf"),
-	"manifestXmlJsonml":    f(std_manifestXmlJsonml, "value"),
-	"manifestTomlEx":       f(std_manifestTomlEx, "value", "indent"),
+	"manifestYamlDoc":      f(std_manifestYamlDoc, req("value"), opt("indent_array_in_object"), opt("quote_keys")),
+	"manifestYamlStream":   f(std_manifestYamlStream, req("value"), opt("indent_array_in_object"), opt("c_document_end"), opt("quote_keys")),
+	"manifestJson":         f(std_manifestJson, req("value")),
+	"manifestJsonEx":       f(std_manifestJsonEx, req("value"), req("indent"), opt("newline"), opt("key_val_sep")),
+	"manifestJsonMinified": f(std_manifestJsonMinified, req("value")),
+	"manifestIni":          f(std_manifestIni, req("ini")),
+	"manifestPython":       f(std_manifestPython, req("v")),
+	"manifestPythonVars":   f(std_manifestPythonVars, req("conf")),
+	"manifestXmlJsonml":    f(std_manifestXmlJsonml, req("value")),
+	"manifestTomlEx":       f(std_manifestTomlEx, req("value"), req("indent")),
 }
 
-func f(f evaluator.Func, argn ...string) func(evaluator.Context) evaluator.Function {
+func f(f evaluator.Func, params ...param) func(evaluator.Context) evaluator.Function {
 
 	return func(ctx evaluator.Context) evaluator.Function {
 
-		argIds := make([]uint32, 0, len(argn))
-		for _, v := range argn {
-			id := ctx.Interner.Intern(v)
+		argIds := make([]uint32, 0, len(params))
+		optStart := -1
+
+		for i, p := range params {
+			id := ctx.Interner.Intern(p.Name)
 			argIds = append(argIds, id)
+
+			if p.Optional && optStart == -1 {
+				optStart = i
+			}
+		}
+		if optStart == -1 {
+			optStart = len(params)
 		}
 
-		var fn evaluator.Func = func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+		var fn evaluator.Func
+		fn = func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
-			// TODO: do arg reordering in evaluator.Function.Exec
+			// TODO: Argument x already provided
+
+			if len(args) > len(argIds) {
+				return evaluator.Value{}, evaluator.MakeRuntimeError(fmt.Errorf("function expected %d positional argument(s), but got %d", len(argIds), len(args)))
+			}
 
 			var onNamedArgs bool
 
 			orderedArgs := make([]evaluator.NamedValue, len(argIds))
-			for i, na := range args {
-				if !onNamedArgs && na.Key != 0 {
-					onNamedArgs = true
-				}
+			posIdx := 0
 
+			for _, na := range args {
 				if na.Key == 0 {
+					// Positional Argument
 					if onNamedArgs {
-						return evaluator.Value{}, fmt.Errorf("positional argument after a named argument is not allowed")
+						return evaluator.Value{}, fmt.Errorf("Positional argument after a named argument is not allowed")
 					}
-					orderedArgs[i] = na
+					na.Key = argIds[posIdx]
+					orderedArgs[posIdx] = na
+					posIdx++
 					continue
 				}
 
-				for ii, aid := range argIds {
-					if na.Key == aid {
-						orderedArgs[ii] = na
+				// Named Argument
+				onNamedArgs = true
+				found := false
+				for j, aid := range argIds {
+					if aid == na.Key {
+						orderedArgs[j] = na
+						found = true
+						break
 					}
 				}
+				if !found {
+					argName := ctx.Interner.Get(na.Key)
+					return evaluator.Value{}, evaluator.MakeRuntimeError(fmt.Errorf("function has no parameter %s", argName))
+				}
+			}
 
+			for i := 0; i < optStart; i++ {
+				if orderedArgs[i].Value.IsNone() {
+					return evaluator.Value{}, evaluator.MakeRuntimeError(fmt.Errorf("Missing argument: %s", params[i].Name))
+				}
 			}
 
 			return f(orderedArgs, ctx)
@@ -269,11 +311,8 @@ func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
 	return val, nil
 }
 
-func liftValueToBool(f func(evaluator.NamedValue) bool, name string) evaluator.Func {
+func liftValueToBool(f func(evaluator.NamedValue) bool) evaluator.Func {
 	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-		if len(args) != 1 {
-			return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to %s: %d, expected 1", name, len(args))
-		}
 		a, err := args[0].Eval(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
@@ -284,18 +323,10 @@ func liftValueToBool(f func(evaluator.NamedValue) bool, name string) evaluator.F
 }
 
 func std_extVar(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 1 {
-		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.extVar: %d, expected 1", len(args))
-	}
-
-	nameVal, err := args[0].Eval(ctx)
+	name, err := args[0].EvalString(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !nameVal.IsString() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.extVar (arg 0): %s, expected string", nameVal.Type().String())
-	}
-	name := nameVal.String(ctx)
 
 	s, ok := ctx.Environment.ExtVars[name]
 	if ok {
@@ -338,19 +369,12 @@ func std_extVar(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 }
 
 func std_trace(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 2 {
-		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.trace: %d, expected 2", len(args))
-	}
-
-	str, err := args[0].Eval(ctx)
+	str, err := args[0].EvalString(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !str.IsString() {
-		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.trace (arg 0): %s, expected string", str.Type().String())
-	}
 
-	_, err = fmt.Fprint(ctx.Environment.TraceOut, "TRACE: "+str.String(ctx)+"\n")
+	_, err = fmt.Fprint(ctx.Environment.TraceOut, "TRACE: "+str+"\n")
 	if err != nil {
 		return evaluator.Value{}, err
 	}
@@ -358,9 +382,6 @@ func std_trace(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 }
 
 func std_type(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 1 {
-		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.type: %d, expected 1", len(args))
-	}
 
 	v, err := args[0].Eval(ctx)
 	if err != nil {
@@ -405,31 +426,23 @@ func std_assertEqual(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 	return evaluator.MakeBool(false), fmt.Errorf("assertion failed %s != %s", aStr, bStr)
 }
 
-var std_isString = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsString() }, "std.isString")
-var std_isNumber = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsNumber() }, "std.isNumber")
-var std_isBoolean = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsBool() }, "std.isBoolean")
-var std_isObject = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsObject() }, "std.isObject")
-var std_isArray = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsArray() }, "std.isArray")
-var std_isFunction = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsFunction() }, "std.isFunction")
-var std_isNull = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsNull() }, "std.isNull")
+var std_isString = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsString() })
+var std_isNumber = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsNumber() })
+var std_isBoolean = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsBool() })
+var std_isObject = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsObject() })
+var std_isArray = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsArray() })
+var std_isFunction = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsFunction() })
+var std_isNull = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsNull() })
 
 func std_toString(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 1 {
-		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.toString: %d, expected 1", len(args))
-	}
-
 	s, err := args[0].ToString(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-
 	return evaluator.MakeString(s, ctx), nil
 }
 
 func std_length(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 1 {
-		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.length: %d, expected 1", len(args))
-	}
 
 	arg, err := args[0].Eval(ctx)
 	if err != nil {
@@ -448,16 +461,13 @@ func std_length(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 	case evaluator.ValueTypeFunction:
 		res = float64(len(arg.Function(ctx).Args))
 	default:
-		return evaluator.Value{}, fmt.Errorf("std.length: unexpected type %s", arg.Type().String())
+		return evaluator.Value{}, evaluator.TypeErrorGeneral(arg.Type())
 	}
 
 	return evaluator.MakeNumber(res), nil
 }
 
 func std_mod(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 2 {
-		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.mod: %d, expected 2", len(args))
-	}
 
 	a, err := args[0].Eval(ctx)
 	if err != nil {
@@ -475,13 +485,10 @@ func std_mod(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 		x := []evaluator.NamedValue{{Value: a}, {Value: b}}
 		return std_format(x, ctx)
 	}
-	return evaluator.Value{}, fmt.Errorf("'Operator %% cannot be used on types %s and %s", a.Type().String(), b.Type().String())
+	return evaluator.Value{}, evaluator.MakeRuntimeError(fmt.Errorf("Operator %% cannot be used on types %s and %s.", a.Type().String(), b.Type().String()))
 }
 
 func std_prune(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 1 {
-		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.prune: %d, expected 1", len(args))
-	}
 	arg, err := args[0].Eval(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
