@@ -89,7 +89,11 @@ func CreateFileScope(filename string, baseStd Value, ctx Context) uint32 {
 }
 
 // TODO: write location to traceOut writer
+// TODO: properly fix errors
 func createErrorWithContext(err error, loc *ast.LocationRange) error {
+	if loc == nil {
+		return err
+	}
 	return fmt.Errorf("%w\n\nlocation: %s", err, loc.String())
 }
 
@@ -665,10 +669,6 @@ func handleSuperIndex(node *ast.SuperIndex, scopeId uint32, ctx Context) (Value,
 	obj := ctx.Self.Object(ctx)
 
 	targetOffset := ctx.SuperOffset + 1
-	// targetOffset := ctx.SuperOffset
-	// if targetOffset == 0 {
-	// 	targetOffset = 1
-	// }
 
 	val, _, err := obj.GetFieldWithOffset(keyId, ctx, targetOffset)
 	if err != nil {

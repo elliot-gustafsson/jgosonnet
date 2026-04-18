@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/elliot-gustafsson/jgosonnet"
 	"github.com/google/go-jsonnet"
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/yaml.v3"
 )
 
 func TestEvaluator(t *testing.T) {
@@ -55,6 +57,57 @@ func TestEvaluator(t *testing.T) {
 	assert.Equal(t, og, stuff)
 
 	println(stuff)
+
+}
+
+func TestJgosonnetYaml(t *testing.T) {
+	slog.SetLogLoggerLevel(slog.LevelDebug)
+
+	cwd, err := os.Getwd()
+	assert.NoError(t, err)
+
+	infraDir := filepath.Join(filepath.Dir(filepath.Dir(cwd)), "infra", "jsonnet", "proact")
+	assert.NotEmpty(t, infraDir)
+
+	file := filepath.Join("resources", "test.jsonnet")
+
+	interpreter := jgosonnet.NewEvaluator()
+	interpreter.JPaths([]string{filepath.Join(infraDir, "vendor")})
+
+	// stuff, err := interpreter.EvaluateJson(file)
+	stuff, err := interpreter.EvaluateYaml(file)
+	assert.NoError(t, err)
+
+	fmt.Println("jgosonnet:")
+	fmt.Println()
+	fmt.Print(stuff)
+
+	fmt.Println()
+	fmt.Println()
+
+	fmt.Println("yaml v3:")
+	fmt.Println()
+	data := map[string]string{
+		"a":  "\n",
+		"a2": "\n\n",
+		"a3": "\n\nasdf",
+		"a4": "\n\n ",
+		"b":  "\ta",
+		"b2": "\ta\n",
+		"c":  " ",
+		"d":  " asdf",
+		"e":  " asdf\n",
+	}
+
+	var b strings.Builder
+	enc := yaml.NewEncoder(&b)
+	enc.SetIndent(2)
+
+	err = enc.Encode(data)
+	assert.NoError(t, err)
+	fmt.Print(b.String())
+
+	assert.Equal(t, b.String(), string(stuff))
 
 }
 

@@ -92,7 +92,7 @@ var std_isDecimal = liftNumericToBoolean(func(f float64) bool {
 	return frac != 0
 })
 var std_max = liftNumeric2(math.Max)
-var std_min = liftNumeric2(math.Max)
+var std_min = liftNumeric2(math.Min)
 var std_abs = liftNumeric(math.Abs)
 var std_sign = liftNumeric(func(f float64) float64 {
 	if f == 0 {

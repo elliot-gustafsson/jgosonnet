@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
-	"github.com/google/go-jsonnet/ast"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -413,7 +412,7 @@ func toValue(v any, ctx evaluator.Context) evaluator.Value {
 			keyId := ctx.Interner.Intern(k)
 			layer.Keys = append(layer.Keys, keyId)
 			layer.Values = append(layer.Values, toValue(item, ctx))
-			layer.Meta = append(layer.Meta, evaluator.CreateFieldMeta(ast.ObjectFieldInherit, false))
+			layer.Meta = append(layer.Meta, evaluator.DefaultFieldMeta)
 
 		}
 		obj := evaluator.NewObject([]*evaluator.Layer{layer})

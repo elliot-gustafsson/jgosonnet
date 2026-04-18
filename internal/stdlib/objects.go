@@ -1,8 +1,9 @@
 package stdlib
 
 import (
+	"slices"
+
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
-	"github.com/google/go-jsonnet/ast"
 )
 
 func liftObjectToValueErr(f func(evaluator.Value, evaluator.Context) (evaluator.Value, error)) evaluator.Func {
@@ -48,12 +49,12 @@ func liftObjectStringToValueErr(f func(evaluator.Value, string, evaluator.Contex
 func std_get(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	// std.get(o, f, default=null, inc_hidden=true)
 
-	obj, err := args[0].Eval(ctx)
+	objVal, err := args[0].Eval(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	if !obj.IsObject() {
-		return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, obj.Type())
+	if !objVal.IsObject() {
+		return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, objVal.Type())
 	}
 
 	field, err := args[1].EvalString(ctx)
@@ -82,9 +83,9 @@ func std_get(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 	keyId := ctx.Interner.Intern(field)
 
 	childCtx := ctx
-	childCtx.Self = obj
+	childCtx.Self = objVal
 
-	val, visible, err := obj.Object(ctx).GetField(keyId, childCtx)
+	val, visible, err := objVal.Object(ctx).GetField(keyId, childCtx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
@@ -235,8 +236,6 @@ func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 
 	resObjVal := evaluator.MakeObject(res, ctx)
 
-	m := evaluator.CreateFieldMeta(ast.ObjectFieldInherit, false)
-
 	mapCtx := ctx
 	mapCtx.Self = resObjVal
 
@@ -259,7 +258,7 @@ func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 
 		layer.Keys = append(layer.Keys, k)
 		layer.Values = append(layer.Values, evaluator.MakeThunk(thunk, mapCtx))
-		layer.Meta = append(layer.Meta, m)
+		layer.Meta = append(layer.Meta, evaluator.DefaultFieldMeta)
 
 	}
 
@@ -337,7 +336,10 @@ func std_objectRemoveKey(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 
 	// TODO: look over this, fairly sure is doesnt work for all cases...
 
-	val, _, err := obj.GetField(keyId, ctx)
+	evalCtx := ctx
+	evalCtx.Self = objVal
+
+	val, _, err := obj.GetField(keyId, evalCtx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
@@ -365,9 +367,6 @@ func std_objectRemoveKey(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 		layer.Index = make(map[uint32]int, fieldCount)
 	}
 
-	evalCtx := ctx
-	evalCtx.Self = objVal
-
 	for i, plan := range plans {
 		if plan.KeyId == keyId {
 			continue
@@ -390,4 +389,151 @@ func std_objectRemoveKey(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 
 	resObj := evaluator.NewObject([]*evaluator.Layer{layer})
 	return evaluator.MakeObject(resObj, ctx), nil
+}
+
+func std_objectRemoveKey2(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	objVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+	if !objVal.IsObject() {
+		return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, objVal.Type())
+	}
+	obj := objVal.Object(ctx)
+
+	key, err := args[1].EvalString(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	keyId := ctx.Interner.Intern(key)
+
+	// evalCtx := ctx
+	// evalCtx.Self = objVal
+
+	layers := obj.GetLayers()
+
+	newLayers := make([]*evaluator.Layer, len(layers))
+
+	for i, layer := range layers {
+
+		keyIdx := -1
+		for j, k := range layer.Keys {
+			if k == keyId {
+				keyIdx = j
+			}
+		}
+
+		// NOTE: assertions and local vars are not copied intentionally to adhere to go-jsonnet
+
+		// Key was not found, just add the whole layer
+		if keyIdx == -1 {
+			l := &evaluator.Layer{
+				Keys: slices.Clone(layer.Keys),
+				Meta: slices.Clone(layer.Meta),
+			}
+			if l.Values != nil {
+				l.Values = slices.Clone(layer.Values)
+			} else {
+				l.Nodes = slices.Clone(layer.Nodes)
+			}
+
+			newLayers[i] = l
+			continue
+		}
+
+		l := &evaluator.Layer{
+			Keys: sliceRemoveIdx(layer.Keys, keyIdx),
+			Meta: sliceRemoveIdx(layer.Meta, keyIdx),
+		}
+		if layer.Values != nil {
+			l.Values = sliceRemoveIdx(layer.Values, keyIdx)
+		} else {
+			l.Nodes = sliceRemoveIdx(layer.Nodes, keyIdx)
+		}
+		newLayers[i] = l
+	}
+
+	resObj := evaluator.NewObject(newLayers)
+	return evaluator.MakeObject(resObj, ctx), nil
+}
+
+func sliceRemoveIdx[T any](s []T, i int) []T {
+	if i < 0 || i > len(s)-1 {
+		return slices.Clone(s)
+	}
+	newSlice := make([]T, len(s)-1)
+	copy(newSlice[:i], s[:i])
+	copy(newSlice[i:], s[i+1:])
+	return newSlice
+}
+
+func std_mergePatch(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+
+	patchVal, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	if !patchVal.IsObject() {
+		return patchVal, nil
+	}
+	// patchObj := patchVal.Object(ctx)
+
+	targetVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.Value{}, err
+	}
+
+	var objVal evaluator.Value
+
+	// TODO: think abt this
+	// std.mergePatch({ a: 1 }, { b: 2, c: self.a }) should not work according to go-jsonnet
+	// but with this kinda merge it does... so some solution where the objects are individually evaled is needed
+	if targetVal.IsObject() {
+		combined := evaluator.MergeObjects(targetVal.Object(ctx), patchVal.Object(ctx))
+		objVal = evaluator.MakeObject(combined, ctx)
+	} else {
+		// If target val is not an object, just scrap it and only use the patch object
+		objVal = patchVal
+	}
+	obj := objVal.Object(ctx)
+
+	plans := evaluator.CompileObjectPlan(obj, ctx)
+
+	fieldCount := len(plans)
+
+	layer := &evaluator.Layer{
+		Keys:   make([]uint32, 0, fieldCount),
+		Values: make([]evaluator.Value, 0, fieldCount),
+		Meta:   make([]uint8, 0, fieldCount),
+	}
+
+	subCtx := ctx
+	subCtx.Self = objVal
+
+	for _, plan := range plans {
+		if plan.IsHidden() {
+			continue
+		}
+
+		val, err := plan.GetValue(obj, subCtx)
+		if err != nil {
+			return evaluator.Value{}, err
+		}
+
+		if val.IsNull() {
+			continue
+		}
+
+		layer.Keys = append(layer.Keys, plan.KeyId)
+		layer.Values = append(layer.Values, val)
+		layer.Meta = append(layer.Meta, evaluator.DefaultFieldMeta)
+
+	}
+
+	resObj := evaluator.NewObject([]*evaluator.Layer{layer})
+
+	return evaluator.MakeObject(resObj, ctx), nil
+
 }

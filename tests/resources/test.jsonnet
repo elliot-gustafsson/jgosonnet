@@ -6,4 +6,20 @@
 
 // { a: 1 } + std.objectRemoveKey({ b: super.a }, 'a')
 
-std.mergePatch(target={ a: 42 }, patch={ b: 123 })
+// std.thisFile
+
+local x = {
+  a: '\n',
+  a2: '\n\n',
+  a3: '\n\nasdf',
+  a4: '\n\n ',
+  b: '\ta',
+  b2: '\ta\n',
+  c: ' ',
+  d: ' asdf',
+  e: ' asdf\n',
+};
+
+x
+
+// std.manifestYamlDoc(x)

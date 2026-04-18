@@ -635,19 +635,8 @@ func std_member(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 		if !arg.IsString() {
 			return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeString, arg.Type())
 		}
-
-		for _, s := range indexable.String(ctx) {
-			v := evaluator.MakeString(string(s), ctx)
-			eq, err := v.Equal(arg, ctx)
-			if err != nil {
-				return evaluator.Value{}, err
-			}
-			if eq {
-				return evaluator.MakeBool(true), nil
-			}
-
-		}
-		return evaluator.MakeBool(false), nil
+		idx := strings.Index(indexable.String(ctx), arg.String(ctx))
+		return evaluator.MakeBool(idx >= 0), nil
 	}
 
 	if !indexable.IsArray() {

@@ -71,7 +71,7 @@ func renderTomlTable(b *strings.Builder, obj *Object, ctx Context, sindent strin
 		hasWritten = true
 	}
 
-	if hasWritten && len(complexValues) > 0 {
+	if /* hasWritten && */ len(complexValues) > 0 {
 		b.WriteString("\n\n")
 	}
 

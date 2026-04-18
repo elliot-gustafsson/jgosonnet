@@ -142,7 +142,7 @@ func rawDataToValue(x any, ctx evaluator.Context) (evaluator.Value, error) {
 
 			layer.Keys = append(layer.Keys, keyId)
 			layer.Values = append(layer.Values, v)
-			layer.Meta = append(layer.Meta, evaluator.CreateFieldMeta(ast.ObjectFieldVisible, false))
+			layer.Meta = append(layer.Meta, evaluator.DefaultFieldMeta)
 			layer.Index[keyId] = index
 
 			index++

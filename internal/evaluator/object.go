@@ -107,39 +107,42 @@ func (t *Object) GetFieldWithOffset(key uint32, ctx Context, offset int) (Value,
 	return t.getField(key, ctx, offset)
 }
 
-func (t *Object) getField(key uint32, ctx Context, offset int) (Value, bool, error) {
+func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visible bool, err error) {
 
-	err := runAssertions(t, ctx)
+	err = runAssertions(t, ctx)
 	if err != nil {
 		return Value{}, false, err
 	}
-
-	var res Value
 
 	currentVisibility := ast.ObjectFieldInherit
 
 	layers := t.GetLayers()
 
-	for i := len(layers) - (1 + offset); i >= 0; i-- {
-		layer := layers[i]
+	var layerOffset int
+
+	for layerOffset = len(layers) - (1 + offset); layerOffset >= 0; layerOffset-- {
+		layer := layers[layerOffset]
 
 		fieldIndex := layer.findField(key)
 		if fieldIndex == -1 {
 			continue
 		}
 
-		val, err := getValue(t, i, fieldIndex, ctx)
+		val, err := getValue(t, layerOffset, fieldIndex, ctx)
 		if err != nil {
 			return Value{}, false, err
 		}
 
 		visibility, plusSuper := EvalFieldMeta(layer.Meta[fieldIndex])
 
-		currentVisibility = getObjVisibility(currentVisibility, visibility)
+		if visibility != ast.ObjectFieldInherit {
+			currentVisibility = visibility
+		}
 
-		// Fast exit if its the first time we encounter the key and it shouldnt merge with super
 		if res.IsNone() && !plusSuper {
-			return val, currentVisibility != ast.ObjectFieldHidden, nil
+			// Fast exit if its the first time we encounter the key and it shouldnt merge with super
+			res = val
+			break
 		}
 
 		if res.IsNone() {
@@ -153,14 +156,32 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (Value, bool, err
 		}
 
 		if !plusSuper {
-			// If field does not have plus, just return value since later layers dont matter
-			// return CreateField(res, currentVisibility, plusSuper), true, nil
-			return res, currentVisibility != ast.ObjectFieldHidden, nil
+			// If field does not have plus, just beak since later layers dont matter
+			break
 		}
 	}
 
 	if res.IsNone() {
 		return Value{}, false, nil
+	}
+
+	if currentVisibility == ast.ObjectFieldInherit {
+		// If not explicitly visible, search for same key in lower layers to determine final visibility
+
+		for j := layerOffset - 1; j >= 0; j-- {
+			layer := layers[j]
+
+			fieldIndex := layer.findField(key)
+			if fieldIndex == -1 {
+				continue
+			}
+
+			visibility, _ := EvalFieldMeta(layer.Meta[fieldIndex])
+			if visibility != ast.ObjectFieldInherit {
+				currentVisibility = visibility
+				break
+			}
+		}
 	}
 
 	return res, currentVisibility != ast.ObjectFieldHidden, nil
@@ -202,6 +223,8 @@ func createScope(layer *Layer, ctx Context) (uint32, error) {
 
 	return scopeId, nil
 }
+
+const DefaultFieldMeta = uint8(ast.ObjectFieldInherit) & MaskVisibility
 
 func CreateFieldMeta(visibility ast.ObjectFieldHide, plusSuper bool) uint8 {
 	m := uint8(visibility) & MaskVisibility
@@ -269,18 +292,6 @@ func MergeObjects(left, right *Object) Object {
 		Left:  left,
 		Right: right,
 	}
-}
-
-func getObjVisibility(curr, inc ast.ObjectFieldHide) ast.ObjectFieldHide {
-	if inc == ast.ObjectFieldVisible {
-		return ast.ObjectFieldVisible
-	}
-
-	if curr == ast.ObjectFieldHidden {
-		return ast.ObjectFieldHidden
-	}
-
-	return inc
 }
 
 type FieldPlan struct {
@@ -651,8 +662,8 @@ func GetObjectKeysValues(obj *Object, ctx Context, inclHidden bool) ([]Value, er
 			MakeString(ctx.Interner.Get(plan.KeyId), ctx),
 			val,
 		}
-		m := CreateFieldMeta(ast.ObjectFieldInherit, false)
-		layer.Meta = []uint8{m, m}
+
+		layer.Meta = []uint8{DefaultFieldMeta, DefaultFieldMeta}
 
 		kv := MakeObject(obj, ctx)
 

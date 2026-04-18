@@ -12,9 +12,9 @@ type YamlManifestConfig struct {
 	IndentArrayInObjects bool
 	QuoteKeys            bool
 	QuoteValues          bool
-	SingleQuoteEscape    bool
 	NaturalSort          bool
 	FormatIntegers       bool
+	UseBlockScalars      bool
 }
 
 func ManifestYaml(b *strings.Builder, value Value, ctx Context, config YamlManifestConfig) error {
@@ -56,33 +56,63 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, cindent string
 			return nil
 		}
 
-		if strings.Contains(data, "\n") {
+		var multiline bool
+		if config.UseBlockScalars {
+			multiline = strings.Contains(data, "\n") && !strings.HasSuffix(data, " ")
+		} else {
+			multiline = strings.HasSuffix(data, "\n")
+		}
 
-			buf.WriteByte('|')
+		if !multiline {
+			if config.QuoteValues {
+				writeYamlString(buf, data, true, false)
+				return nil
+			}
+
+			writeYamlString(buf, data, false, true)
+			return nil
+		}
+
+		// if multiline {
+
+		buf.WriteByte('|')
+		if config.UseBlockScalars {
+			if data[0] == ' ' || /* data[0] == '\t' || */ data[0] == '\n' {
+				buf.WriteString(strconv.Itoa(len(yamlIndent)))
+			}
+
 			if !strings.HasSuffix(data, "\n") {
 				buf.WriteByte('-')
 			} else if strings.HasSuffix(data, "\n\n") || data == "\n" {
 				buf.WriteByte('+')
+				// if data == "\n" {
+				// 	return nil
+				// }
 			}
-
-			for line := range strings.SplitSeq(strings.TrimSuffix(data, "\n"), "\n") {
-				buf.WriteByte('\n')
-				if line != "" {
-					buf.WriteString(cindent)
-					buf.WriteString(yamlIndent)
-					buf.WriteString(line)
-				}
+			data = strings.TrimPrefix(data, "\n")
+			if data == "" {
+				return nil
 			}
-			return nil
 		}
 
-		if config.QuoteValues {
-			writeYamlString(buf, data, true, false)
-			return nil
+		for line := range strings.SplitSeq(strings.TrimSuffix(data, "\n"), "\n") {
+			buf.WriteByte('\n')
+			if line != "" || !config.UseBlockScalars {
+				buf.WriteString(cindent)
+				buf.WriteString(yamlIndent)
+				buf.WriteString(line)
+			}
 		}
-
-		writeYamlString(buf, data, false, true)
 		return nil
+		// }
+
+		// if config.QuoteValues {
+		// 	writeYamlString(buf, data, true, false)
+		// 	return nil
+		// }
+
+		// writeYamlString(buf, data, false, true)
+		// return nil
 	case ValueTypeArray:
 		data := value.Array(ctx)
 		if len(data) == 0 {
@@ -194,7 +224,7 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, cindent string
 }
 
 const (
-	yamlIndent = "  "
+	yamlIndent = "  " // TODO: make configurable?
 )
 
 var yamlReserved = []string{
@@ -288,7 +318,15 @@ func writeYamlString(b *strings.Builder, s string, forceQuotes, preferSingleQuot
 	needsQuotes := forceQuotes
 	useSingle := preferSingleQuotes
 
-	// --- PHASE 1: Determine if we can leave it bare ---
+	// Look for control chars
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 {
+			needsQuotes = true
+			useSingle = false
+			break
+		}
+	}
+
 	if !needsQuotes {
 		if len(s) == 0 {
 			needsQuotes = true
@@ -307,57 +345,38 @@ func writeYamlString(b *strings.Builder, s string, forceQuotes, preferSingleQuot
 		} else if strings.TrimSpace(s) != s {
 			needsQuotes = true
 		} else {
-			// Check for control characters
-			for i := 0; i < len(s); i++ {
-				if s[i] < 0x20 && s[i] != '\t' {
+
+			// check for structural indicators at the start
+			switch s[0] {
+			case '[', ']', '{', '}', ',', '#', '&', '*', '!', '|', '>', '\'', '"', '%', '@', '`':
+				needsQuotes = true
+			case '-', '?', ':':
+				if len(s) == 1 || s[1] == ' ' || s[1] == '\t' || s[1] == '\n' {
 					needsQuotes = true
-					useSingle = false // Control chars strictly require double quotes
-					break
 				}
 			}
-			// Check for structural indicators at the start
-			if !needsQuotes {
-				switch s[0] {
-				case '[', ']', '{', '}', ',', '#', '&', '*', '!', '|', '>', '\'', '"', '%', '@', '`':
-					needsQuotes = true
-				case '-', '?', ':':
-					if len(s) == 1 || s[1] == ' ' || s[1] == '\t' || s[1] == '\n' {
-						needsQuotes = true
-					}
-				}
-			}
+
 			// Check for inline indicators and trailing colons (your fixes!)
-			if !needsQuotes && (strings.Contains(s, ": ") || strings.Contains(s, ":\n") || strings.Contains(s, " #") || strings.HasSuffix(s, ":")) {
+			if strings.Contains(s, ": ") || strings.Contains(s, ":\n") || strings.Contains(s, " #") || strings.HasSuffix(s, ":") {
 				needsQuotes = true
 			}
 		}
 	}
 
-	// If forced to quote, we STILL must check for control chars to override single quotes
-	if needsQuotes && useSingle {
-		for i := 0; i < len(s); i++ {
-			if s[i] < 0x20 && s[i] != '\t' {
-				useSingle = false
-				break
-			}
-		}
-	}
-
-	// If it passed all checks, emit bare!
 	if !needsQuotes {
 		b.WriteString(s)
 		return
 	}
 
-	// --- PHASE 2: Apply Quotes ---
+	// apply quotes
 	if useSingle {
-		// Fast path for YAML single quotes
+
 		b.WriteByte('\'')
 		remaining := s
 		for {
 			idx := strings.IndexByte(remaining, '\'')
 			if idx == -1 {
-				// No more quotes found, write the rest of the string
+				// no more quotes found, write the rest of the string
 				b.WriteString(remaining)
 				break
 			}
@@ -370,6 +389,6 @@ func writeYamlString(b *strings.Builder, s string, forceQuotes, preferSingleQuot
 		return
 	}
 
-	// Fallback to JSON logic for double quotes!
+	// fallback to json logic for double quotes
 	writeJsonString(b, s)
 }
