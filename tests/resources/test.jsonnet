@@ -8,18 +8,18 @@
 
 // std.thisFile
 
-local x = {
-  a: '\n',
-  a2: '\n\n',
-  a3: '\n\nasdf',
-  a4: '\n\n ',
-  b: '\ta',
-  b2: '\ta\n',
-  c: ' ',
-  d: ' asdf',
-  e: ' asdf\n',
-};
+// local x = {
+//   a: '\n',
+//   a2: '\n\n',
+//   a3: '\n\nasdf',
+//   a4: '\n\n ',
+//   b: '\ta',
+//   b2: '\ta\n',
+//   c: ' ',
+//   d: ' asdf',
+//   e: ' asdf\n',
+// };
 
-x
+'asdf' + 'asdf2'
 
 // std.manifestYamlDoc(x)

@@ -208,7 +208,7 @@ func (t *Object) getScope(layerIndex int, layer *Layer, ctx Context) (uint32, er
 
 func createScope(layer *Layer, ctx Context) (uint32, error) {
 
-	scopeId := ctx.Arena.NewScope(layer.ParentScopeId, len(layer.LocalKeys))
+	scopeId := ctx.NewScope(layer.ParentScopeId, len(layer.LocalKeys))
 
 	for i, keyId := range layer.LocalKeys {
 		node := layer.LocalNodes[i]
@@ -218,7 +218,7 @@ func createScope(layer *Layer, ctx Context) (uint32, error) {
 			return 0, err
 		}
 
-		ctx.Arena.AddScopeBind(scopeId, NamedValue{keyId, val})
+		ctx.AddScopeBind(scopeId, NamedValue{keyId, val})
 	}
 
 	return scopeId, nil

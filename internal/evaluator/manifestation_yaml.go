@@ -104,15 +104,6 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, cindent string
 			}
 		}
 		return nil
-		// }
-
-		// if config.QuoteValues {
-		// 	writeYamlString(buf, data, true, false)
-		// 	return nil
-		// }
-
-		// writeYamlString(buf, data, false, true)
-		// return nil
 	case ValueTypeArray:
 		data := value.Array(ctx)
 		if len(data) == 0 {

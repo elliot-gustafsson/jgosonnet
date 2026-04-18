@@ -362,7 +362,7 @@ func TestFormat(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := evaluator.Context{
 				Interner: evaluator.NewInterner(),
-				Arena:    evaluator.NewArena(),
+				Registry: evaluator.NewRegistry(),
 			}
 			val := toValue(tt.args, ctx)
 			got, err := formatString(tt.format, val, ctx)

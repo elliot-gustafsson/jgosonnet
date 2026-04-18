@@ -135,26 +135,22 @@ func MakeBool(v bool) Value {
 }
 
 func MakeObject(v Object, ctx Context) Value {
-	refId := uint32(len(ctx.Arena.Objects))
-	ctx.Arena.Objects = append(ctx.Arena.Objects, v)
+	refId := ctx.Registry.Objects.Alloc(v)
 	return Value{t: ValueTypeObject, refId: refId}
 }
 
 func MakeArray(v []Value, ctx Context) Value {
-	refId := uint32(len(ctx.Arena.Arrays))
-	ctx.Arena.Arrays = append(ctx.Arena.Arrays, v)
+	refId := ctx.Registry.Arrays.Alloc(v)
 	return Value{t: ValueTypeArray, refId: refId}
 }
 
 func MakeFunction(v Function, ctx Context) Value {
-	refId := uint32(len(ctx.Arena.Functions))
-	ctx.Arena.Functions = append(ctx.Arena.Functions, v)
+	refId := ctx.Registry.Functions.Alloc(v)
 	return Value{t: ValueTypeFunction, refId: refId}
 }
 
 func MakeThunk(v Thunk, ctx Context) Value {
-	refId := uint32(len(ctx.Arena.Thunks))
-	ctx.Arena.Thunks = append(ctx.Arena.Thunks, v)
+	refId := ctx.Registry.Thunks.Alloc(v)
 	return Value{t: ValueTypeThunk, refId: refId}
 }
 
@@ -175,19 +171,19 @@ func (v Value) Bool() bool {
 }
 
 func (v Value) Array(ctx Context) []Value {
-	return ctx.Arena.Arrays[v.refId]
+	return ctx.Registry.Arrays.GetValue(v.refId)
 }
 
 func (v Value) Object(ctx Context) *Object {
-	return &ctx.Arena.Objects[v.refId]
+	return ctx.Registry.Objects.GetPtr(v.refId)
 }
 
 func (v Value) Function(ctx Context) Function {
-	return ctx.Arena.Functions[v.refId]
+	return ctx.Registry.Functions.GetValue(v.refId)
 }
 
 func (v Value) Thunk(ctx Context) *Thunk {
-	return &ctx.Arena.Thunks[v.refId]
+	return ctx.Registry.Thunks.GetPtr(v.refId)
 }
 
 func (v Value) Eval(ctx Context) (Value, error) {

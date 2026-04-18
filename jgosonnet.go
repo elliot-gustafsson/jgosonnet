@@ -173,7 +173,7 @@ func (t *Evaluator) EvaluateYamlMulti(file string) (map[string]string, error) {
 
 var arenaPool = sync.Pool{
 	New: func() any {
-		return evaluator.NewArena()
+		return evaluator.NewRegistry()
 	},
 }
 
@@ -184,15 +184,15 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 		return evaluator.Value{}, evaluator.Context{}, func() {}, err
 	}
 
-	arena := arenaPool.Get().(*evaluator.Arena)
+	reg := arenaPool.Get().(*evaluator.Registry)
 	cleanup := func() {
-		arena.Reset()
-		arenaPool.Put(arena)
+		reg.Reset()
+		arenaPool.Put(reg)
 	}
 
 	ctx := evaluator.Context{
 		Interner: evaluator.NewInterner(),
-		Arena:    arena,
+		Registry: reg,
 	}
 
 	std, err := stdlib.InitStdLib(ctx)

@@ -81,9 +81,9 @@ func CreateFileScope(filename string, baseStd Value, ctx Context) uint32 {
 	mergedObj := MergeObjects(baseStd.Object(ctx), fileObjVal.Object(ctx))
 	fileStd := MakeObject(mergedObj, ctx)
 
-	scopeId := ctx.Arena.NewScope(0, 2)
-	ctx.Arena.AddScopeBind(scopeId, NamedValue{Key: ctx.Interner.Intern("$std"), Value: fileStd})
-	ctx.Arena.AddScopeBind(scopeId, NamedValue{Key: ctx.Interner.Intern("std"), Value: fileStd})
+	scopeId := ctx.NewScope(0, 2)
+	ctx.AddScopeBind(scopeId, NamedValue{Key: ctx.Interner.Intern("$std"), Value: fileStd})
+	ctx.AddScopeBind(scopeId, NamedValue{Key: ctx.Interner.Intern("std"), Value: fileStd})
 
 	return scopeId
 }
@@ -194,7 +194,7 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 
 		keyId := ctx.Interner.Intern(name)
 
-		val, found := ctx.Arena.GetScopeBind(scopeId, keyId)
+		val, found := ctx.GetScopeBind(scopeId, keyId)
 		if !found {
 			return Value{}, createErrorWithContext(fmt.Errorf("variable not found in scope, name: %s", name), &node.LocRange)
 		}
@@ -433,7 +433,7 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 
 func handleLocal(node *ast.Local, scopeId uint32, ctx Context) (Value, error) {
 
-	childScopeId := ctx.Arena.NewScope(scopeId, len(node.Binds))
+	childScopeId := ctx.NewScope(scopeId, len(node.Binds))
 
 	for _, v := range node.Binds {
 		vname := string(v.Variable)
@@ -443,7 +443,7 @@ func handleLocal(node *ast.Local, scopeId uint32, ctx Context) (Value, error) {
 			return Value{}, err
 		}
 
-		ctx.Arena.AddScopeBind(childScopeId, NamedValue{keyId, t})
+		ctx.AddScopeBind(childScopeId, NamedValue{keyId, t})
 	}
 
 	val, err := evaluateNodeLazy(node.Body, childScopeId, ctx)
@@ -530,7 +530,7 @@ func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, err
 			return Value{}, fmt.Errorf("unexpected amount of args passed to function")
 		}
 
-		childScopeId := ctx.Arena.NewScope(scopeId, paramCount)
+		childScopeId := ctx.NewScope(scopeId, paramCount)
 
 		posIndex := 0
 		for i := range paramCount {
@@ -552,7 +552,7 @@ func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, err
 			}
 
 			if !bindVal.IsNone() {
-				ctx.Arena.AddScopeBind(childScopeId, bindVal)
+				ctx.AddScopeBind(childScopeId, bindVal)
 				continue
 			}
 
@@ -567,7 +567,7 @@ func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, err
 				return Value{}, err
 			}
 
-			ctx.Arena.AddScopeBind(childScopeId, NamedValue{keyId, da})
+			ctx.AddScopeBind(childScopeId, NamedValue{keyId, da})
 		}
 
 		val, err := evaluateNode(node.Body, childScopeId, ctx)

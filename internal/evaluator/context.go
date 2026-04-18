@@ -9,7 +9,7 @@ import (
 
 type Context struct {
 	Interner    *Interner
-	Arena       *Arena
+	Registry    *Registry
 	Environment *Environment
 
 	Self Value // self
@@ -48,13 +48,14 @@ func (i *Interner) Get(id uint32) string {
 	return i.strings[id]
 }
 
-type Arena struct {
-	Objects   []Object
-	Arrays    [][]Value
-	Thunks    []Thunk
-	Functions []Function
+type Registry struct {
+	Objects   *Arena[Object]
+	Arrays    *Arena[[]Value]
+	Strings   *Arena[string]
+	Thunks    *Arena[Thunk]
+	Functions *Arena[Function]
 
-	Scopes []Scope
+	Scopes *Arena[Scope]
 
 	bindings []NamedValue
 }
@@ -65,30 +66,44 @@ type Scope struct {
 	ParentId uint32
 }
 
-func NewArena() *Arena {
-	return &Arena{
-		Thunks:    make([]Thunk, 0, 32*1024),
-		Objects:   make([]Object, 0, 8*1024),
-		Arrays:    make([][]Value, 0, 16*1024),
-		Functions: make([]Function, 0, 2*1024),
-		Scopes:    make([]Scope, 0, 32*1024),
+func NewRegistry() *Registry {
+	return &Registry{
+		Objects:   NewArena[Object](),
+		Arrays:    NewArena[[]Value](),
+		Strings:   NewArena[string](),
+		Thunks:    NewArena[Thunk](),
+		Functions: NewArena[Function](),
+		Scopes:    NewArena[Scope](),
 
 		bindings: make([]NamedValue, 0, 128*1024),
 	}
 }
 
-func (a *Arena) NewScope(parentId uint32, cap int) uint32 {
-	id := uint32(len(a.Scopes))
+func (t *Registry) Reset() {
+	t.Objects.Reset()
+	t.Arrays.Reset()
+	t.Strings.Reset()
+	t.Thunks.Reset()
+	t.Functions.Reset()
+	t.Scopes.Reset()
 
-	a.Scopes = append(a.Scopes, Scope{
+	clear(t.bindings)
+	t.bindings = t.bindings[:0]
+}
+
+func (c Context) NewScope(parentId uint32, cap int) uint32 {
+
+	s := Scope{
 		ParentId: parentId,
-		Bindings: a.makeBindings(cap),
-	})
+		Bindings: c.Registry.makeBindings(cap),
+	}
+
+	id := c.Registry.Scopes.Alloc(s)
 
 	return id
 }
 
-func (a *Arena) makeBindings(n int) []NamedValue {
+func (a *Registry) makeBindings(n int) []NamedValue {
 	if n == 0 {
 		return nil
 	}
@@ -100,21 +115,20 @@ func (a *Arena) makeBindings(n int) []NamedValue {
 	return a.bindings[start:start:total]
 }
 
-func (a *Arena) GetScope(id uint32) *Scope {
-	return &a.Scopes[id]
-}
+// func (a *Registry) GetScope(id uint32) *Scope {
+// 	return &a.Scopes[id]
+// }
 
-func (a *Arena) AddScopeBind(scopeId uint32, val NamedValue) {
-	s := &a.Scopes[scopeId]
-
+func (c Context) AddScopeBind(scopeId uint32, val NamedValue) {
+	s := c.Registry.Scopes.GetPtr(scopeId)
 	s.Bindings = append(s.Bindings, val)
 }
 
-func (a *Arena) GetScopeBind(scopeId, key uint32) (Value, bool) {
+func (c Context) GetScopeBind(scopeId, key uint32) (Value, bool) {
 	currId := scopeId
 
 	for {
-		scope := &a.Scopes[currId]
+		scope := c.Registry.Scopes.GetPtr(currId)
 
 		for i := len(scope.Bindings) - 1; i >= 0; i-- {
 			if scope.Bindings[i].Key == key {
@@ -133,23 +147,6 @@ func (a *Arena) GetScopeBind(scopeId, key uint32) (Value, bool) {
 		currId = scope.ParentId
 	}
 	return Value{}, false
-}
-
-func (a *Arena) Reset() {
-
-	clear(a.Thunks)
-	clear(a.Objects)
-	clear(a.Arrays)
-	clear(a.Functions)
-	clear(a.Scopes)
-	clear(a.bindings)
-
-	a.Thunks = a.Thunks[:0]
-	a.Objects = a.Objects[:0]
-	a.Arrays = a.Arrays[:0]
-	a.Functions = a.Functions[:0]
-	a.Scopes = a.Scopes[:0]
-	a.bindings = a.bindings[:0]
 }
 
 type ExtVar interface {

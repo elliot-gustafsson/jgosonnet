@@ -116,55 +116,6 @@ func bopPlus(left, right Value, ctx Context) (Value, error) {
 	}
 }
 
-// func bopMinus(left, right Value) (Value, error) {
-
-// 	if left.Type() != right.Type() {
-// 		return Value{}, fmt.Errorf("non matching types passed to binary op minus (%s,%s)", left.Type().String(), right.Type().String())
-// 	}
-
-// 	switch left.Type() {
-
-// 	case ValueTypeNumber:
-// 		val := left.Number() - right.Number()
-// 		return MakeNumber(val), nil
-
-// 	default:
-// 		return Value{}, fmt.Errorf("bop minus: unexpected type %s", left.Type().String())
-// 	}
-// }
-
-// func bopDiv(left, right Value) (Value, error) {
-
-// 	if left.Type() != right.Type() {
-// 		return Value{}, fmt.Errorf("non matching types passed to binary op div (%s,%s)", left.Type().String(), right.Type().String())
-// 	}
-
-// 	switch left.Type() {
-
-// 	case ValueTypeNumber:
-// 		val := left.Number() / right.Number()
-// 		return MakeNumber(val), nil
-
-// 	default:
-// 		return Value{}, fmt.Errorf("bop div: unexpected type %s", left.Type().String())
-// 	}
-// }
-
-// func bopMultiply(left, right Value) (Value, error) {
-
-// 	if left.Type() != right.Type() {
-// 		return Value{}, fmt.Errorf("non matching types passed to binary op multiply (%s,%s)", left.Type().String(), right.Type().String())
-// 	}
-
-// 	switch left.Type() {
-// 	case ValueTypeNumber:
-// 		val := left.Number() * right.Number()
-// 		return MakeNumber(val), nil
-// 	default:
-// 		return Value{}, fmt.Errorf("bop multiply: unhandled type %s", left.Type().String())
-// 	}
-// }
-
 func handleNumberOp(left, right float64, op ast.BinaryOp) (val float64, err error) {
 
 	switch op {
