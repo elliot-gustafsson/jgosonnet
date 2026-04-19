@@ -3,6 +3,7 @@ package evaluator
 import (
 	"io"
 
+	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
 	"github.com/google/go-jsonnet"
 	"github.com/google/go-jsonnet/ast"
 )
@@ -49,13 +50,13 @@ func (i *Interner) Get(id uint32) string {
 }
 
 type Registry struct {
-	Objects   *Arena[Object]
-	Arrays    *Arena[[]Value]
-	Strings   *Arena[string]
-	Thunks    *Arena[Thunk]
-	Functions *Arena[Function]
+	Objects *arena.Arena[Object]
+	Arrays  *arena.SliceArena[Value]
+	// Strings   *arena.StringArena
+	Thunks    *arena.Arena[Thunk]
+	Functions *arena.Arena[Function]
 
-	Scopes *Arena[Scope]
+	Scopes *arena.Arena[Scope]
 
 	bindings []NamedValue
 }
@@ -66,14 +67,19 @@ type Scope struct {
 	ParentId uint32
 }
 
+const sliceArenaChunkSize = 4096
+
+// const stringArenaBlockSize = 1024
+const bufferArenaBlockSize = 4096
+
 func NewRegistry() *Registry {
 	return &Registry{
-		Objects:   NewArena[Object](),
-		Arrays:    NewArena[[]Value](),
-		Strings:   NewArena[string](),
-		Thunks:    NewArena[Thunk](),
-		Functions: NewArena[Function](),
-		Scopes:    NewArena[Scope](),
+		Objects: arena.NewArena[Object](),
+		Arrays:  arena.NewSliceArena[Value](sliceArenaChunkSize),
+		// Strings:   arena.NewStringArena(stringArenaBlockSize),
+		Thunks:    arena.NewArena[Thunk](),
+		Functions: arena.NewArena[Function](),
+		Scopes:    arena.NewArena[Scope](),
 
 		bindings: make([]NamedValue, 0, 128*1024),
 	}
@@ -82,7 +88,7 @@ func NewRegistry() *Registry {
 func (t *Registry) Reset() {
 	t.Objects.Reset()
 	t.Arrays.Reset()
-	t.Strings.Reset()
+	// t.Strings.Reset()
 	t.Thunks.Reset()
 	t.Functions.Reset()
 	t.Scopes.Reset()

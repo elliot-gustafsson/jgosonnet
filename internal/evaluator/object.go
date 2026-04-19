@@ -78,6 +78,8 @@ type Object struct {
 	Values       []Value
 	layerOffsets []int
 
+	fieldCache map[uint32]CachedValue
+
 	Scopes []uint32
 
 	AssertionState uint8
@@ -112,6 +114,12 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 	err = runAssertions(t, ctx)
 	if err != nil {
 		return Value{}, false, err
+	}
+
+	if offset == 0 && t.fieldCache != nil {
+		if cached, ok := t.fieldCache[key]; ok {
+			return cached.Value, cached.Visible, nil
+		}
 	}
 
 	currentVisibility := ast.ObjectFieldInherit
@@ -184,7 +192,16 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 		}
 	}
 
-	return res, currentVisibility != ast.ObjectFieldHidden, nil
+	visible = currentVisibility != ast.ObjectFieldHidden
+
+	if offset == 0 {
+		if t.fieldCache == nil {
+			t.fieldCache = make(map[uint32]CachedValue)
+		}
+		t.fieldCache[key] = CachedValue{Value: res, Visible: visible}
+	}
+
+	return res, visible, nil
 }
 
 func (t *Object) getScope(layerIndex int, layer *Layer, ctx Context) (uint32, error) {
@@ -396,6 +413,12 @@ func compileObjectPlan(obj *Object) []*FieldPlan {
 }
 
 func (t *FieldPlan) GetValue(obj *Object, ctx Context) (Value, error) {
+	if obj.fieldCache != nil {
+		if cached, ok := obj.fieldCache[t.KeyId]; ok {
+			return cached.Value, nil
+		}
+	}
+
 	layersCount := len(t.Layers)
 
 	if layersCount == 0 {
@@ -435,6 +458,14 @@ func (t *FieldPlan) GetValue(obj *Object, ctx Context) (Value, error) {
 			return Value{}, err
 		}
 		value = res
+	}
+
+	if obj.fieldCache == nil {
+		obj.fieldCache = make(map[uint32]CachedValue)
+	}
+	obj.fieldCache[t.KeyId] = CachedValue{
+		Value:   value,
+		Visible: t.Visibility != ast.ObjectFieldHidden,
 	}
 
 	return value, nil

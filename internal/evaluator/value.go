@@ -113,6 +113,12 @@ type NamedValue struct {
 	Value
 }
 
+type CachedValue struct {
+	Value
+
+	Visible bool
+}
+
 func MakeNull() Value {
 	return Value{t: ValueTypeNull}
 }
@@ -121,6 +127,13 @@ func MakeString(v string, ctx Context) Value {
 	refId := ctx.Interner.Intern(v)
 	return Value{t: ValueTypeString, refId: refId}
 }
+
+// const dataStringFlag uint32 = 1 << 31
+
+// func MakeDataString(v string, ctx Context) Value {
+// 	id := ctx.Registry.Strings.Alloc(v)
+// 	return Value{t: ValueTypeString, refId: id | dataStringFlag}
+// }
 
 func MakeNumber(v float64) Value {
 	return Value{t: ValueTypeNumber, num: v}
@@ -158,7 +171,27 @@ func (v Value) Type() ValueType {
 	return v.t
 }
 
+func (v Value) RefId() uint32 {
+	// if v.t == ValueTypeString {
+	// 	x := v.refId & dataStringFlag
+	// 	if x != 0 {
+	// 		return v.refId &^ dataStringFlag
+	// 	}
+	// 	return v.refId
+	// }
+	return v.refId
+}
+
+// func (v Value) String(ctx Context) string {
+// 	return ctx.Interner.Get(v.refId)
+// }
+
 func (v Value) String(ctx Context) string {
+	// x := v.refId & dataStringFlag
+	// if x != 0 {
+	// 	realId := v.refId &^ dataStringFlag
+	// 	return ctx.Registry.Strings.Get(realId)
+	// }
 	return ctx.Interner.Get(v.refId)
 }
 
@@ -171,7 +204,7 @@ func (v Value) Bool() bool {
 }
 
 func (v Value) Array(ctx Context) []Value {
-	return ctx.Registry.Arrays.GetValue(v.refId)
+	return ctx.Registry.Arrays.Get(v.refId)
 }
 
 func (v Value) Object(ctx Context) *Object {
@@ -452,7 +485,8 @@ func (a Value) Equal(b Value, ctx Context) (bool, error) {
 	case ValueTypeNull:
 		return true, nil
 	case ValueTypeString:
-		return a.refId == b.refId, nil
+		// return a.refId == b.refId, nil
+		return a.RefId() == b.RefId(), nil
 	case ValueTypeNumber:
 		return a.Number() == b.Number(), nil
 	case ValueTypeBool:
@@ -514,7 +548,8 @@ func (a Value) Compare(b Value, ctx Context) (int, error) {
 	case ValueTypeNull:
 		return 0, nil
 	case ValueTypeString:
-		if a.refId == b.refId {
+		// if a.refId == b.refId {
+		if a.RefId() == b.RefId() {
 			return 0, nil
 		}
 		return cmp.Compare(a.String(ctx), b.String(ctx)), nil

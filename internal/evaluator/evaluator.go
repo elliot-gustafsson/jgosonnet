@@ -615,6 +615,7 @@ func handleIndex(node *ast.Index, scopeId uint32, ctx Context) (Value, error) {
 			return Value{}, createErrorWithContext(fmt.Errorf("unexpected index type for indexing object, expected string, got %s", index.Type().String()), &node.LocRange)
 		}
 
+		// TODO: can we optimize this? Since the index is a string we can take the id directly. If DataString is implemented that wont work...
 		name := index.String(ctx)
 
 		keyId := ctx.Interner.Intern(name)

@@ -391,6 +391,7 @@ func std_objectRemoveKey(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 	return evaluator.MakeObject(resObj, ctx), nil
 }
 
+// TODO: doesnt really work...
 func std_objectRemoveKey2(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	objVal, err := args[0].Eval(ctx)
 	if err != nil {

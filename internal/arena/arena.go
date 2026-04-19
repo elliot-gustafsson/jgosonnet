@@ -1,6 +1,6 @@
-package evaluator
+package arena
 
-const blockSize = 1024
+const blockSize = 64
 
 type Arena[T any] struct {
 	blocks  []*[blockSize]T
