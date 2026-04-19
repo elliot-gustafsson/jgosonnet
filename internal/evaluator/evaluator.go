@@ -58,11 +58,11 @@ func ManifestValue(value Value, ctx Context) (any, error) {
 		}
 		return ManifestValue(res, ctx)
 	case ValueTypeThunk:
-		err := evaluateValue(&value, ctx)
+		v, err := value.Eval(ctx)
 		if err != nil {
 			return nil, err
 		}
-		return ManifestValue(value, ctx)
+		return ManifestValue(v, ctx)
 	}
 }
 
@@ -321,58 +321,27 @@ func (n *GoCallbackNode) SetFreeVariables(ast.Identifiers) {}
 func (n *GoCallbackNode) SetContext(ast.Context)           {}
 func (n *GoCallbackNode) OpenFodder() *ast.Fodder          { return nil }
 
-func evaluateValue(value *Value, ctx Context) error {
-	if !value.IsThunk() {
-		return nil
-	}
-	thunk := value.Thunk(ctx)
-	if thunk == nil {
-		return nil
-	}
-	if !thunk.Value.IsNone() {
-		*value = thunk.Value
-		return nil
-	}
-
-	evalCtx := ctx
-	evalCtx.Self = thunk.CapturedSelf
-	evalCtx.SuperOffset = thunk.CapturedSuperOffset
-
-	evaledVal, err := evaluateNode(thunk.Node, thunk.ScopeId, evalCtx)
-	if err != nil {
-		return createErrorWithContext(err, thunk.Node.Loc())
-	}
-
-	if evaledVal.IsThunk() {
-		err = evaluateValue(&evaledVal, ctx)
-		if err != nil {
-			return err
-		}
-	}
-
-	thunk = value.Thunk(ctx)
-	thunk.Value = evaledVal
-
-	*value = evaledVal
-	return nil
-}
-
 func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Context) (Value, error) {
 
 	fieldCount := len(node.Fields)
 	localsCount := len(node.Locals)
 
-	layer := &Layer{
-		ParentScopeId: scopeId,
+	layer := &Layer{ParentScopeId: scopeId}
 
-		Keys:  make([]uint32, 0, fieldCount),
-		Nodes: make(ast.Nodes, 0, fieldCount),
-		Meta:  make([]uint8, 0, fieldCount),
+	if fieldCount > 0 {
+		layer.Keys = ctx.Registry.Uint32Bufs.Alloc(0, fieldCount)
+		layer.Nodes = ctx.Registry.NodesBufs.Alloc(0, fieldCount)
+		layer.Meta = ctx.Registry.Uint8Bufs.Alloc(0, fieldCount)
+	}
 
-		LocalKeys:  make([]uint32, 0, localsCount),
-		LocalNodes: make(ast.Nodes, 0, localsCount),
+	if localsCount > 0 {
+		layer.LocalKeys = ctx.Registry.Uint32Bufs.Alloc(0, fieldCount)
+		layer.LocalNodes = ctx.Registry.NodesBufs.Alloc(0, fieldCount)
+	}
 
-		Asserts: node.Asserts,
+	if len(node.Asserts) > 0 {
+		layer.Asserts = ctx.Registry.NodesBufs.Alloc(len(node.Asserts), len(node.Asserts))
+		copy(layer.Asserts, node.Asserts)
 	}
 
 	for _, v := range node.Locals {
@@ -409,10 +378,6 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 
 		n := name.String(ctx)
 
-		// if n == "mapRuleGroups" {
-		// 	log.Println("hej")
-		// }
-
 		keyId := ctx.Interner.Intern(n)
 
 		layer.Keys = append(layer.Keys, keyId)
@@ -426,7 +391,9 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 
 	}
 
-	obj := NewObject([]*Layer{layer})
+	layers := ctx.Registry.LayerBufs.Alloc(1, 1)
+	layers[0] = layer
+	obj := NewObject(layers)
 
 	return MakeObject(obj, ctx), nil
 }

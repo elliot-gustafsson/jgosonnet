@@ -63,8 +63,13 @@ type Registry struct {
 
 	Scopes *arena.Arena[Scope]
 
+	Nodes *arena.Arena[ast.Node]
+
+	Uint8Bufs      *arena.BufferArena[uint8]
+	Uint32Bufs     *arena.BufferArena[uint32]
 	LayerBufs      *arena.BufferArena[*Layer]
 	NamedValueBufs *arena.BufferArena[NamedValue]
+	NodesBufs      *arena.BufferArena[ast.Node]
 }
 
 type Scope struct {
@@ -86,9 +91,13 @@ func NewRegistry() *Registry {
 		Thunks:    arena.NewArena[Thunk](),
 		Functions: arena.NewArena[Function](),
 		Scopes:    arena.NewArena[Scope](),
+		Nodes:     arena.NewArena[ast.Node](),
 
+		Uint8Bufs:      arena.NewBufferArena[uint8](bufferArenaBlockSize),
+		Uint32Bufs:     arena.NewBufferArena[uint32](bufferArenaBlockSize),
 		LayerBufs:      arena.NewBufferArena[*Layer](bufferArenaBlockSize),
 		NamedValueBufs: arena.NewBufferArena[NamedValue](bufferArenaBlockSize),
+		NodesBufs:      arena.NewBufferArena[ast.Node](bufferArenaBlockSize),
 	}
 }
 
@@ -100,8 +109,11 @@ func (t *Registry) Reset() {
 	t.Functions.Reset()
 	t.Scopes.Reset()
 
+	t.Uint8Bufs.Reset()
+	t.Uint32Bufs.Reset()
 	t.LayerBufs.Reset()
 	t.NamedValueBufs.Reset()
+	t.NodesBufs.Reset()
 }
 
 func (c Context) NewScope(parentId uint32, cap int) uint32 {

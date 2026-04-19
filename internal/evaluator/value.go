@@ -54,7 +54,7 @@ func (t ValueType) String() string {
 type ThunkEvalFunc func(Context) (Value, error)
 
 type Thunk struct {
-	Node                ast.Node
+	NodeId              uint32
 	ScopeId             uint32
 	CapturedSelf        Value
 	CapturedSuperOffset int
@@ -64,7 +64,7 @@ type Thunk struct {
 
 func NewThunk(node ast.Node, scopeId uint32, ctx Context) Thunk {
 	return Thunk{
-		Node:                node,
+		NodeId:              ctx.Registry.Nodes.Alloc(node),
 		ScopeId:             scopeId,
 		CapturedSelf:        ctx.Self,
 		CapturedSuperOffset: ctx.SuperOffset,
@@ -232,7 +232,9 @@ func (v Value) Eval(ctx Context) (Value, error) {
 	evalCtx.Self = thunk.CapturedSelf
 	evalCtx.SuperOffset = thunk.CapturedSuperOffset
 
-	evaledVal, err := evaluateNode(thunk.Node, thunk.ScopeId, evalCtx)
+	node := ctx.Registry.Nodes.GetValue(thunk.NodeId)
+
+	evaledVal, err := evaluateNode(node, thunk.ScopeId, evalCtx)
 	if err != nil {
 		return Value{}, err
 	}
