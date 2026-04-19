@@ -26,7 +26,7 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 			return evaluator.Value{}, fmt.Errorf("unexpected type of builtin_objectFlatMerge arg: %s, expected object", v.Type().String())
 		}
 
-		layers = append(layers, v.Object(ctx).GetLayers()...)
+		layers = append(layers, v.Object(ctx).GetLayers(ctx)...)
 	}
 
 	obj := evaluator.NewObject(layers)

@@ -49,6 +49,11 @@ func (i *Interner) Get(id uint32) string {
 	return i.strings[id]
 }
 
+func (i *Interner) Reset() {
+	clear(i.mapping)
+	i.strings = i.strings[:0]
+}
+
 type Registry struct {
 	Objects *arena.Arena[Object]
 	Arrays  *arena.SliceArena[Value]
@@ -58,7 +63,8 @@ type Registry struct {
 
 	Scopes *arena.Arena[Scope]
 
-	bindings []NamedValue
+	LayerBufs      *arena.BufferArena[*Layer]
+	NamedValueBufs *arena.BufferArena[NamedValue]
 }
 
 type Scope struct {
@@ -81,7 +87,8 @@ func NewRegistry() *Registry {
 		Functions: arena.NewArena[Function](),
 		Scopes:    arena.NewArena[Scope](),
 
-		bindings: make([]NamedValue, 0, 128*1024),
+		LayerBufs:      arena.NewBufferArena[*Layer](bufferArenaBlockSize),
+		NamedValueBufs: arena.NewBufferArena[NamedValue](bufferArenaBlockSize),
 	}
 }
 
@@ -93,37 +100,21 @@ func (t *Registry) Reset() {
 	t.Functions.Reset()
 	t.Scopes.Reset()
 
-	clear(t.bindings)
-	t.bindings = t.bindings[:0]
+	t.LayerBufs.Reset()
+	t.NamedValueBufs.Reset()
 }
 
 func (c Context) NewScope(parentId uint32, cap int) uint32 {
 
 	s := Scope{
 		ParentId: parentId,
-		Bindings: c.Registry.makeBindings(cap),
+		Bindings: c.Registry.NamedValueBufs.Alloc(0, cap),
 	}
 
 	id := c.Registry.Scopes.Alloc(s)
 
 	return id
 }
-
-func (a *Registry) makeBindings(n int) []NamedValue {
-	if n == 0 {
-		return nil
-	}
-
-	start := len(a.bindings)
-	a.bindings = append(a.bindings, make([]NamedValue, n)...)
-	total := start + n
-
-	return a.bindings[start:start:total]
-}
-
-// func (a *Registry) GetScope(id uint32) *Scope {
-// 	return &a.Scopes[id]
-// }
 
 func (c Context) AddScopeBind(scopeId uint32, val NamedValue) {
 	s := c.Registry.Scopes.GetPtr(scopeId)

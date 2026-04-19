@@ -346,7 +346,7 @@ func std_objectRemoveKey(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 
 	if val.IsNone() {
 		// If key doesnt exist, just copy the object
-		objLayers := obj.GetLayers()
+		objLayers := obj.GetLayers(ctx)
 		newLayers := make([]*evaluator.Layer, len(objLayers))
 		copy(newLayers, objLayers)
 		res := evaluator.NewObject(newLayers)
@@ -412,7 +412,7 @@ func std_objectRemoveKey2(args []evaluator.NamedValue, ctx evaluator.Context) (e
 	// evalCtx := ctx
 	// evalCtx.Self = objVal
 
-	layers := obj.GetLayers()
+	layers := obj.GetLayers(ctx)
 
 	newLayers := make([]*evaluator.Layer, len(layers))
 

@@ -162,7 +162,7 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 			return Value{}, createErrorWithContext(fmt.Errorf("(%T) unexpected value type '%s'", node, val.Type().String()), &node.LocRange)
 		}
 
-		args := make([]NamedValue, 0, len(node.Arguments.Positional)+len(node.Arguments.Named))
+		args := ctx.Registry.NamedValueBufs.Alloc(0, len(node.Arguments.Positional)+len(node.Arguments.Named))
 		for _, a := range node.Arguments.Positional {
 			// v, err := EvaluateNodeStrict(a.Expr, scopeId, ctx)
 			v, err := evaluateNodeLazy(a.Expr, scopeId, ctx)

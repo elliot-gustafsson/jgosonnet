@@ -124,7 +124,7 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 
 	currentVisibility := ast.ObjectFieldInherit
 
-	layers := t.GetLayers()
+	layers := t.GetLayers(ctx)
 
 	var layerOffset int
 
@@ -207,7 +207,7 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 func (t *Object) getScope(layerIndex int, layer *Layer, ctx Context) (uint32, error) {
 
 	if t.Scopes == nil {
-		t.Scopes = make([]uint32, len(t.GetLayers()))
+		t.Scopes = make([]uint32, len(t.GetLayers(ctx)))
 	}
 
 	scopeId := t.Scopes[layerIndex]
@@ -286,14 +286,15 @@ func (t *Object) populateLayers(dest []*Layer, offset int) int {
 	return t.Right.populateLayers(dest, offset)
 }
 
-func (t *Object) GetLayers() []*Layer {
+func (t *Object) GetLayers(ctx Context) []*Layer {
 	if t.Layers != nil {
 		return t.Layers
 	}
 
 	total := t.totalLayerCount()
 
-	layers := make([]*Layer, total)
+	// layers := make([]*Layer, total)
+	layers := ctx.Registry.LayerBufs.Alloc(total, total)
 
 	t.populateLayers(layers, 0)
 
@@ -332,7 +333,7 @@ func CompileObjectPlan(obj *Object, ctx Context) []*FieldPlan {
 }
 
 func CompileObjectPlanEx(obj *Object, ctx Context, naturalSort bool) []*FieldPlan {
-	plans := compileObjectPlan(obj)
+	plans := compileObjectPlan(obj, ctx)
 
 	if naturalSort {
 		slices.SortFunc(plans, func(a, b *FieldPlan) int {
@@ -358,8 +359,8 @@ func CompileObjectPlanEx(obj *Object, ctx Context, naturalSort bool) []*FieldPla
 	return plans
 }
 
-func compileObjectPlan(obj *Object) []*FieldPlan {
-	layers := obj.GetLayers()
+func compileObjectPlan(obj *Object, ctx Context) []*FieldPlan {
+	layers := obj.GetLayers(ctx)
 
 	length := len(layers) * 5
 
@@ -544,7 +545,7 @@ func ManifestObjectRoot(obj *Object, ctx Context) (map[string]Value, error) {
 
 func getValue(obj *Object, layerId, fieldId int, ctx Context) (Value, error) {
 
-	layers := obj.GetLayers()
+	layers := obj.GetLayers(ctx)
 
 	if obj.layerOffsets == nil {
 		obj.layerOffsets = make([]int, len(layers))
@@ -603,7 +604,7 @@ func runAssertions(obj *Object, ctx Context) error {
 
 	obj.AssertionState = AssertStatusChecking
 
-	layers := obj.GetLayers()
+	layers := obj.GetLayers(ctx)
 
 	for i := len(layers) - 1; i >= 0; i-- {
 		layer := layers[i]
