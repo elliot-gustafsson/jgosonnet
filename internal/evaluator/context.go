@@ -55,9 +55,9 @@ func (i *Interner) Reset() {
 }
 
 type Registry struct {
-	Objects *arena.Arena[Object]
-	Arrays  *arena.SliceArena[Value]
-	// Strings   *arena.StringArena
+	Objects   *arena.Arena[Object]
+	Arrays    *arena.SliceArena[Value]
+	Strings   *arena.StringArena
 	Thunks    *arena.Arena[Thunk]
 	Functions *arena.Arena[Function]
 
@@ -79,15 +79,14 @@ type Scope struct {
 }
 
 const sliceArenaChunkSize = 4096
-
-// const stringArenaBlockSize = 1024
+const stringArenaBlockSize = 1024
 const bufferArenaBlockSize = 4096
 
 func NewRegistry() *Registry {
 	return &Registry{
-		Objects: arena.NewArena[Object](),
-		Arrays:  arena.NewSliceArena[Value](sliceArenaChunkSize),
-		// Strings:   arena.NewStringArena(stringArenaBlockSize),
+		Objects:   arena.NewArena[Object](),
+		Arrays:    arena.NewSliceArena[Value](sliceArenaChunkSize),
+		Strings:   arena.NewStringArena(stringArenaBlockSize),
 		Thunks:    arena.NewArena[Thunk](),
 		Functions: arena.NewArena[Function](),
 		Scopes:    arena.NewArena[Scope](),
@@ -104,7 +103,7 @@ func NewRegistry() *Registry {
 func (t *Registry) Reset() {
 	t.Objects.Reset()
 	t.Arrays.Reset()
-	// t.Strings.Reset()
+	t.Strings.Reset()
 	t.Thunks.Reset()
 	t.Functions.Reset()
 	t.Scopes.Reset()

@@ -140,19 +140,19 @@ func TestJsonnetCppTests(t *testing.T) {
 func TestSpecific(t *testing.T) {
 	var testsLoc, name, expectedOutputFile string
 
-	// testsLoc = filepath.Join("resources", "jsonnet-cpp", "test_suite")
-	// name = "stdlib.jsonnet"
-	// expectedOutputFile = "stdlib.jsonnet.golden"
+	testsLoc = filepath.Join("resources", "jsonnet-cpp", "test_suite")
+	name = "stdlib.jsonnet"
+	expectedOutputFile = "stdlib.jsonnet.golden"
 	// name = "trace.jsonnet"
 	// expectedOutputFile = "trace.jsonnet.golden"
 
-	testsLoc = filepath.Join("resources", "go-jsonnet", "testdata")
-	// name = "stdlib_smoke_test.jsonnet"
-	// expectedOutputFile = "stdlib_smoke_test.golden"
-	name = "builtinObjectRemoveKey_super.jsonnet"
-	expectedOutputFile = "builtinObjectRemoveKey_super.golden"
-	name = "builtinObjectRemoveKey.jsonnet"
-	expectedOutputFile = "builtinObjectRemoveKey.golden"
+	// testsLoc = filepath.Join("resources", "go-jsonnet", "testdata")
+	// // name = "stdlib_smoke_test.jsonnet"
+	// // expectedOutputFile = "stdlib_smoke_test.golden"
+	// name = "builtinObjectRemoveKey_super.jsonnet"
+	// expectedOutputFile = "builtinObjectRemoveKey_super.golden"
+	// name = "builtinObjectRemoveKey.jsonnet"
+	// expectedOutputFile = "builtinObjectRemoveKey.golden"
 
 	err := os.Chdir(testsLoc)
 	assert.NoError(t, err)

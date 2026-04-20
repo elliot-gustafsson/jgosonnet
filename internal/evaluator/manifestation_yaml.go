@@ -3,9 +3,9 @@ package evaluator
 import (
 	"fmt"
 	"math"
-	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 type YamlManifestConfig struct {
@@ -218,24 +218,29 @@ const (
 	yamlIndent = "  " // TODO: make configurable?
 )
 
-var yamlReserved = []string{
-	// Boolean types taken from https://yaml.org/type/bool.html
-	"y", "Y", "n", "N",
-	"yes", "Yes", "YES", "no", "No", "NO",
-	"true", "True", "TRUE", "false", "False", "FALSE",
-	"on", "On", "ON", "off", "Off", "OFF",
+func yamlReserved(s string) bool {
+	switch s {
+	case
+		// Boolean types taken from https://yaml.org/type/bool.html
+		"y", "Y", "n", "N",
+		"yes", "Yes", "YES", "no", "No", "NO",
+		"true", "True", "TRUE", "false", "False", "FALSE",
+		"on", "On", "ON", "off", "Off", "OFF",
 
-	// Null types taken from https://yaml.org/type/null.html
-	"null", "Null", "NULL", "~",
+		// Null types taken from https://yaml.org/type/null.html
+		"null", "Null", "NULL", "~",
 
-	// Numerical words taken from https://yaml.org/type/float.html
-	".nan", ".NaN", ".NAN",
-	".inf", ".Inf", ".INF",
-	"+.inf", "+.Inf", "+.INF",
-	"-.inf", "-.Inf", "-.INF",
+		// Numerical words taken from https://yaml.org/type/float.html
+		".nan", ".NaN", ".NAN",
+		".inf", ".Inf", ".INF",
+		"+.inf", "+.Inf", "+.INF",
+		"-.inf", "-.Inf", "-.INF",
 
-	// Invalid keys that contain no invalid characters / Document markers
-	"-", "---", "...", "''",
+		// Invalid keys that contain no invalid characters / Document markers
+		"-", "---", "...", "''":
+		return true
+	}
+	return false
 }
 
 func yamlBareSafe(s string) bool {
@@ -243,7 +248,7 @@ func yamlBareSafe(s string) bool {
 		return false
 	}
 
-	if slices.Contains(yamlReserved, s) {
+	if yamlReserved(s) {
 		return false
 	}
 
@@ -305,13 +310,49 @@ func yamlBareSafe(s string) bool {
 	return true
 }
 
+func isYamlNumber(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+
+	c1 := s[0]
+	if (c1 < '0' || c1 > '9') && c1 != '+' && c1 != '-' && c1 != '.' {
+		return false
+	}
+
+	// TODO: have this configurable? Maybe with config.Modern or smt
+	// Catch ex 0X1 (hex), 0O1 (octal), 0B1 (binary) incl leading (+/-)
+	// These are all valid to the strconv.ParseInt func, jsonnet only regards is as a number if the base specifier is lowercase
+	// offset := 0
+	// if s[0] == '-' || s[0] == '+' {
+	// 	offset = 1
+	// }
+	// if s[offset] == '0' && (s[offset+1] == 'X' || s[offset+1] == 'B' || s[offset+1] == 'O') {
+	// 	return false
+	// }
+
+	if _, err := strconv.ParseInt(s, 0, 64); err == nil {
+		return true
+	}
+
+	if n, err := strconv.ParseFloat(s, 64); err == nil {
+		if math.IsInf(n, 0) || math.IsNaN(n) {
+			// Note NaN and Inf are valid yaml strings even if they are interpreted as numbers by go
+			return false
+		}
+		return true
+	}
+
+	return false
+}
+
 func writeYamlString(b *strings.Builder, s string, forceQuotes, preferSingleQuotes bool) {
 	needsQuotes := forceQuotes
 	useSingle := preferSingleQuotes
 
 	// Look for control chars
-	for i := 0; i < len(s); i++ {
-		if s[i] < 0x20 {
+	for _, c := range s {
+		if c < 0x20 {
 			needsQuotes = true
 			useSingle = false
 			break
@@ -321,19 +362,14 @@ func writeYamlString(b *strings.Builder, s string, forceQuotes, preferSingleQuot
 	if !needsQuotes {
 		if len(s) == 0 {
 			needsQuotes = true
-		} else if slices.Contains(yamlReserved, s) {
-			needsQuotes = true
-			useSingle = false // Reserved words (true/null) need double quotes
-		} else if n, err := strconv.ParseFloat(s, 64); err == nil {
-			if !math.IsInf(n, 0) && !math.IsNaN(n) {
-				needsQuotes = true
-				useSingle = false // Numbers as strings need double quotes
-			}
-		} else if _, err := strconv.ParseInt(s, 0, 64); err == nil {
-			// Handles hex and octal numbers
+		} else if yamlReserved(s) {
 			needsQuotes = true
 			useSingle = false
-		} else if strings.TrimSpace(s) != s {
+		} else if isYamlNumber(s) {
+			needsQuotes = true
+			useSingle = false
+		} else if unicode.IsSpace(rune(s[0])) || unicode.IsSpace(rune(s[len(s)-1])) {
+			// If leading or trailing whitespace
 			needsQuotes = true
 		} else {
 
@@ -347,9 +383,10 @@ func writeYamlString(b *strings.Builder, s string, forceQuotes, preferSingleQuot
 				}
 			}
 
-			// Check for inline indicators and trailing colons (your fixes!)
-			if strings.Contains(s, ": ") || strings.Contains(s, ":\n") || strings.Contains(s, " #") || strings.HasSuffix(s, ":") {
-				needsQuotes = true
+			if !needsQuotes {
+				if strings.Contains(s, ": ") || strings.Contains(s, ":\n") || strings.Contains(s, " #") || strings.HasSuffix(s, ":") {
+					needsQuotes = true
+				}
 			}
 		}
 	}

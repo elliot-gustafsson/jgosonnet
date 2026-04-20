@@ -3,6 +3,7 @@ package evaluator
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/google/go-jsonnet/ast"
 )
@@ -504,7 +505,9 @@ func manifestObject(obj *Object, ctx Context) (map[string]any, error) {
 			return nil, err
 		}
 
-		res[name] = rawVal
+		// Clone due to arenas being reset
+		nameClone := strings.Clone(name)
+		res[nameClone] = rawVal
 
 	}
 

@@ -123,17 +123,12 @@ func MakeNull() Value {
 	return Value{t: ValueTypeNull}
 }
 
+const dataStringFlag uint32 = 1 << 31
+
 func MakeString(v string, ctx Context) Value {
-	refId := ctx.Interner.Intern(v)
-	return Value{t: ValueTypeString, refId: refId}
+	id := ctx.Registry.Strings.Alloc(v)
+	return Value{t: ValueTypeString, refId: id | dataStringFlag}
 }
-
-// const dataStringFlag uint32 = 1 << 31
-
-// func MakeDataString(v string, ctx Context) Value {
-// 	id := ctx.Registry.Strings.Alloc(v)
-// 	return Value{t: ValueTypeString, refId: id | dataStringFlag}
-// }
 
 func MakeNumber(v float64) Value {
 	return Value{t: ValueTypeNumber, num: v}
@@ -172,26 +167,22 @@ func (v Value) Type() ValueType {
 }
 
 func (v Value) RefId() uint32 {
-	// if v.t == ValueTypeString {
-	// 	x := v.refId & dataStringFlag
-	// 	if x != 0 {
-	// 		return v.refId &^ dataStringFlag
-	// 	}
-	// 	return v.refId
-	// }
+	if v.t == ValueTypeString {
+		x := v.refId & dataStringFlag
+		if x != 0 {
+			return v.refId &^ dataStringFlag
+		}
+		return v.refId
+	}
 	return v.refId
 }
 
-// func (v Value) String(ctx Context) string {
-// 	return ctx.Interner.Get(v.refId)
-// }
-
 func (v Value) String(ctx Context) string {
-	// x := v.refId & dataStringFlag
-	// if x != 0 {
-	// 	realId := v.refId &^ dataStringFlag
-	// 	return ctx.Registry.Strings.Get(realId)
-	// }
+	x := v.refId & dataStringFlag
+	if x != 0 {
+		realId := v.refId &^ dataStringFlag
+		return ctx.Registry.Strings.Get(realId)
+	}
 	return ctx.Interner.Get(v.refId)
 }
 
@@ -487,8 +478,10 @@ func (a Value) Equal(b Value, ctx Context) (bool, error) {
 	case ValueTypeNull:
 		return true, nil
 	case ValueTypeString:
-		// return a.refId == b.refId, nil
-		return a.RefId() == b.RefId(), nil
+		if a.RefId() == b.RefId() {
+			return true, nil
+		}
+		return a.String(ctx) == b.String(ctx), nil
 	case ValueTypeNumber:
 		return a.Number() == b.Number(), nil
 	case ValueTypeBool:
@@ -550,7 +543,6 @@ func (a Value) Compare(b Value, ctx Context) (int, error) {
 	case ValueTypeNull:
 		return 0, nil
 	case ValueTypeString:
-		// if a.refId == b.refId {
 		if a.RefId() == b.RefId() {
 			return 0, nil
 		}

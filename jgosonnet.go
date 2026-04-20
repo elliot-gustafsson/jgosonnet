@@ -165,7 +165,10 @@ func (t *Evaluator) EvaluateYamlMulti(file string) (map[string]string, error) {
 
 		b.WriteByte('\n')
 
-		res[key] = b.String()
+		// Clone string due to string arena being reset in defer
+		kClone := strings.Clone(key)
+
+		res[kClone] = b.String()
 	}
 
 	return res, nil
@@ -192,11 +195,20 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 		return evaluator.Value{}, evaluator.Context{}, func() {}, err
 	}
 
+	// f, err := os.Create("cpu.prof")
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// pprof.StartCPUProfile(f)
+
 	engine := enginePool.Get().(*EvaluationEngine)
 	cleanup := func() {
 		engine.Registry.Reset()
 		engine.Interner.Reset()
 		enginePool.Put(engine)
+
+		// pprof.StopCPUProfile()
+		// f.Close()
 	}
 
 	ctx := evaluator.Context{

@@ -88,15 +88,22 @@ func TestJgosonnetYaml(t *testing.T) {
 	fmt.Println("yaml v3:")
 	fmt.Println()
 	data := map[string]string{
-		"a":  "\n",
-		"a2": "\n\n",
-		"a3": "\n\nasdf",
-		"a4": "\n\n ",
-		"b":  "\ta",
-		"b2": "\ta\n",
-		"c":  " ",
-		"d":  " asdf",
-		"e":  " asdf\n",
+		// "a":  "\n",
+		// "a2": "\n\n",
+		// "a3": "\n\nasdf",
+		// "a4": "\n\n ",
+		// "b":  "\ta",
+		// "b2": "\ta\n",
+		// "c":  " ",
+		// "d":  " asdf",
+		// "e":  " asdf\n",
+
+		"0X123": "asdf",
+		"0O123": "asdf",
+		"0B123": "asdf",
+		// "0b1":    "asdf",
+		// "0o1":    "asdf",
+		// "123_123.2": "asdf",
 	}
 
 	var b strings.Builder
@@ -108,6 +115,18 @@ func TestJgosonnetYaml(t *testing.T) {
 	fmt.Print(b.String())
 
 	assert.Equal(t, b.String(), string(stuff))
+
+}
+
+func TestYamlV3(t *testing.T) {
+	data := map[string]string{
+		"0O123": "banan",
+	}
+
+	out, err := yaml.Marshal(data)
+	assert.NoError(t, err)
+
+	fmt.Print(string(out))
 
 }
 
@@ -176,6 +195,11 @@ func GetChange(old, new time.Duration) float64 {
 }
 
 func TestEvaluatorParallel(t *testing.T) {
+	// curr := debug.SetGCPercent(-1)
+	// defer func() {
+	// 	debug.SetGCPercent(curr)
+	// }()
+
 	slog.SetLogLoggerLevel(slog.LevelDebug)
 
 	cwd, err := os.Getwd()
@@ -301,49 +325,49 @@ func TestEvaluatorSerial(t *testing.T) {
 	// 	"sto3-prod001",
 	// }
 	x := []string{
-		"it-it001",
-		"it-rancher",
-		"mimir-alerts-dashboards",
-		"sto1-acce001",
-		"sto1-build001",
-		"sto1-dev-analytics001",
-		"sto1-dev001",
-		"sto1-harvester001",
-		"sto1-infra-edge001",
-		"sto1-infra-public001",
-		"sto1-infra001",
-		"sto1-lb001",
-		"sto1-prod-analytics001",
-		"sto1-prod-gpu001",
+		// "it-it001",
+		// "it-rancher",
+		// "mimir-alerts-dashboards",
+		// "sto1-acce001",
+		// "sto1-build001",
+		// "sto1-dev-analytics001",
+		// "sto1-dev001",
+		// "sto1-harvester001",
+		// "sto1-infra-edge001",
+		// "sto1-infra-public001",
+		// "sto1-infra001",
+		// "sto1-lb001",
+		// "sto1-prod-analytics001",
+		// "sto1-prod-gpu001",
 		"sto1-prod001",
-		"sto1-rancher",
-		"sto2-acce001",
-		"sto2-build001",
-		"sto2-dev-gpu001",
-		"sto2-dev001",
-		"sto2-harvester001",
-		"sto2-infra-edge001",
-		"sto2-infra-public001",
-		"sto2-infra001",
-		"sto2-lb001",
-		"sto2-prod-analytics001",
-		"sto2-prod-gpu001",
+		// "sto1-rancher",
+		// "sto2-acce001",
+		// "sto2-build001",
+		// "sto2-dev-gpu001",
+		// "sto2-dev001",
+		// "sto2-harvester001",
+		// "sto2-infra-edge001",
+		// "sto2-infra-public001",
+		// "sto2-infra001",
+		// "sto2-lb001",
+		// "sto2-prod-analytics001",
+		// "sto2-prod-gpu001",
 		"sto2-prod001",
-		"sto2-rancher",
-		"sto3-acce001",
-		"sto3-build-gpu001",
-		"sto3-build001",
-		"sto3-dev001",
-		"sto3-harvester001",
-		"sto3-infra-edge001",
-		"sto3-infra-public001",
-		"sto3-infra001",
-		"sto3-lb001",
-		"sto3-prod-analytics001",
-		"sto3-prod-gpu001",
+		// "sto2-rancher",
+		// "sto3-acce001",
+		// "sto3-build-gpu001",
+		// "sto3-build001",
+		// "sto3-dev001",
+		// "sto3-harvester001",
+		// "sto3-infra-edge001",
+		// "sto3-infra-public001",
+		// "sto3-infra001",
+		// "sto3-lb001",
+		// "sto3-prod-analytics001",
+		// "sto3-prod-gpu001",
 		"sto3-prod001",
-		"sto3-rancher",
-		"vms",
+		// "sto3-rancher",
+		// "vms",
 	}
 	interpreter := jgosonnet.NewEvaluator()
 	interpreter.JPaths([]string{filepath.Join(infraDir, "vendor")})

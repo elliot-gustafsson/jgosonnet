@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/google/go-jsonnet/ast"
 )
@@ -32,7 +33,8 @@ func ManifestValue(value Value, ctx Context) (any, error) {
 	case ValueTypeNull:
 		return nil, nil
 	case ValueTypeString:
-		return value.String(ctx), nil
+		s := value.String(ctx)
+		return strings.Clone(s), nil
 	case ValueTypeNumber:
 		return value.Number(), nil
 	case ValueTypeBool:
@@ -335,8 +337,8 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 	}
 
 	if localsCount > 0 {
-		layer.LocalKeys = ctx.Registry.Uint32Bufs.Alloc(0, fieldCount)
-		layer.LocalNodes = ctx.Registry.NodesBufs.Alloc(0, fieldCount)
+		layer.LocalKeys = ctx.Registry.Uint32Bufs.Alloc(0, localsCount)
+		layer.LocalNodes = ctx.Registry.NodesBufs.Alloc(0, localsCount)
 	}
 
 	if len(node.Asserts) > 0 {
