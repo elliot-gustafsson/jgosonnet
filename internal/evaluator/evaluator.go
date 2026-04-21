@@ -36,7 +36,11 @@ func ManifestValue(value Value, ctx Context) (any, error) {
 		s := value.String(ctx)
 		return strings.Clone(s), nil
 	case ValueTypeNumber:
-		return value.Number(), nil
+		n := value.Number()
+		if float64(int64(n)) == n {
+			return int64(n), nil
+		}
+		return n, nil
 	case ValueTypeBool:
 		return value.Bool(), nil
 	case ValueTypeObject:

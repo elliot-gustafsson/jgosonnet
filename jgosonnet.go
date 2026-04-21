@@ -1,7 +1,6 @@
 package jgosonnet
 
 import (
-	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -99,6 +98,55 @@ func (t *Evaluator) EvaluateJson(file string) (string, error) {
 	return b.String(), nil
 }
 
+func (t *Evaluator) EvaluateJsonMulti(file string) (map[string]string, error) {
+	value, ctx, cleanup, err := t.evaluate(file)
+	defer cleanup()
+	if err != nil {
+		return nil, err
+	}
+
+	if !value.IsObject() {
+		return nil, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, value.Type())
+	}
+
+	evalCtx := ctx
+	evalCtx.Self = value
+
+	root, err := evaluator.ManifestObjectRoot(value.Object(evalCtx), evalCtx)
+	if err != nil {
+		return nil, err
+	}
+
+	c := evaluator.JsonManifestConfig{
+		IndentStep: "   ",
+		Newline:    "\n",
+		KeyValSep:  ": ",
+		SpaceComma: true,
+	}
+
+	res := make(map[string]string, len(root))
+	for key, v := range root {
+
+		var b strings.Builder
+		b.Grow(64 * 1024)
+
+		err = evaluator.ManifestJson(&b, v, evalCtx, c)
+		if err != nil {
+			return nil, err
+		}
+
+		b.WriteByte('\n')
+
+		// Clone string due to string arena being reset in defer
+		kClone := strings.Clone(key)
+
+		res[kClone] = b.String()
+	}
+
+	return res, nil
+}
+
+// NOTE: Maybe fully compliant, use with caution
 func (t *Evaluator) EvaluateYaml(file string) (string, error) {
 	value, ctx, cleanup, err := t.evaluate(file)
 	defer cleanup()
@@ -126,6 +174,7 @@ func (t *Evaluator) EvaluateYaml(file string) (string, error) {
 	return b.String(), nil
 }
 
+// NOTE: Maybe fully compliant, use with caution
 func (t *Evaluator) EvaluateYamlMulti(file string) (map[string]string, error) {
 	value, ctx, cleanup, err := t.evaluate(file)
 	defer cleanup()
@@ -134,7 +183,7 @@ func (t *Evaluator) EvaluateYamlMulti(file string) (map[string]string, error) {
 	}
 
 	if !value.IsObject() {
-		return nil, fmt.Errorf("root object must be of type object, got: %s", value.Type().String())
+		return nil, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, value.Type())
 	}
 
 	evalCtx := ctx

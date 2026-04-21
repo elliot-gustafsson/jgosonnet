@@ -17,6 +17,8 @@ type YamlManifestConfig struct {
 	UseBlockScalars      bool
 }
 
+// TODO: Make two distinct paths for legacy jsonnet compliant yaml and yaml.v3 like yaml
+
 func ManifestYaml(b *strings.Builder, value Value, ctx Context, config YamlManifestConfig) error {
 	return manifestYaml(value, ctx, b, "", config)
 }
