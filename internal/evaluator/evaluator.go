@@ -672,7 +672,6 @@ func handleImport(node *ast.Import, scopeId uint32, ctx Context) (Value, error) 
 
 	file := fileVal.String(ctx)
 
-	// TODO: take full path here?
 	currentFileDir := filepath.Dir(node.NodeBase.LocRange.FileName)
 
 	var importedNode ast.Node
@@ -688,7 +687,10 @@ func handleImport(node *ast.Import, scopeId uint32, ctx Context) (Value, error) 
 
 	var rangeErr error
 	for _, dir := range dirs {
-		fp := filepath.Join(dir, file)
+		fp, err := filepath.Abs(filepath.Join(dir, file))
+		if err != nil {
+			return Value{}, MakeRuntimeError(err)
+		}
 
 		v := importer.Get(fp)
 		if !v.IsNone() {
@@ -716,8 +718,6 @@ func handleImport(node *ast.Import, scopeId uint32, ctx Context) (Value, error) 
 	if importedNode == nil {
 		return Value{}, errors.Join(errors.New("error resolving import"), rangeErr)
 	}
-
-	// importScope := ctx.Importer.ImportScope
 
 	importScope := CreateFileScope(file, importer.BaseStd, ctx)
 

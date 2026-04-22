@@ -123,11 +123,12 @@ func MakeNull() Value {
 	return Value{t: ValueTypeNull}
 }
 
-const dataStringFlag uint32 = 1 << 31
+// const dataStringFlag uint32 = 1 << 31
 
 func MakeString(v string, ctx Context) Value {
 	id := ctx.Registry.Strings.Alloc(v)
-	return Value{t: ValueTypeString, refId: id | dataStringFlag}
+	// return Value{t: ValueTypeString, refId: id | dataStringFlag}
+	return Value{t: ValueTypeString, refId: id}
 }
 
 func MakeNumber(v float64) Value {
@@ -167,23 +168,24 @@ func (v Value) Type() ValueType {
 }
 
 func (v Value) RefId() uint32 {
-	if v.t == ValueTypeString {
-		x := v.refId & dataStringFlag
-		if x != 0 {
-			return v.refId &^ dataStringFlag
-		}
-		return v.refId
-	}
+	// if v.t == ValueTypeString {
+	// 	x := v.refId & dataStringFlag
+	// 	if x != 0 {
+	// 		return v.refId &^ dataStringFlag
+	// 	}
+	// 	return v.refId
+	// }
 	return v.refId
 }
 
 func (v Value) String(ctx Context) string {
-	x := v.refId & dataStringFlag
-	if x != 0 {
-		realId := v.refId &^ dataStringFlag
-		return ctx.Registry.Strings.Get(realId)
-	}
-	return ctx.Interner.Get(v.refId)
+	// x := v.refId & dataStringFlag
+	// if x != 0 {
+	// 	realId := v.refId &^ dataStringFlag
+	// 	return ctx.Registry.Strings.Get(realId)
+	// }
+	// return ctx.Interner.Get(v.refId)
+	return ctx.Registry.Strings.Get(v.refId)
 }
 
 func (v Value) Number() float64 {

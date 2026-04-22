@@ -18,7 +18,7 @@ type Importer struct {
 }
 
 type AstImporter struct {
-	cacheMu  sync.RWMutex
+	cacheMu  sync.Mutex
 	astCache map[string]ast.Node
 }
 
@@ -57,9 +57,9 @@ func (i *Importer) ResolveImport(filePath string) (ast.Node, error) {
 
 func (t *AstImporter) ResolveSnippet(name, data string) (ast.Node, error) {
 
-	t.cacheMu.RLock()
+	t.cacheMu.Lock()
 	importedNode, exist := t.astCache[name]
-	t.cacheMu.RUnlock()
+	t.cacheMu.Unlock()
 
 	if exist {
 		return importedNode, nil
@@ -79,9 +79,9 @@ func (t *AstImporter) ResolveSnippet(name, data string) (ast.Node, error) {
 
 func (t *AstImporter) ResolveImport(filePath string) (ast.Node, error) {
 
-	t.cacheMu.RLock()
+	t.cacheMu.Lock()
 	importedNode, exist := t.astCache[filePath]
-	t.cacheMu.RUnlock()
+	t.cacheMu.Unlock()
 
 	if exist {
 		return importedNode, nil
