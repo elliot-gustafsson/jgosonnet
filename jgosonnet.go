@@ -1,6 +1,7 @@
 package jgosonnet
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -60,12 +61,12 @@ func (t *Evaluator) Evaluate(file string) (any, error) {
 	value, ctx, cleanup, err := t.evaluate(file)
 	defer cleanup()
 	if err != nil {
-		return nil, err
+		return nil, wrapEvaluationErr(err)
 	}
 
 	raw, err := evaluator.ManifestValue(value, ctx)
 	if err != nil {
-		return nil, err
+		return nil, wrapManifestationErr(err)
 	}
 
 	return raw, nil
@@ -75,7 +76,7 @@ func (t *Evaluator) EvaluateJson(file string) (string, error) {
 	value, ctx, cleanup, err := t.evaluate(file)
 	defer cleanup()
 	if err != nil {
-		return "", err
+		return "", wrapEvaluationErr(err)
 	}
 
 	var b strings.Builder
@@ -90,7 +91,7 @@ func (t *Evaluator) EvaluateJson(file string) (string, error) {
 
 	err = evaluator.ManifestJson(&b, value, ctx, c)
 	if err != nil {
-		return "", err
+		return "", wrapManifestationErr(err)
 	}
 
 	b.WriteByte('\n')
@@ -102,11 +103,11 @@ func (t *Evaluator) EvaluateJsonMulti(file string) (map[string]string, error) {
 	value, ctx, cleanup, err := t.evaluate(file)
 	defer cleanup()
 	if err != nil {
-		return nil, err
+		return nil, wrapEvaluationErr(err)
 	}
 
 	if !value.IsObject() {
-		return nil, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, value.Type())
+		return nil, wrapEvaluationErr(evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, value.Type()))
 	}
 
 	evalCtx := ctx
@@ -114,7 +115,7 @@ func (t *Evaluator) EvaluateJsonMulti(file string) (map[string]string, error) {
 
 	root, err := evaluator.ManifestObjectRoot(value.Object(evalCtx), evalCtx)
 	if err != nil {
-		return nil, err
+		return nil, wrapManifestationErr(err)
 	}
 
 	c := evaluator.JsonManifestConfig{
@@ -132,7 +133,7 @@ func (t *Evaluator) EvaluateJsonMulti(file string) (map[string]string, error) {
 
 		err = evaluator.ManifestJson(&b, v, evalCtx, c)
 		if err != nil {
-			return nil, err
+			return nil, wrapManifestationErr(err)
 		}
 
 		b.WriteByte('\n')
@@ -151,7 +152,7 @@ func (t *Evaluator) EvaluateYaml(file string) (string, error) {
 	value, ctx, cleanup, err := t.evaluate(file)
 	defer cleanup()
 	if err != nil {
-		return "", err
+		return "", wrapEvaluationErr(err)
 	}
 
 	var b strings.Builder
@@ -166,7 +167,7 @@ func (t *Evaluator) EvaluateYaml(file string) (string, error) {
 
 	err = evaluator.ManifestYaml(&b, value, ctx, c)
 	if err != nil {
-		return "", err
+		return "", wrapManifestationErr(err)
 	}
 
 	b.WriteByte('\n')
@@ -179,11 +180,11 @@ func (t *Evaluator) EvaluateYamlMulti(file string) (map[string]string, error) {
 	value, ctx, cleanup, err := t.evaluate(file)
 	defer cleanup()
 	if err != nil {
-		return nil, err
+		return nil, wrapEvaluationErr(err)
 	}
 
 	if !value.IsObject() {
-		return nil, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, value.Type())
+		return nil, wrapEvaluationErr(evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, value.Type()))
 	}
 
 	evalCtx := ctx
@@ -191,7 +192,7 @@ func (t *Evaluator) EvaluateYamlMulti(file string) (map[string]string, error) {
 
 	root, err := evaluator.ManifestObjectRoot(value.Object(evalCtx), evalCtx)
 	if err != nil {
-		return nil, err
+		return nil, wrapManifestationErr(err)
 	}
 
 	c := evaluator.YamlManifestConfig{
@@ -209,7 +210,7 @@ func (t *Evaluator) EvaluateYamlMulti(file string) (map[string]string, error) {
 
 		err = evaluator.ManifestYaml(&b, v, evalCtx, c)
 		if err != nil {
-			return nil, err
+			return nil, wrapManifestationErr(err)
 		}
 
 		b.WriteByte('\n')
@@ -302,4 +303,12 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 	}
 
 	return value, ctx, cleanup, nil
+}
+
+func wrapEvaluationErr(err error) error {
+	return fmt.Errorf("%w\tDuring evaluation", err)
+}
+
+func wrapManifestationErr(err error) error {
+	return fmt.Errorf("%w\tDuring manifestation", err)
 }

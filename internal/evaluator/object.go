@@ -165,7 +165,7 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 		}
 
 		if !plusSuper {
-			// If field does not have plus, just beak since later layers dont matter
+			// If field does not have plus, just break since later layers dont matter
 			break
 		}
 	}
@@ -624,7 +624,7 @@ func runAssertions(obj *Object, ctx Context) error {
 				return err
 			}
 			if !val.IsBool() {
-				return fmt.Errorf("unexpected assert return type: %s, expected bool", val.Type().String())
+				return TypeErrorSpecific(ValueTypeBool, val.Type())
 			}
 		}
 	}

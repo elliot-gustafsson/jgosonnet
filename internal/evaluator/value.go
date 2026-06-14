@@ -227,16 +227,9 @@ func (v Value) Eval(ctx Context) (Value, error) {
 
 	node := ctx.Registry.Nodes.GetValue(thunk.NodeId)
 
-	evaledVal, err := evaluateNode(node, thunk.ScopeId, evalCtx)
+	evaledVal, err := EvaluateNode(node, thunk.ScopeId, evalCtx)
 	if err != nil {
 		return Value{}, err
-	}
-
-	if evaledVal.IsThunk() {
-		evaledVal, err = evaledVal.Eval(ctx)
-		if err != nil {
-			return Value{}, err
-		}
 	}
 
 	thunk = v.Thunk(ctx)
