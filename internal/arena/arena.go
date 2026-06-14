@@ -10,7 +10,9 @@ type Arena[T any] struct {
 
 func NewArena[T any]() *Arena[T] {
 	return &Arena[T]{
-		blocks: []*[blockSize]T{{}},
+		blocks:  []*[blockSize]T{{}},
+		current: 0,
+		offset:  1, // Burn index 0 so it can be used as a "nil" check
 	}
 }
 
@@ -52,5 +54,5 @@ func (a *Arena[T]) Reset() {
 	}
 
 	a.current = 0
-	a.offset = 0
+	a.offset = 1 // Re-burn index 0 so it can be used as a "nil" check
 }

@@ -73,8 +73,8 @@ type Object struct {
 	Layers []*Layer
 
 	// Used ONLY for lazy merging (A + B)
-	Left  *Object
-	Right *Object
+	LeftId  uint32 // object arena id
+	RightId uint32 // object arena id
 
 	Values       []Value
 	layerOffsets []int
@@ -271,20 +271,22 @@ func (t *Object) Length(ctx Context) int {
 	return length
 }
 
-func (t *Object) totalLayerCount() int {
+func (t Object) appendLayers(dest []*Layer, ctx Context) []*Layer {
 	if t.Layers != nil {
-		return len(t.Layers)
+		return append(dest, t.Layers...)
 	}
-	return t.Left.totalLayerCount() + t.Right.totalLayerCount()
-}
 
-func (t *Object) populateLayers(dest []*Layer, offset int) int {
-	if t.Layers != nil {
-		copied := copy(dest[offset:], t.Layers)
-		return offset + copied
+	if t.LeftId == 0 || t.RightId == 0 {
+		return dest
 	}
-	offset = t.Left.populateLayers(dest, offset)
-	return t.Right.populateLayers(dest, offset)
+
+	// copy lefts layer ids
+	l := ctx.Registry.Objects.GetValue(t.LeftId)
+	dest = l.appendLayers(dest, ctx)
+
+	// copy rights layer ids
+	r := ctx.Registry.Objects.GetValue(t.RightId)
+	return r.appendLayers(dest, ctx)
 }
 
 func (t *Object) GetLayers(ctx Context) []*Layer {
@@ -292,24 +294,20 @@ func (t *Object) GetLayers(ctx Context) []*Layer {
 		return t.Layers
 	}
 
-	total := t.totalLayerCount()
-
-	// layers := make([]*Layer, total)
-	layers := ctx.Registry.LayerBufs.Alloc(total, total)
-
-	t.populateLayers(layers, 0)
+	layers := make([]*Layer, 0, 8)
+	layers = t.appendLayers(layers, ctx)
 
 	t.Layers = layers
-	t.Left = nil
-	t.Right = nil
+	t.LeftId = 0
+	t.RightId = 0
 
 	return t.Layers
 }
 
-func MergeObjects(left, right *Object) Object {
+func MergeObjects(leftId, rightId uint32) Object {
 	return Object{
-		Left:  left,
-		Right: right,
+		LeftId:  leftId,
+		RightId: rightId,
 	}
 }
 

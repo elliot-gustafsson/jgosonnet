@@ -109,7 +109,7 @@ func bopPlus(left, right Value, ctx Context) (Value, error) {
 
 	case ValueTypeObject:
 		// Virtually combine objects
-		obj := MergeObjects(left.Object(ctx), right.Object(ctx))
+		obj := MergeObjects(left.RefId(), right.RefId())
 		return MakeObject(obj, ctx), nil
 	default:
 		return Value{}, fmt.Errorf("bop plus: unexpected type %s", left.Type().String())

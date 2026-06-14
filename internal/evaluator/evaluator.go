@@ -84,7 +84,7 @@ func CreateFileScope(filename string, baseStd Value, ctx Context) uint32 {
 	fileObj := NewObject([]*Layer{layer})
 	fileObjVal := MakeObject(fileObj, ctx)
 
-	mergedObj := MergeObjects(baseStd.Object(ctx), fileObjVal.Object(ctx))
+	mergedObj := MergeObjects(baseStd.RefId(), fileObjVal.RefId())
 	fileStd := MakeObject(mergedObj, ctx)
 
 	scopeId := ctx.NewScope(0, 2)

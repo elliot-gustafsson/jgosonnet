@@ -492,7 +492,7 @@ func std_mergePatch(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	// std.mergePatch({ a: 1 }, { b: 2, c: self.a }) should not work according to go-jsonnet
 	// but with this kinda merge it does... so some solution where the objects are individually evaled is needed
 	if targetVal.IsObject() {
-		combined := evaluator.MergeObjects(targetVal.Object(ctx), patchVal.Object(ctx))
+		combined := evaluator.MergeObjects(targetVal.RefId(), patchVal.RefId())
 		objVal = evaluator.MakeObject(combined, ctx)
 	} else {
 		// If target val is not an object, just scrap it and only use the patch object
