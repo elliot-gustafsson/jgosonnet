@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"strings"
 	"sync"
 	"testing"
@@ -28,7 +29,8 @@ func TestEvaluator(t *testing.T) {
 	infraDir := filepath.Join(filepath.Dir(filepath.Dir(cwd)), "infra", "jsonnet", "proact")
 	assert.NotEmpty(t, infraDir)
 
-	file := filepath.Join("resources", "test.jsonnet")
+	// file := filepath.Join("resources", "test.jsonnet")
+	file := "/home/elliot.gustafsson@fnox.it/Projects/jgosonnet/tests/resources/test.jsonnet"
 
 	interpreter := jgosonnet.NewEvaluator()
 	interpreter.JPaths([]string{filepath.Join(infraDir, "vendor")})
@@ -399,6 +401,50 @@ func TestEvaluatorSerial(t *testing.T) {
 	}
 
 	wg.Wait()
+
+	jgosonnetDur := time.Since(jgosonnetStart)
+
+	println()
+	println("jgosonnet:", jgosonnetDur.String())
+
+}
+
+func TestEvaluatorLoop(t *testing.T) {
+	slog.SetLogLoggerLevel(slog.LevelDebug)
+
+	cwd, err := os.Getwd()
+	assert.NoError(t, err)
+
+	infraDir := filepath.Join(filepath.Dir(filepath.Dir(cwd)), "infra", "jsonnet", "proact")
+	assert.NotEmpty(t, infraDir)
+
+	interpreter := jgosonnet.NewEvaluator()
+	interpreter.JPaths([]string{filepath.Join(infraDir, "vendor")})
+
+	file := "sto3-prod001.jsonnet"
+
+	_, err = interpreter.Evaluate(filepath.Join(infraDir, file))
+	assert.NoError(t, err)
+	if err != nil {
+		return
+	}
+
+	f, err := os.Create("cpu.prof")
+	assert.NoError(t, err)
+	defer f.Close()
+	err = pprof.StartCPUProfile(f)
+	assert.NoError(t, err)
+	defer pprof.StopCPUProfile()
+
+	jgosonnetStart := time.Now()
+
+	for range 10 {
+		_, err := interpreter.Evaluate(filepath.Join(infraDir, file))
+		assert.NoError(t, err)
+		if err != nil {
+			return
+		}
+	}
 
 	jgosonnetDur := time.Since(jgosonnetStart)
 

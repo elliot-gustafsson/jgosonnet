@@ -228,6 +228,8 @@ func createScope(layer *Layer, ctx Context) (uint32, error) {
 
 	scopeId := ctx.NewScope(layer.ParentScopeId, len(layer.LocalKeys))
 
+	s := ctx.Registry.Scopes.GetPtr(scopeId)
+
 	for i, keyId := range layer.LocalKeys {
 		node := layer.LocalNodes[i]
 
@@ -236,7 +238,7 @@ func createScope(layer *Layer, ctx Context) (uint32, error) {
 			return 0, err
 		}
 
-		ctx.AddScopeBind(scopeId, NamedValue{keyId, val})
+		s.Bindings[i] = NamedValue{keyId, val}
 	}
 
 	return scopeId, nil

@@ -115,11 +115,11 @@ func (t *Registry) Reset() {
 	t.NodesBufs.Reset()
 }
 
-func (c Context) NewScope(parentId uint32, cap int) uint32 {
+func (c Context) NewScope(parentId uint32, length int) uint32 {
 
 	s := Scope{
 		ParentId: parentId,
-		Bindings: c.Registry.NamedValueBufs.Alloc(0, cap),
+		Bindings: c.Registry.NamedValueBufs.Alloc(length, length),
 	}
 
 	id := c.Registry.Scopes.Alloc(s)
@@ -127,10 +127,10 @@ func (c Context) NewScope(parentId uint32, cap int) uint32 {
 	return id
 }
 
-func (c Context) AddScopeBind(scopeId uint32, val NamedValue) {
-	s := c.Registry.Scopes.GetPtr(scopeId)
-	s.Bindings = append(s.Bindings, val)
-}
+// func (c Context) AddScopeBind(scopeId uint32, val NamedValue) {
+// 	s := c.Registry.Scopes.GetPtr(scopeId)
+// 	s.Bindings = append(s.Bindings, val)
+// }
 
 func (c Context) GetScopeBind(scopeId, key uint32) (Value, bool) {
 	currId := scopeId

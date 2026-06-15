@@ -87,9 +87,11 @@ func CreateFileScope(filename string, baseStd Value, ctx Context) uint32 {
 	mergedObj := MergeObjects(baseStd.RefId(), fileObjVal.RefId())
 	fileStd := MakeObject(mergedObj, ctx)
 
-	scopeId := ctx.NewScope(0, 2)
-	ctx.AddScopeBind(scopeId, NamedValue{Key: ctx.Interner.Intern("$std"), Value: fileStd})
-	ctx.AddScopeBind(scopeId, NamedValue{Key: ctx.Interner.Intern("std"), Value: fileStd})
+	scopeId := ctx.NewScope(2, 2)
+	s := ctx.Registry.Scopes.GetPtr(scopeId)
+
+	s.Bindings[0] = NamedValue{Key: ctx.Interner.Intern("$std"), Value: fileStd}
+	s.Bindings[1] = NamedValue{Key: ctx.Interner.Intern("std"), Value: fileStd}
 
 	return scopeId
 }
@@ -405,7 +407,9 @@ func handleLocal(node *ast.Local, scopeId uint32, ctx Context) (Value, error) {
 
 	childScopeId := ctx.NewScope(scopeId, len(node.Binds))
 
-	for _, v := range node.Binds {
+	s := ctx.Registry.Scopes.GetPtr(childScopeId)
+
+	for i, v := range node.Binds {
 		vname := string(v.Variable)
 		keyId := ctx.Interner.Intern(vname)
 		t, err := evaluateNodeLazy(v.Body, childScopeId, ctx)
@@ -413,7 +417,7 @@ func handleLocal(node *ast.Local, scopeId uint32, ctx Context) (Value, error) {
 			return Value{}, err
 		}
 
-		ctx.AddScopeBind(childScopeId, NamedValue{keyId, t})
+		s.Bindings[i] = NamedValue{keyId, t}
 	}
 
 	val, err := EvaluateNode(node.Body, childScopeId, ctx)
@@ -501,6 +505,7 @@ func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, err
 		}
 
 		childScopeId := ctx.NewScope(scopeId, paramCount)
+		s := ctx.Registry.Scopes.GetPtr(childScopeId)
 
 		posIndex := 0
 		for i := range paramCount {
@@ -522,7 +527,7 @@ func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, err
 			}
 
 			if !bindVal.IsNone() {
-				ctx.AddScopeBind(childScopeId, bindVal)
+				s.Bindings[i] = bindVal
 				continue
 			}
 
@@ -537,7 +542,7 @@ func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, err
 				return Value{}, err
 			}
 
-			ctx.AddScopeBind(childScopeId, NamedValue{keyId, da})
+			s.Bindings[i] = NamedValue{keyId, da}
 		}
 
 		val, err := EvaluateNode(node.Body, childScopeId, ctx)
