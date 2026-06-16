@@ -76,9 +76,6 @@ type Object struct {
 	LeftId  uint32 // object arena id
 	RightId uint32 // object arena id
 
-	Values       []Value
-	layerOffsets []int
-
 	fieldCache map[uint32]CachedValue
 
 	Scopes []uint32
@@ -550,26 +547,7 @@ func getValue(obj *Object, layerId, fieldId int, ctx Context) (Value, error) {
 
 	layers := obj.GetLayers(ctx)
 
-	if obj.layerOffsets == nil {
-		obj.layerOffsets = make([]int, len(layers))
-	}
-
-	if obj.Values == nil {
-		totalFields := 0
-
-		for i, layer := range layers {
-			obj.layerOffsets[i] = totalFields
-			totalFields += len(layer.Keys)
-		}
-		obj.Values = make([]Value, totalFields)
-	}
-
-	flatIndex := obj.layerOffsets[layerId] + fieldId
-
-	val := obj.Values[flatIndex]
-	if !val.IsNone() {
-		return val, nil
-	}
+	var val Value
 
 	l := layers[layerId]
 
@@ -593,7 +571,6 @@ func getValue(obj *Object, layerId, fieldId int, ctx Context) (Value, error) {
 		}
 	}
 
-	obj.Values[flatIndex] = val
 	return val, nil
 }
 

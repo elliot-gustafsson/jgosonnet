@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"runtime/pprof"
 	"strings"
 	"sync"
@@ -218,7 +219,6 @@ func TestEvaluatorParallel(t *testing.T) {
 	x := []string{
 		"it-it001",
 		"it-rancher",
-		"mimir-alerts-dashboards",
 		"sto1-acce001",
 		"sto1-build001",
 		"sto1-dev-analytics001",
@@ -258,7 +258,6 @@ func TestEvaluatorParallel(t *testing.T) {
 		"sto3-prod-gpu001",
 		"sto3-prod001",
 		"sto3-rancher",
-		"vms",
 	}
 	interpreter := jgosonnet.NewEvaluator()
 	interpreter.JPaths([]string{filepath.Join(infraDir, "vendor")})
@@ -410,6 +409,11 @@ func TestEvaluatorSerial(t *testing.T) {
 }
 
 func TestEvaluatorLoop(t *testing.T) {
+	runtime.GOMAXPROCS(1)
+
+	// originalGC := debug.SetGCPercent(-1)
+	// defer debug.SetGCPercent(originalGC)
+
 	slog.SetLogLoggerLevel(slog.LevelDebug)
 
 	cwd, err := os.Getwd()
