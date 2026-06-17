@@ -70,6 +70,9 @@ type Registry struct {
 	LayerBufs      *arena.BufferArena[*Layer]
 	NamedValueBufs *arena.BufferArena[NamedValue]
 	NodesBufs      *arena.BufferArena[ast.Node]
+
+	LayerRefBufs  *arena.BufferArena[LayerRef]
+	FieldPlanBufs *arena.BufferArena[FieldPlan]
 }
 
 type Scope struct {
@@ -97,6 +100,9 @@ func NewRegistry() *Registry {
 		LayerBufs:      arena.NewBufferArena[*Layer](bufferArenaBlockSize),
 		NamedValueBufs: arena.NewBufferArena[NamedValue](bufferArenaBlockSize),
 		NodesBufs:      arena.NewBufferArena[ast.Node](bufferArenaBlockSize),
+
+		LayerRefBufs:  arena.NewBufferArena[LayerRef](bufferArenaBlockSize),
+		FieldPlanBufs: arena.NewBufferArena[FieldPlan](bufferArenaBlockSize),
 	}
 }
 
@@ -113,6 +119,9 @@ func (t *Registry) Reset() {
 	t.LayerBufs.Reset()
 	t.NamedValueBufs.Reset()
 	t.NodesBufs.Reset()
+
+	t.LayerRefBufs.Reset()
+	t.FieldPlanBufs.Reset()
 }
 
 func (c Context) NewScope(parentId uint32, length int) uint32 {

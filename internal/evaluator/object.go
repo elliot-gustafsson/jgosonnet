@@ -330,7 +330,7 @@ func (t *Object) GetLayers(ctx Context) []*Layer {
 		return t.Layers
 	}
 
-	layers := make([]*Layer, 0, 8)
+	layers := ctx.Registry.LayerBufs.Alloc(0, 8)
 	layers = t.appendLayers(layers, ctx)
 
 	t.Layers = layers
@@ -363,15 +363,15 @@ type LayerRef struct {
 	FieldIdx int
 }
 
-func CompileObjectPlan(obj *Object, ctx Context) []*FieldPlan {
+func CompileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 	return CompileObjectPlanEx(obj, ctx, false)
 }
 
-func CompileObjectPlanEx(obj *Object, ctx Context, naturalSort bool) []*FieldPlan {
+func CompileObjectPlanEx(obj *Object, ctx Context, naturalSort bool) []FieldPlan {
 	plans := compileObjectPlan(obj, ctx)
 
 	if naturalSort {
-		slices.SortFunc(plans, func(a, b *FieldPlan) int {
+		slices.SortFunc(plans, func(a, b FieldPlan) int {
 			aName := ctx.Interner.Get(a.KeyId)
 			bName := ctx.Interner.Get(b.KeyId)
 			return naturalStringSort(aName, bName)
@@ -379,7 +379,7 @@ func CompileObjectPlanEx(obj *Object, ctx Context, naturalSort bool) []*FieldPla
 		return plans
 	}
 
-	slices.SortFunc(plans, func(a, b *FieldPlan) int {
+	slices.SortFunc(plans, func(a, b FieldPlan) int {
 		aName := ctx.Interner.Get(a.KeyId)
 		bName := ctx.Interner.Get(b.KeyId)
 		return strings.Compare(aName, bName)
@@ -389,7 +389,7 @@ func CompileObjectPlanEx(obj *Object, ctx Context, naturalSort bool) []*FieldPla
 	return plans
 }
 
-func compileObjectPlan(obj *Object, ctx Context) []*FieldPlan {
+func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 	layers := obj.GetLayers(ctx)
 
 	maxKeys := 0
@@ -397,31 +397,33 @@ func compileObjectPlan(obj *Object, ctx Context) []*FieldPlan {
 		maxKeys += len(layers[i].Keys)
 	}
 
-	plans := make([]*FieldPlan, 0, maxKeys)
+	plans := ctx.Registry.FieldPlanBufs.Alloc(0, maxKeys)
 
 	for l := len(layers) - 1; l >= 0; l-- {
 		layer := layers[l]
 
 		for f, keyID := range layer.Keys {
 
-			var plan *FieldPlan
-			for i := range plans {
+			pIdx := -1
+			for i := 0; i < len(plans); i++ {
 				if plans[i].KeyId == keyID {
-					plan = plans[i]
+					pIdx = i
 					break
 				}
 			}
 
-			if plan == nil {
-				plan = &FieldPlan{
+			if pIdx == -1 {
+				plans = append(plans, FieldPlan{
 					KeyId:      keyID,
 					Visibility: ast.ObjectFieldInherit,
-					Layers:     make([]LayerRef, 0, 4),
-				}
-				plans = append(plans, plan)
+					Layers:     ctx.Registry.LayerRefBufs.Alloc(0, 4),
+				})
+				pIdx = len(plans) - 1
 			}
 
 			vis, plus := EvalFieldMeta(layer.Meta[f])
+
+			plan := &plans[pIdx]
 
 			if plan.Visibility == ast.ObjectFieldInherit {
 				switch vis {
