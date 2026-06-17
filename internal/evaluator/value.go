@@ -74,15 +74,15 @@ func NewThunk(node ast.Node, scopeId uint32, ctx Context) Thunk {
 type Func = func(args []NamedValue, ctx Context) (Value, error)
 
 type Function struct {
-	Args []uint32
+	argsCount int
 
 	fn Func
 }
 
-func NewFunction(args []uint32, fn Func) Function {
+func NewFunction(argsCount int, fn Func) Function {
 	return Function{
-		Args: args,
-		fn:   fn,
+		argsCount: argsCount,
+		fn:        fn,
 	}
 }
 
@@ -95,6 +95,10 @@ func (t Function) Exec(args []NamedValue, ctx Context) (Value, error) {
 
 func (t Function) Noop() bool {
 	return t.fn == nil
+}
+
+func (t Function) Length() int {
+	return t.argsCount
 }
 
 type Value struct {

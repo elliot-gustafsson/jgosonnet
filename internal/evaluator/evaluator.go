@@ -494,7 +494,7 @@ func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, err
 
 	paramCount := len(node.Parameters)
 
-	paramKeyIds := make([]uint32, paramCount)
+	paramKeyIds := ctx.Registry.Uint32Bufs.Alloc(paramCount, paramCount)
 	for i, p := range node.Parameters {
 		paramKeyIds[i] = ctx.Interner.Intern(string(p.Name))
 	}
@@ -554,8 +554,8 @@ func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, err
 	}
 
 	f := Function{
-		Args: paramKeyIds,
-		fn:   fn,
+		argsCount: len(paramKeyIds),
+		fn:        fn,
 	}
 
 	return MakeFunction(f, ctx), nil

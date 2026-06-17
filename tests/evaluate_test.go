@@ -442,7 +442,7 @@ func TestEvaluatorLoop(t *testing.T) {
 
 	jgosonnetStart := time.Now()
 
-	for range 10 {
+	for range 30 {
 		_, err := interpreter.Evaluate(filepath.Join(infraDir, file))
 		assert.NoError(t, err)
 		if err != nil {

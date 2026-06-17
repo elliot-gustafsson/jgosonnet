@@ -267,7 +267,7 @@ func f(f evaluator.Func, params ...param) func(evaluator.Context) evaluator.Func
 			return f(orderedArgs, ctx)
 		}
 
-		return evaluator.NewFunction(argIds, fn)
+		return evaluator.NewFunction(len(argIds), fn)
 	}
 }
 
@@ -464,7 +464,7 @@ func std_length(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 	case evaluator.ValueTypeObject:
 		res = float64(arg.Object(ctx).Length(ctx))
 	case evaluator.ValueTypeFunction:
-		res = float64(len(arg.Function(ctx).Args))
+		res = float64(arg.Function(ctx).Length())
 	default:
 		return evaluator.Value{}, evaluator.TypeErrorGeneral(arg.Type())
 	}

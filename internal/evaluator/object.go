@@ -39,22 +39,21 @@ type Layer struct {
 }
 
 func (l *Layer) findField(key uint32) (layerId int) {
-	idx := -1
 
 	if l.Index != nil {
 		if i, ok := l.Index[key]; ok {
-			idx = i
+			return i
 		}
 	} else {
-		for i, k := range l.Keys {
-			if k == key {
-				idx = i
-				break
+		keys := l.Keys
+		for i := range keys {
+			if keys[i] == key {
+				return i
 			}
 		}
 	}
 
-	return idx
+	return -1
 }
 
 func NewObject(layers []*Layer) Object {
@@ -69,6 +68,46 @@ const (
 	AssertStatusChecked   uint8 = 2
 )
 
+type FieldCache struct {
+	inlineKeys  [4]uint32
+	inlineVals  [4]CachedValue
+	fieldCache  map[uint32]CachedValue
+	inlineCount uint8
+}
+
+func (c *FieldCache) Get(key uint32) (CachedValue, bool) {
+	for i := uint8(0); i < c.inlineCount; i++ {
+		if c.inlineKeys[i] == key {
+			return c.inlineVals[i], true
+		}
+	}
+	if c.fieldCache != nil {
+		if v, ok := c.fieldCache[key]; ok {
+			return v, true
+		}
+	}
+	return CachedValue{}, false
+}
+
+func (c *FieldCache) Set(key uint32, val CachedValue) {
+	for i := uint8(0); i < c.inlineCount; i++ {
+		if c.inlineKeys[i] == key {
+			c.inlineVals[i] = val
+			return
+		}
+	}
+	if c.inlineCount < 4 {
+		c.inlineKeys[c.inlineCount] = key
+		c.inlineVals[c.inlineCount] = val
+		c.inlineCount++
+		return
+	}
+	if c.fieldCache == nil {
+		c.fieldCache = make(map[uint32]CachedValue)
+	}
+	c.fieldCache[key] = val
+}
+
 type Object struct {
 	Layers []*Layer
 
@@ -76,7 +115,7 @@ type Object struct {
 	LeftId  uint32 // object arena id
 	RightId uint32 // object arena id
 
-	fieldCache map[uint32]CachedValue
+	Cache FieldCache
 
 	Scopes []uint32
 
@@ -114,8 +153,9 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 		return Value{}, false, err
 	}
 
-	if offset == 0 && t.fieldCache != nil {
-		if cached, ok := t.fieldCache[key]; ok {
+	if offset == 0 {
+		cached, ok := t.Cache.Get(key)
+		if ok {
 			return cached.Value, cached.Visible, nil
 		}
 	}
@@ -193,10 +233,7 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 	visible = currentVisibility != ast.ObjectFieldHidden
 
 	if offset == 0 {
-		if t.fieldCache == nil {
-			t.fieldCache = make(map[uint32]CachedValue)
-		}
-		t.fieldCache[key] = CachedValue{Value: res, Visible: visible}
+		t.Cache.Set(key, CachedValue{Value: res, Visible: visible})
 	}
 
 	return res, visible, nil
@@ -205,7 +242,7 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 func (t *Object) getScope(layerIndex int, layer *Layer, ctx Context) (uint32, error) {
 
 	if t.Scopes == nil {
-		t.Scopes = make([]uint32, len(t.GetLayers(ctx)))
+		t.Scopes = ctx.Registry.Uint32Bufs.Alloc(len(t.GetLayers(ctx)), len(t.GetLayers(ctx)))
 	}
 
 	scopeId := t.Scopes[layerIndex]
@@ -227,7 +264,7 @@ func createScope(layer *Layer, ctx Context) (uint32, error) {
 
 	s := ctx.Registry.Scopes.GetPtr(scopeId)
 
-	for i, keyId := range layer.LocalKeys {
+	for i := range layer.LocalKeys {
 		node := layer.LocalNodes[i]
 
 		val, err := evaluateNodeLazy(node, scopeId, ctx)
@@ -235,7 +272,7 @@ func createScope(layer *Layer, ctx Context) (uint32, error) {
 			return 0, err
 		}
 
-		s.Bindings[i] = NamedValue{keyId, val}
+		s.Bindings[i] = NamedValue{layer.LocalKeys[i], val}
 	}
 
 	return scopeId, nil
@@ -345,13 +382,8 @@ func CompileObjectPlanEx(obj *Object, ctx Context, naturalSort bool) []*FieldPla
 	slices.SortFunc(plans, func(a, b *FieldPlan) int {
 		aName := ctx.Interner.Get(a.KeyId)
 		bName := ctx.Interner.Get(b.KeyId)
-		if aName > bName {
-			return 1
-		}
-		if aName < bName {
-			return -1
-		}
-		return 0
+		return strings.Compare(aName, bName)
+
 	})
 
 	return plans
@@ -360,29 +392,33 @@ func CompileObjectPlanEx(obj *Object, ctx Context, naturalSort bool) []*FieldPla
 func compileObjectPlan(obj *Object, ctx Context) []*FieldPlan {
 	layers := obj.GetLayers(ctx)
 
-	length := len(layers) * 5
+	maxKeys := 0
+	for i := range layers {
+		maxKeys += len(layers[i].Keys)
+	}
 
-	plans := make([]*FieldPlan, 0, length)
-
-	keyToIndex := make(map[uint32]int, length)
+	plans := make([]*FieldPlan, 0, maxKeys)
 
 	for l := len(layers) - 1; l >= 0; l-- {
 		layer := layers[l]
 
 		for f, keyID := range layer.Keys {
-			pIdx, exists := keyToIndex[keyID]
-			var plan *FieldPlan
 
-			if !exists {
+			var plan *FieldPlan
+			for i := range plans {
+				if plans[i].KeyId == keyID {
+					plan = plans[i]
+					break
+				}
+			}
+
+			if plan == nil {
 				plan = &FieldPlan{
 					KeyId:      keyID,
 					Visibility: ast.ObjectFieldInherit,
 					Layers:     make([]LayerRef, 0, 4),
 				}
 				plans = append(plans, plan)
-				keyToIndex[keyID] = len(plans) - 1
-			} else {
-				plan = plans[pIdx]
 			}
 
 			vis, plus := EvalFieldMeta(layer.Meta[f])
@@ -412,10 +448,9 @@ func compileObjectPlan(obj *Object, ctx Context) []*FieldPlan {
 }
 
 func (t *FieldPlan) GetValue(obj *Object, ctx Context) (Value, error) {
-	if obj.fieldCache != nil {
-		if cached, ok := obj.fieldCache[t.KeyId]; ok {
-			return cached.Value, nil
-		}
+	cached, ok := obj.Cache.Get(t.KeyId)
+	if ok {
+		return cached.Value, nil
 	}
 
 	layersCount := len(t.Layers)
@@ -459,13 +494,7 @@ func (t *FieldPlan) GetValue(obj *Object, ctx Context) (Value, error) {
 		value = res
 	}
 
-	if obj.fieldCache == nil {
-		obj.fieldCache = make(map[uint32]CachedValue)
-	}
-	obj.fieldCache[t.KeyId] = CachedValue{
-		Value:   value,
-		Visible: t.Visibility != ast.ObjectFieldHidden,
-	}
+	obj.Cache.Set(t.KeyId, CachedValue{value, t.Visibility != ast.ObjectFieldHidden})
 
 	return value, nil
 }
