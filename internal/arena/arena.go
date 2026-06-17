@@ -1,6 +1,6 @@
 package arena
 
-const blockSize = 64
+const blockSize = 4096
 
 type Arena[T any] struct {
 	blocks  []*[blockSize]T

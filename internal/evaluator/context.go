@@ -83,7 +83,7 @@ type Scope struct {
 }
 
 const sliceArenaChunkSize = 4096
-const stringArenaBlockSize = 1024
+const stringArenaBlockSize = 4096
 const bufferArenaBlockSize = 4096
 
 func NewRegistry() *Registry {
