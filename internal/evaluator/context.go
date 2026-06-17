@@ -62,6 +62,7 @@ type Registry struct {
 	Functions *arena.Arena[Function]
 
 	Scopes *arena.Arena[Scope]
+	Layers *arena.Arena[Layer]
 
 	Nodes *arena.Arena[ast.Node]
 
@@ -92,8 +93,11 @@ func NewRegistry() *Registry {
 		Strings:   arena.NewStringArena(stringArenaBlockSize),
 		Thunks:    arena.NewArena[Thunk](),
 		Functions: arena.NewArena[Function](),
-		Scopes:    arena.NewArena[Scope](),
-		Nodes:     arena.NewArena[ast.Node](),
+
+		Scopes: arena.NewArena[Scope](),
+		Layers: arena.NewArena[Layer](),
+
+		Nodes: arena.NewArena[ast.Node](),
 
 		Uint8Bufs:      arena.NewBufferArena[uint8](bufferArenaBlockSize),
 		Uint32Bufs:     arena.NewBufferArena[uint32](bufferArenaBlockSize),
@@ -112,7 +116,11 @@ func (t *Registry) Reset() {
 	t.Strings.Reset()
 	t.Thunks.Reset()
 	t.Functions.Reset()
+
 	t.Scopes.Reset()
+	t.Layers.Reset()
+
+	t.Nodes.Reset()
 
 	t.Uint8Bufs.Reset()
 	t.Uint32Bufs.Reset()

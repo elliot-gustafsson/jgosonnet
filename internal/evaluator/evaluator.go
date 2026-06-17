@@ -331,7 +331,10 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 	fieldCount := len(node.Fields)
 	localsCount := len(node.Locals)
 
-	layer := &Layer{ParentScopeId: scopeId}
+	layerId := ctx.Registry.Layers.Alloc(Layer{})
+	layer := ctx.Registry.Layers.GetPtr(layerId)
+
+	layer.ParentScopeId = scopeId
 
 	if fieldCount > 0 {
 		layer.Keys = ctx.Registry.Uint32Bufs.Alloc(0, fieldCount)
