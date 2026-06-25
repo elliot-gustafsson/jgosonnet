@@ -2,84 +2,7 @@ package evaluator
 
 import (
 	"fmt"
-	"strconv"
-
-	"github.com/google/go-jsonnet/ast"
 )
-
-type OpCode int
-
-const (
-	OpPushConst OpCode = iota
-	OpAdd
-	OpLocalGet
-	OpLocalSet
-
-	OpObjectOp
-	OpJumpIfFalse
-)
-
-type Program struct {
-	Instructions []Instruction
-	Constants    []Value // All parsed numbers, strings, etc.
-}
-
-type Compiler struct {
-	prog Program
-}
-
-type Instruction struct {
-	op      OpCode
-	operand uint32
-}
-
-func (c *Compiler) Compile(node ast.Node) (Program, error) {
-	err := c.visit(node)
-	if err != nil {
-		return Program{}, err
-	}
-	return c.prog, nil
-}
-
-func (c *Compiler) visit(n ast.Node) error {
-	switch node := n.(type) {
-	default:
-		return fmt.Errorf("unsupported AST node type: %T", n)
-	case *ast.LiteralNumber:
-		num, err := strconv.ParseFloat(node.OriginalString, 64)
-		if err != nil {
-			return fmt.Errorf("failed to parse float val (%s), err: %w", node.OriginalString, err)
-		}
-		val := MakeNumber(num)
-
-		// 2. Put it in the constants pool
-		constIdx := uint32(len(c.prog.Constants))
-		c.prog.Constants = append(c.prog.Constants, val)
-
-		// 3. Emit instruction to push the constant at that index!
-		c.emit(OpPushConst, constIdx)
-	case *ast.Binary:
-		if err := c.visit(node.Left); err != nil {
-			return err
-		}
-		if err := c.visit(node.Right); err != nil {
-			return err
-		}
-
-		switch node.Op {
-		default:
-			return fmt.Errorf("unsupported binary operator: %s", node.Op.String())
-		case ast.BopPlus:
-			c.emit(OpAdd, 0)
-		}
-	}
-
-	return nil
-}
-
-func (c *Compiler) emit(op OpCode, operand uint32) {
-	c.prog.Instructions = append(c.prog.Instructions, Instruction{op, operand})
-}
 
 type Stack struct {
 	s []Value
@@ -107,37 +30,204 @@ func (s *Stack) Length() int {
 }
 
 type VM struct {
-	prog  Program
-	stack Stack
-	ip    int
+	// prog  Program
+	Stack Stack
+	// ip    int
+
+	Registry *Registry
+
+	callFrames []CallFrame
+	fp         int
+
+	ctx   Context
+	state CallFrame
 }
 
-func NewVM(program Program) *VM {
+type CallFrame struct {
+	ip      uint32
+	scopeId uint32
+	self    Value
+
+	superOffset int
+	thunkId     uint32
+}
+
+func NewVM() *VM {
 	return &VM{
-		prog:  program,
-		stack: NewStack(1024),
+		// prog:  program,
+		Stack:    NewStack(1024),
+		Registry: NewRegistry(),
+		// ctx: Context{
+		// 	Interner: program.Interner,
+		// 	Registry: program.Registry,
+		// },
 	}
 }
 
-func (vm *VM) Run() (Value, error) {
-	for vm.ip < len(vm.prog.Instructions) {
-		inst := vm.prog.Instructions[vm.ip]
+func (vm *VM) Run(prog *Program) (Value, error) {
+	for vm.state.ip < uint32(len(prog.Instructions)) {
+		inst := prog.Instructions[vm.state.ip]
 
 		switch inst.op {
-		case OpPushConst:
-			vm.stack.Push(vm.prog.Constants[inst.operand])
-		case OpAdd:
-			right := vm.stack.Pop()
-			left := vm.stack.Pop()
+		default:
+			return Value{}, fmt.Errorf("unhandled op code: %d", inst.op)
 
-			vm.stack.Push(MakeNumber(left.Number() + right.Number()))
+		case OpPushNull:
+			vm.Stack.Push(MakeNull())
+
+		case OpPushString:
+			s := prog.Strings[inst.operand]
+			id := vm.Registry.Strings.Alloc(s)
+			vm.Stack.Push(Value{t: ValueTypeString, refId: id})
+
+		case OpAdd:
+			right := vm.Stack.Pop()
+			left := vm.Stack.Pop()
+
+			vm.Stack.Push(MakeNumber(left.Number() + right.Number()))
+
+		case OpMakeThunk:
+
+			t := Thunk{
+				NodeId:              vm.state.ip + 1,
+				ScopeId:             vm.state.scopeId,
+				CapturedSelf:        vm.state.self,
+				CapturedSuperOffset: vm.state.superOffset,
+			}
+			tv := MakeThunk(t, vm.ctx)
+
+			vm.Stack.Push(tv)
+
+			vm.state.ip += inst.operand
+
+		case OpPushScope:
+			childScopeId := vm.ctx.NewScope(vm.state.scopeId, int(inst.operand))
+			// vm.state.scopeId = childScopeId
+			// s := vm.ctx.Registry.Scopes.GetPtr(childScopeId)
+
+			vm.state.scopeId = childScopeId
+
+		case OpLocalSet:
+			v := vm.Stack.Pop()
+			nv := NamedValue{inst.operand, v}
+
+			activeScope := vm.ctx.Registry.Scopes.GetPtr(vm.state.scopeId)
+			activeScope.Bindings = append(activeScope.Bindings, nv)
+
+		case OpMakeObject:
+			// vm.handleMakeObject(prog, int(inst.operand), inst.operand2)
+
+		case OpMakeArray:
+			length := int(inst.operand)
+
+			elements, refId := vm.Registry.Arrays.Make(length)
+
+			for i := length - 1; i >= 0; i-- {
+				elements[i] = vm.Stack.Pop()
+			}
+
+			vm.Stack.Push(Value{t: ValueTypeArray, refId: refId})
+
 		}
 
-		vm.ip++
+		vm.state.ip++
 	}
 
-	if vm.stack.Length() == 1 {
-		return vm.stack.Pop(), nil
+	if vm.Stack.Length() == 1 {
+		return vm.Stack.Pop(), nil
 	}
 	return Value{}, fmt.Errorf("execution finished with invalid stack state")
 }
+
+// func (vm *VM) handleMakeObject(prog *Program, fieldCount int, flags uint16) {
+
+// 	var localsCount int
+// 	var assertsCount int
+
+// 	// Because the compiler emitted them in order, we just step the IP!
+// 	if (flags & FlagObjectHasLocals) != 0 {
+// 		vm.state.ip++
+// 		localsCount = int(prog.Instructions[vm.state.ip].operand)
+// 	}
+
+// 	if (flags & FlagObjectHasAsserts) != 0 {
+// 		vm.state.ip++
+// 		assertsCount = int(prog.Instructions[vm.state.ip].operand)
+// 	}
+
+// 	layerId := vm.Registry.Layers.Alloc(Layer{})
+// 	layer := vm.Registry.Layers.GetPtr(layerId)
+
+// 	layer.ParentScopeId = scopeId
+
+// 	if fieldCount > 0 {
+// 		layer.Keys = vm.Registry.Uint32Bufs.Alloc(0, fieldCount)
+// 		layer.Nodes = vm.Registry.NodesBufs.Alloc(0, fieldCount)
+// 		layer.Meta = vm.Registry.Uint8Bufs.Alloc(0, fieldCount)
+// 	}
+
+// 	if localsCount > 0 {
+// 		layer.LocalKeys = vm.Registry.Uint32Bufs.Alloc(0, localsCount)
+// 		layer.LocalNodes = vm.Registry.NodesBufs.Alloc(0, localsCount)
+// 	}
+
+// 	if assertsCount > 0 {
+// 		layer.Asserts = vm.Registry.NodesBufs.Alloc(len(node.Asserts), len(node.Asserts))
+// 		copy(layer.Asserts, node.Asserts)
+// 	}
+
+// 	for _, v := range node.Locals {
+
+// 		name := string(v.Variable)
+// 		keyId := ctx.Interner.Intern(name)
+
+// 		layer.LocalKeys = append(layer.LocalKeys, keyId)
+// 		layer.LocalNodes = append(layer.LocalNodes, v.Body)
+
+// 	}
+
+// 	useMap := fieldCount > MaxLinearKeys
+
+// 	if useMap {
+// 		layer.Index = make(map[uint32]int, fieldCount)
+// 	}
+
+// 	index := 0
+// 	for _, v := range node.Fields {
+// 		name, err := EvaluateNode(v.Name, scopeId, ctx)
+// 		if err != nil {
+// 			return Value{}, err
+// 		}
+
+// 		if name.IsNull() {
+// 			// Omitted field
+// 			continue
+// 		}
+
+// 		if !name.IsString() {
+// 			return Value{}, fmt.Errorf("unexpected field name type %s, expected string", name.Type().String())
+// 		}
+
+// 		n := name.String(ctx)
+
+// 		keyId := ctx.Interner.Intern(n)
+
+// 		layer.Keys = append(layer.Keys, keyId)
+// 		layer.Nodes = append(layer.Nodes, v.Body)
+// 		layer.Meta = append(layer.Meta, CreateFieldMeta(v.Hide, v.PlusSuper))
+
+// 		if useMap {
+// 			layer.Index[keyId] = index
+// 			index++
+// 		}
+
+// 	}
+
+// 	layers := ctx.Registry.LayerBufs.Alloc(1, 1)
+// 	layers[0] = layer
+// 	obj := NewObject(layers)
+// 	refId := prog.Registry.Objects.Alloc(obj)
+// 	val := Value{t: ValueTypeObject, refId: refId}
+
+// 	vm.Stack.Push(val)
+// }

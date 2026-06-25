@@ -32,7 +32,10 @@ func TestTest(t *testing.T) {
 	// -------------------------------------------------
 
 	filename := "main.jsonnet"
-	snippet := "2 + 3"
+	snippet := `
+local x = 1 + 2;
+x
+`
 
 	// scopeId := evaluator.CreateFileScope(filename, std, ctx)
 
@@ -41,14 +44,18 @@ func TestTest(t *testing.T) {
 
 	assert.NotNil(t, node)
 
-	compiler := evaluator.Compiler{}
+	globalCtx := &evaluator.GlobalContext{
+		Interner:     ctx.Interner,
+		ProgramCache: &evaluator.ProgramCache{},
+	}
 
+	compiler := evaluator.NewCompiler(globalCtx)
 	program, err := compiler.Compile(node)
 	assert.NoError(t, err)
 
-	vm := evaluator.NewVM(program)
+	vm := evaluator.NewVM()
 
-	result, err := vm.Run()
+	result, err := vm.Run(program)
 	assert.NoError(t, err)
 
 	res, err := evaluator.ManifestValue(result, ctx)
