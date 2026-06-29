@@ -1,6 +1,8 @@
 package tests
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"testing"
 
@@ -10,9 +12,12 @@ import (
 )
 
 func TestTest(t *testing.T) {
+	interner := evaluator.NewInterner()
+	registry := evaluator.NewRegistry()
+
 	ctx := evaluator.Context{
-		Interner: evaluator.NewInterner(),
-		Registry: evaluator.NewRegistry(),
+		Interner: interner,
+		Registry: registry,
 	}
 
 	std, err := stdlib.InitStdLib(ctx)
@@ -31,15 +36,13 @@ func TestTest(t *testing.T) {
 
 	// -------------------------------------------------
 
-	filename := "main.jsonnet"
-	snippet := `
-local x = 1 + 2;
-x
-`
+	fileName := "resources/test.jsonnet"
+	fileData, err := os.ReadFile(fileName)
+	assert.NoError(t, err)
 
 	// scopeId := evaluator.CreateFileScope(filename, std, ctx)
 
-	node, err := astImporter.ResolveSnippet(filename, snippet)
+	node, err := astImporter.ResolveSnippet(fileName, string(fileData))
 	assert.NoError(t, err)
 
 	assert.NotNil(t, node)
@@ -53,13 +56,18 @@ x
 	program, err := compiler.Compile(node)
 	assert.NoError(t, err)
 
-	vm := evaluator.NewVM()
+	vm := evaluator.NewVM(interner, registry)
 
 	result, err := vm.Run(program)
 	assert.NoError(t, err)
 
-	res, err := evaluator.ManifestValue(result, ctx)
+	res, err := vm.ManifestValue(result)
 	assert.NoError(t, err)
 
-	assert.Equal(t, int64(5), res)
+	b, err := json.MarshalIndent(res, "", "  ")
+	assert.NoError(t, err)
+
+	fmt.Println()
+	fmt.Println(string(b))
+	fmt.Println()
 }

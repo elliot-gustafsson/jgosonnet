@@ -1,7 +1,9 @@
 package evaluator
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 )
 
 type Stack struct {
@@ -30,11 +32,13 @@ func (s *Stack) Length() int {
 }
 
 type VM struct {
-	// prog  Program
+	prog *Program
+
 	Stack Stack
 	// ip    int
 
 	Registry *Registry
+	Interner *Interner
 
 	callFrames []CallFrame
 	fp         int
@@ -48,43 +52,100 @@ type CallFrame struct {
 	scopeId uint32
 	self    Value
 
+	bp int
+
 	superOffset int
 	thunkId     uint32
 }
 
-func NewVM() *VM {
+func NewVM(interner *Interner, registry *Registry) *VM {
 	return &VM{
 		// prog:  program,
-		Stack:    NewStack(1024),
-		Registry: NewRegistry(),
-		// ctx: Context{
-		// 	Interner: program.Interner,
-		// 	Registry: program.Registry,
-		// },
+		Stack:      NewStack(1024),
+		Interner:   interner,
+		Registry:   registry,
+		callFrames: make([]CallFrame, 1024),
+		ctx: Context{
+			Interner: interner,
+			Registry: registry,
+		},
 	}
 }
 
 func (vm *VM) Run(prog *Program) (Value, error) {
-	for vm.state.ip < uint32(len(prog.Instructions)) {
-		inst := prog.Instructions[vm.state.ip]
+	vm.prog = prog
+
+	vm.fp = 1
+	vm.callFrames[vm.fp] = CallFrame{
+		ip: 0,
+		bp: 0,
+	}
+
+	err := vm.runLoop(0)
+	if err != nil {
+		return Value{}, err
+	}
+
+	if vm.Stack.Length() == 1 {
+		return vm.Stack.Pop(), nil
+	}
+
+	return Value{}, fmt.Errorf("execution finished with invalid stack state")
+}
+
+func (vm *VM) runLoop(targetFp int) error {
+
+	for {
+		inst := vm.prog.Instructions[vm.state.ip]
 
 		switch inst.op {
 		default:
-			return Value{}, fmt.Errorf("unhandled op code: %d", inst.op)
+			return fmt.Errorf("unhandled op code: %d", inst.op)
+
+		// Execution
+
+		case OpReturn:
+			res := vm.Stack.Pop()
+
+			vm.Stack.p = vm.state.bp
+			vm.Stack.Push(res)
+
+			if vm.fp == targetFp {
+				return nil
+			}
+
+			vm.fp--
+			vm.state = vm.callFrames[vm.fp]
+
+			continue
+
+		// case OpJump:
+		// case OpJumpIfFalse:
+
+		// Values
 
 		case OpPushNull:
 			vm.Stack.Push(MakeNull())
 
 		case OpPushString:
-			s := prog.Strings[inst.operand]
+			s := vm.prog.Strings[inst.operand]
 			id := vm.Registry.Strings.Alloc(s)
 			vm.Stack.Push(Value{t: ValueTypeString, refId: id})
+
+		case OpPushNumber:
+			n := vm.prog.Numbers[inst.operand]
+			vm.Stack.Push(MakeNumber(n))
 
 		case OpAdd:
 			right := vm.Stack.Pop()
 			left := vm.Stack.Pop()
 
-			vm.Stack.Push(MakeNumber(left.Number() + right.Number()))
+			res, err := bopPlus(right, left, vm.ctx)
+			if err != nil {
+				return err
+			}
+
+			vm.Stack.Push(res)
 
 		case OpMakeThunk:
 
@@ -101,18 +162,39 @@ func (vm *VM) Run(prog *Program) (Value, error) {
 			vm.state.ip += inst.operand
 
 		case OpPushScope:
-			childScopeId := vm.ctx.NewScope(vm.state.scopeId, int(inst.operand))
-			// vm.state.scopeId = childScopeId
-			// s := vm.ctx.Registry.Scopes.GetPtr(childScopeId)
 
-			vm.state.scopeId = childScopeId
+			childScopeId := Scope{
+				ParentId: vm.state.scopeId,
+				Bindings: vm.Registry.NamedValueBufs.Alloc(0, int(inst.operand)),
+			}
+
+			vm.state.scopeId = vm.Registry.Scopes.Alloc(childScopeId)
+
+		case OpPopScope:
+			current := vm.Registry.Scopes.GetPtr(vm.state.scopeId)
+			vm.state.scopeId = current.ParentId
 
 		case OpLocalSet:
 			v := vm.Stack.Pop()
 			nv := NamedValue{inst.operand, v}
 
-			activeScope := vm.ctx.Registry.Scopes.GetPtr(vm.state.scopeId)
+			activeScope := vm.Registry.Scopes.GetPtr(vm.state.scopeId)
 			activeScope.Bindings = append(activeScope.Bindings, nv)
+
+		case OpLocalGet:
+			slotIndex := inst.operand
+			depthDiff := inst.operand2
+
+			targetScopeId := vm.state.scopeId
+			for range depthDiff {
+				s := vm.Registry.Scopes.GetPtr(targetScopeId)
+				targetScopeId = s.ParentId
+			}
+
+			s := vm.Registry.Scopes.GetPtr(targetScopeId)
+			val := s.Bindings[slotIndex].Value
+
+			vm.Stack.Push(val)
 
 		case OpMakeObject:
 			// vm.handleMakeObject(prog, int(inst.operand), inst.operand2)
@@ -132,11 +214,98 @@ func (vm *VM) Run(prog *Program) (Value, error) {
 
 		vm.state.ip++
 	}
+}
 
-	if vm.Stack.Length() == 1 {
-		return vm.Stack.Pop(), nil
+func (vm *VM) Force(value Value) (Value, error) {
+	if !value.IsThunk() {
+		return value, nil
 	}
-	return Value{}, fmt.Errorf("execution finished with invalid stack state")
+
+	thunk := value.Thunk(vm.ctx)
+	if !thunk.Value.IsNone() {
+		return thunk.Value, nil // already evaluated (memoized)
+	}
+
+	// savedState := vm.state
+
+	targetFp := vm.fp
+
+	if vm.fp >= len(vm.callFrames) {
+		return Value{}, MakeRuntimeError(errors.New("maximum call stack size exceeded"))
+	}
+
+	vm.callFrames[vm.fp] = vm.state
+	vm.fp++
+
+	vm.state = CallFrame{
+		ip: thunk.NodeId, // We stored the IP here!
+
+		bp: vm.Stack.p,
+
+		scopeId:     thunk.ScopeId,
+		self:        thunk.CapturedSelf,
+		superOffset: thunk.CapturedSuperOffset,
+	}
+
+	err := vm.runLoop(targetFp)
+	if err != nil {
+		return Value{}, err
+	}
+
+	result := vm.Stack.Pop()
+
+	thunk = value.Thunk(vm.ctx)
+	thunk.Value = result
+
+	return result, nil
+
+}
+
+func (vm *VM) ManifestValue(value Value) (any, error) {
+	switch value.Type() {
+	default:
+		return nil, fmt.Errorf("unhandled value type '%s'", value.Type().String())
+	case ValueTypeNull:
+		return nil, nil
+	case ValueTypeString:
+		s := vm.Registry.Strings.Get(value.RefId())
+		return strings.Clone(s), nil
+	case ValueTypeNumber:
+		n := value.Number()
+		if float64(int64(n)) == n {
+			return int64(n), nil
+		}
+		return n, nil
+	case ValueTypeBool:
+		return value.Bool(), nil
+	// case ValueTypeObject:
+	// 	subCtx := ctx
+	// 	subCtx.Self = value
+	// 	return manifestObject(value.Object(ctx), subCtx)
+	case ValueTypeArray:
+		arr := value.Array(vm.ctx)
+		res := make([]any, 0, len(arr))
+		for i := range arr {
+			ev, err := vm.ManifestValue(arr[i])
+			if err != nil {
+				return nil, err
+			}
+			res = append(res, ev)
+		}
+		return res, nil
+	// case ValueTypeFunction:
+	// 	res, err := value.Function(ctx).Exec(nil, ctx)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	return ManifestValue(res)
+	case ValueTypeThunk:
+		v, err := vm.Force(value)
+		if err != nil {
+			return nil, err
+		}
+		return vm.ManifestValue(v)
+	}
 }
 
 // func (vm *VM) handleMakeObject(prog *Program, fieldCount int, flags uint16) {

@@ -12,14 +12,13 @@ type OpCode uint8
 
 const (
 	OpReturn OpCode = iota
+	OpJump
 
 	OpPushNull
 	OpPushString
 	OpPushNumber
 	OpPushFalse
 	OpPushTrue
-
-	OpJump
 
 	OpAdd
 
@@ -153,6 +152,9 @@ func (c *Compiler) Compile(node ast.Node) (*Program, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	c.emit(OpReturn, 0)
+
 	return &Program{
 		Instructions: c.Instructions,
 		Strings:      c.Strings,
@@ -201,7 +203,8 @@ func (c *Compiler) visit(n ast.Node) error {
 		c.emit(OpMakeArray, uint32(len(node.Elements)))
 
 	case *ast.Local:
-		//TODO: Enter scope. leave scope?
+
+		// TODO: Dont use scopes, we dont want to scope travese during exec...
 
 		c.ScopeDepth++
 		c.emit(OpPushScope, uint32(len(node.Binds)))
@@ -209,9 +212,18 @@ func (c *Compiler) visit(n ast.Node) error {
 		startLocalsLen := len(c.Locals)
 
 		for i := range node.Binds {
+			c.Locals = append(c.Locals, CompilerVar{
+				Name:       string(node.Binds[i].Variable),
+				ScopeDepth: c.ScopeDepth,
+				SlotIndex:  uint32(i),
+			})
+		}
+
+		for i := range node.Binds {
 			c.visitLazy(node.Binds[i].Body)
 			c.emit(OpLocalSet, uint32(i))
 		}
+
 		c.visit(node.Body)
 
 		c.emit(OpPopScope, 0)
