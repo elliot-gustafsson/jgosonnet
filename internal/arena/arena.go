@@ -30,6 +30,20 @@ func (a *Arena[T]) Alloc(val T) uint32 {
 	return id
 }
 
+func (a *Arena[T]) New() (*T, uint32) {
+	if a.offset >= blockSize {
+		a.blocks = append(a.blocks, new([blockSize]T))
+		a.current++
+		a.offset = 0
+	}
+
+	ptr := &a.blocks[a.current][a.offset]
+
+	id := uint32(a.current*blockSize + a.offset)
+	a.offset++
+	return ptr, id
+}
+
 func (a *Arena[T]) GetPtr(id uint32) *T {
 	blockIdx := id / blockSize
 	offsetIdx := id % blockSize

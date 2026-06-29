@@ -21,15 +21,17 @@ func std_range(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 	}
 
 	if to < from {
-		return evaluator.MakeArray(make([]evaluator.Value, 0), ctx), nil
+		_, arrVal := evaluator.MakeArraySized(0, ctx)
+		return arrVal, nil
 	}
 
-	res := make([]evaluator.Value, 0, int(to-from))
-	for i := from; i <= to; i++ {
-		res = append(res, evaluator.MakeNumber(float64(i)))
+	length := int(to-from) + 1
+	res, arrVal := evaluator.MakeArraySized(length, ctx)
+	for i := range length {
+		res[i] = evaluator.MakeNumber(float64(from + i))
 	}
 
-	return evaluator.MakeArray(res, ctx), nil
+	return arrVal, nil
 }
 
 func std_makeArray(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -46,7 +48,7 @@ func std_makeArray(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 
 	allArgs := make([]evaluator.NamedValue, size)
 
-	res := make([]evaluator.Value, size)
+	res, arrVal := evaluator.MakeArraySized(size, ctx)
 	for i := range size {
 
 		allArgs[i] = evaluator.NamedValue{Value: evaluator.MakeNumber(float64(i))}
@@ -60,7 +62,7 @@ func std_makeArray(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 
 	}
 
-	return evaluator.MakeArray(res, ctx), nil
+	return arrVal, nil
 }
 
 func std_join(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -84,6 +86,7 @@ func std_join(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 		}
 
 		totalLen := 0
+		validCount := 0
 		sepLen := len(sep.String(ctx))
 
 		for i := range inputLen {
@@ -99,10 +102,11 @@ func std_join(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 			}
 
 			totalLen += len(v.String(ctx))
+			validCount++
 		}
 
-		if inputLen > 1 {
-			totalLen += sepLen * (inputLen - 1)
+		if validCount > 1 {
+			totalLen += sepLen * (validCount - 1)
 		}
 
 		var sb strings.Builder
@@ -138,6 +142,7 @@ func std_join(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 	sepLen := len(sepArray)
 
 	totalCap := 0
+	validCount := 0
 	for i := range inputLen {
 
 		v, err := inputArray[i].Eval(ctx)
@@ -153,14 +158,16 @@ func std_join(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 			return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeArray, v.Type())
 		}
 		totalCap += len(v.Array(ctx))
+		validCount++
 	}
 
-	if inputLen > 1 {
-		totalCap += sepLen * (inputLen - 1)
+	if validCount > 1 {
+		totalCap += sepLen * (validCount - 1)
 	}
 
 	hasWritten := false
-	res := make([]evaluator.Value, 0, totalCap)
+	res, arrVal := evaluator.MakeArraySized(totalCap, ctx)
+	idx := 0
 	for _, v := range inputArray {
 
 		v, err := v.Eval(ctx)
@@ -173,13 +180,13 @@ func std_join(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 		}
 
 		if hasWritten {
-			res = append(res, sepArray...)
+			idx += copy(res[idx:], sepArray)
 		}
-		res = append(res, v.Array(ctx)...)
+		idx += copy(res[idx:], v.Array(ctx))
 		hasWritten = true
 	}
 
-	return evaluator.MakeArray(res, ctx), nil
+	return arrVal, nil
 }
 
 func std_deepJoin(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -555,7 +562,7 @@ func std_map(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 
 	allArgs := make([]evaluator.NamedValue, len(arr))
 
-	res := make([]evaluator.Value, len(arr))
+	res, arrVal := evaluator.MakeArraySized(len(arr), ctx)
 	for i, v := range arr {
 
 		allArgs[i] = evaluator.NamedValue{Value: v}
@@ -569,7 +576,7 @@ func std_map(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 
 	}
 
-	return evaluator.MakeArray(res, ctx), nil
+	return arrVal, nil
 }
 
 func std_mapWithIndex(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -600,7 +607,7 @@ func std_mapWithIndex(args []evaluator.NamedValue, ctx evaluator.Context) (evalu
 
 	allArgs := make([]evaluator.NamedValue, len(arr)*2)
 
-	res := make([]evaluator.Value, len(arr))
+	res, arrVal := evaluator.MakeArraySized(len(arr), ctx)
 	for i, v := range arr {
 		idx := i * 2
 
@@ -616,7 +623,7 @@ func std_mapWithIndex(args []evaluator.NamedValue, ctx evaluator.Context) (evalu
 
 	}
 
-	return evaluator.MakeArray(res, ctx), nil
+	return arrVal, nil
 }
 
 func std_member(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -891,11 +898,13 @@ func std_reverse(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.
 		return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.reverse (arg 0): %s, expected array", indexable.Type().String())
 	}
 
-	res := slices.Clone(indexable.Array(ctx))
+	arr := indexable.Array(ctx)
+	res, arrVal := evaluator.MakeArraySized(len(arr), ctx)
+	for i, v := range arr {
+		res[len(arr)-1-i] = v
+	}
 
-	slices.Reverse(res)
-
-	return evaluator.MakeArray(res, ctx), nil
+	return arrVal, nil
 }
 
 func std_foldl(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -1168,11 +1177,11 @@ func std_repeat(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 
 	if whatVal.IsArray() {
 		what := whatVal.Array(ctx)
-		res := make([]evaluator.Value, 0, count*len(what))
-		for range count {
-			res = append(res, what...)
+		res, arrVal := evaluator.MakeArraySized(count*len(what), ctx)
+		for i := 0; i < count; i++ {
+			copy(res[i*len(what):], what)
 		}
-		return evaluator.MakeArray(res, ctx), nil
+		return arrVal, nil
 	}
 
 	return evaluator.Value{}, fmt.Errorf("unexpected type passed to std.repeat (arg 0): %s, expected array or string", whatVal.Type().String())
@@ -1804,11 +1813,11 @@ func std_removeAt(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator
 		return evaluator.Value{}, fmt.Errorf("idx %d is out of bound for array with length %d", idx, len(arr))
 	}
 
-	res := make([]evaluator.Value, len(arr)-1)
+	res, arrVal := evaluator.MakeArraySized(len(arr)-1, ctx)
 	copy(res, arr[:idx])
 	copy(res[idx:], arr[idx+1:])
 
-	return evaluator.MakeArray(res, ctx), nil
+	return arrVal, nil
 }
 
 func sliceArr[T any](arr []T, start, end, step int) ([]T, error) {

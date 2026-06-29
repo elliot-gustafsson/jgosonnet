@@ -102,10 +102,10 @@ func bopPlus(left, right Value, ctx Context) (Value, error) {
 	case ValueTypeArray:
 		leftArr := left.Array(ctx)
 		rightArr := right.Array(ctx)
-		val := make([]Value, len(leftArr)+len(rightArr))
+		val, arrVal := MakeArraySized(len(leftArr)+len(rightArr), ctx)
 		copy(val, leftArr)
 		copy(val[len(leftArr):], rightArr)
-		return MakeArray(val, ctx), nil
+		return arrVal, nil
 
 	case ValueTypeObject:
 		// Virtually combine objects

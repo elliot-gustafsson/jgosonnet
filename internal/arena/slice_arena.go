@@ -22,17 +22,23 @@ func NewSliceArena[T any](elementBlockSize int) *SliceArena[T] {
 
 func (a *SliceArena[T]) Alloc(items []T) uint32 {
 	length := len(items)
+	slice, id := a.Make(length)
+	copy(slice, items)
+	return id
+}
+
+func (a *SliceArena[T]) Make(length int) ([]T, uint32) {
+
 	var targetSlice []T
 
 	if length == 0 {
-		return a.headers.Alloc(targetSlice)
+		return targetSlice, a.headers.Alloc(targetSlice)
 	}
 
 	if length > a.blockSize {
 		// If length is larger than blocksize just create it on the heap
 		jumboBlock := make([]T, length)
-		copy(jumboBlock, items)
-		return a.headers.Alloc(jumboBlock)
+		return jumboBlock, a.headers.Alloc(jumboBlock)
 	}
 
 	currBlock := a.elementBlocks[a.activeIdx]
@@ -40,6 +46,11 @@ func (a *SliceArena[T]) Alloc(items []T) uint32 {
 		a.activeIdx++
 		a.offset = 0
 		// do we already have a block allocated?
+		var targetSlice []T
+
+		if length == 0 {
+			return targetSlice, a.headers.Alloc(targetSlice)
+		}
 		if a.activeIdx < len(a.elementBlocks) {
 			currBlock = a.elementBlocks[a.activeIdx]
 		} else {
@@ -49,10 +60,9 @@ func (a *SliceArena[T]) Alloc(items []T) uint32 {
 	}
 
 	targetSlice = currBlock[a.offset : a.offset+length : a.offset+length]
-	copy(targetSlice, items)
 	a.offset += length
 
-	return a.headers.Alloc(targetSlice)
+	return targetSlice, a.headers.Alloc(targetSlice)
 }
 
 func (a *SliceArena[T]) Get(id uint32) []T {

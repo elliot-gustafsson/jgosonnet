@@ -30,8 +30,7 @@ func TestEvaluator(t *testing.T) {
 	infraDir := filepath.Join(filepath.Dir(filepath.Dir(cwd)), "infra", "jsonnet", "proact")
 	assert.NotEmpty(t, infraDir)
 
-	// file := filepath.Join("resources", "test.jsonnet")
-	file := "/home/elliot.gustafsson@fnox.it/Projects/jgosonnet/tests/resources/test.jsonnet"
+	file := filepath.Join("resources", "test.jsonnet")
 
 	interpreter := jgosonnet.NewEvaluator()
 	interpreter.JPaths([]string{filepath.Join(infraDir, "vendor")})

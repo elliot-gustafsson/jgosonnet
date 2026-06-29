@@ -157,6 +157,11 @@ func MakeArray(v []Value, ctx Context) Value {
 	return Value{t: ValueTypeArray, refId: refId}
 }
 
+func MakeArraySized(l int, ctx Context) ([]Value, Value) {
+	arr, refId := ctx.Registry.Arrays.Make(l)
+	return arr, Value{t: ValueTypeArray, refId: refId}
+}
+
 func MakeFunction(v Function, ctx Context) Value {
 	refId := ctx.Registry.Functions.Alloc(v)
 	return Value{t: ValueTypeFunction, refId: refId}

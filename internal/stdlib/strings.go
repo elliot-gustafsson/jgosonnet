@@ -139,11 +139,11 @@ func std_base64DecodeBytes(args []evaluator.NamedValue, ctx evaluator.Context) (
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	res := make([]evaluator.Value, 0, len(out))
-	for _, v := range out {
-		res = append(res, evaluator.MakeNumber(float64(v)))
+	res, arrVal := evaluator.MakeArraySized(len(out), ctx)
+	for i, v := range out {
+		res[i] = evaluator.MakeNumber(float64(v))
 	}
-	return evaluator.MakeArray(res, ctx), nil
+	return arrVal, nil
 }
 
 var std_asciiLower = liftString(strings.ToLower)
@@ -352,12 +352,13 @@ func std_split(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 		return evaluator.Value{}, err
 	}
 
-	res := []evaluator.Value{}
-	for _, v := range strings.Split(full, split) {
-		res = append(res, evaluator.MakeString(v, ctx))
+	parts := strings.Split(full, split)
+	res, arrVal := evaluator.MakeArraySized(len(parts), ctx)
+	for i, v := range parts {
+		res[i] = evaluator.MakeString(v, ctx)
 	}
 
-	return evaluator.MakeArray(res, ctx), nil
+	return arrVal, nil
 }
 
 func std_splitLimit(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -384,12 +385,12 @@ func std_splitLimit(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 		arr = strings.SplitN(full, split, maxSplits+1)
 	}
 
-	res := []evaluator.Value{}
-	for _, v := range arr {
-		res = append(res, evaluator.MakeString(v, ctx))
+	res, arrVal := evaluator.MakeArraySized(len(arr), ctx)
+	for i, v := range arr {
+		res[i] = evaluator.MakeString(v, ctx)
 	}
 
-	return evaluator.MakeArray(res, ctx), nil
+	return arrVal, nil
 }
 
 func std_splitLimitR(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -411,11 +412,11 @@ func std_splitLimitR(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 
 	if maxSplits < 0 {
 		arr := strings.Split(full, split)
-		res := make([]evaluator.Value, 0, len(arr))
-		for _, v := range arr {
-			res = append(res, evaluator.MakeString(v, ctx))
+		res, arrVal := evaluator.MakeArraySized(len(arr), ctx)
+		for i, v := range arr {
+			res[i] = evaluator.MakeString(v, ctx)
 		}
-		return evaluator.MakeArray(res, ctx), nil
+		return arrVal, nil
 	}
 
 	s := full

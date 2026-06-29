@@ -3,4 +3,4 @@
 	url = https://github.com/google/jsonnet.git
 [submodule "tests/resources/go-jsonnet"]
 	path = tests/resources/go-jsonnet
-	url = git@github.com:google/go-jsonnet.git
+	url = https://github.com/google/go-jsonnet.git

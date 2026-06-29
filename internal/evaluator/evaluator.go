@@ -141,15 +141,15 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 	case *ast.DesugaredObject:
 		return handleDesugaredObject(node, scopeId, ctx)
 	case *ast.Array:
-		res := make([]Value, 0, len(node.Elements))
-		for _, v := range node.Elements {
-			ev, err := evaluateNodeLazy(v.Expr, scopeId, ctx)
+		arr, val := MakeArraySized(len(node.Elements), ctx)
+		for i := range node.Elements {
+			ev, err := evaluateNodeLazy(node.Elements[i].Expr, scopeId, ctx)
 			if err != nil {
 				return Value{}, err
 			}
-			res = append(res, ev)
+			arr[i] = ev
 		}
-		return MakeArray(res, ctx), nil
+		return val, nil
 	case *ast.Local:
 		return handleLocal(node, scopeId, ctx)
 	case *ast.Apply:
@@ -331,8 +331,7 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 	fieldCount := len(node.Fields)
 	localsCount := len(node.Locals)
 
-	layerId := ctx.Registry.Layers.Alloc(Layer{})
-	layer := ctx.Registry.Layers.GetPtr(layerId)
+	layer, _ := ctx.Registry.Layers.New()
 
 	layer.ParentScopeId = scopeId
 

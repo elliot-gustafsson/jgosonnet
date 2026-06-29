@@ -108,15 +108,15 @@ func rawDataToValue(x any, ctx evaluator.Context) (evaluator.Value, error) {
 	case bool:
 		return evaluator.MakeBool(data), nil
 	case []any:
-		res := make([]evaluator.Value, 0, len(data))
-		for _, rv := range data {
+		res, arrVal := evaluator.MakeArraySized(len(data), ctx)
+		for i, rv := range data {
 			v, err := rawDataToValue(rv, ctx)
 			if err != nil {
 				return evaluator.Value{}, err
 			}
-			res = append(res, v)
+			res[i] = v
 		}
-		return evaluator.MakeArray(res, ctx), nil
+		return arrVal, nil
 	case map[string]any:
 
 		fieldCount := len(data)
@@ -162,12 +162,13 @@ func std_encodeUTF8(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 		return evaluator.Value{}, err
 	}
 
-	res := make([]evaluator.Value, 0, len(str))
-	for _, b := range []byte(str) {
-		res = append(res, evaluator.MakeNumber(float64(b)))
+	strBytes := []byte(str)
+	res, arrVal := evaluator.MakeArraySized(len(strBytes), ctx)
+	for i, b := range strBytes {
+		res[i] = evaluator.MakeNumber(float64(b))
 	}
 
-	return evaluator.MakeArray(res, ctx), nil
+	return arrVal, nil
 }
 
 func std_decodeUTF8(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
