@@ -27,6 +27,13 @@ func (s *Stack) Pop() Value {
 	return s.s[s.p]
 }
 
+func (s *Stack) Pop2() (v1 Value, v2 Value) {
+	v1 = s.s[s.p-1]
+	v2 = s.s[s.p-2]
+	s.p = s.p - 2
+	return
+}
+
 func (s *Stack) Length() int {
 	return s.p
 }
@@ -136,16 +143,106 @@ func (vm *VM) runLoop(targetFp int) error {
 			n := vm.prog.Numbers[inst.operand]
 			vm.Stack.Push(MakeNumber(n))
 
-		case OpAdd:
-			right := vm.Stack.Pop()
-			left := vm.Stack.Pop()
+		// ---------------------------------------------------------
+		// Binary ops
+		// ---------------------------------------------------------
 
-			res, err := bopPlus(right, left, vm.ctx)
+		case OpPlus:
+			right, left := vm.Stack.Pop2()
+			// TODO: force left and right
+			if left.IsNumber() && right.IsNumber() {
+				vm.Stack.Push(MakeNumber(left.Number() + right.Number()))
+				continue
+			}
+			res, err := bopPlus(left, right, vm.ctx)
 			if err != nil {
 				return err
 			}
-
 			vm.Stack.Push(res)
+
+		case OpMinus:
+			right, left := vm.Stack.Pop2()
+			// TODO: force left and right
+			if !left.IsNumber() || !right.IsNumber() {
+				return typeErrorNotNumber(left, right)
+			}
+			vm.Stack.Push(MakeNumber(left.Number() - right.Number()))
+
+		case OpDiv:
+			right, left := vm.Stack.Pop2()
+			// TODO: force left and right
+			if !left.IsNumber() || !right.IsNumber() {
+				return typeErrorNotNumber(left, right)
+			}
+			vm.Stack.Push(MakeNumber(left.Number() / right.Number()))
+
+		case OpMult:
+			right, left := vm.Stack.Pop2()
+			// TODO: force left and right
+			if !left.IsNumber() || !right.IsNumber() {
+				return typeErrorNotNumber(left, right)
+			}
+			vm.Stack.Push(MakeNumber(left.Number() * right.Number()))
+
+		case OpBitwiseAnd:
+			right, left := vm.Stack.Pop2()
+			// TODO: force left and right
+			if !left.IsNumber() || !right.IsNumber() {
+				return typeErrorNotNumber(left, right)
+			}
+			val, err := builtinBitwiseAnd(left.Number(), right.Number())
+			if err != nil {
+				return err
+			}
+			vm.Stack.Push(MakeNumber(val))
+
+		case OpBitwiseOr:
+			right, left := vm.Stack.Pop2()
+			// TODO: force left and right
+			if !left.IsNumber() || !right.IsNumber() {
+				return typeErrorNotNumber(left, right)
+			}
+			val, err := builtinBitwiseOr(left.Number(), right.Number())
+			if err != nil {
+				return err
+			}
+			vm.Stack.Push(MakeNumber(val))
+
+		case OpBitwiseXor:
+			right, left := vm.Stack.Pop2()
+			// TODO: force left and right
+			if !left.IsNumber() || !right.IsNumber() {
+				return typeErrorNotNumber(left, right)
+			}
+			val, err := builtinBitwiseXor(left.Number(), right.Number())
+			if err != nil {
+				return err
+			}
+			vm.Stack.Push(MakeNumber(val))
+
+		case OpShiftL:
+			right, left := vm.Stack.Pop2()
+			// TODO: force left and right
+			if !left.IsNumber() || !right.IsNumber() {
+				return typeErrorNotNumber(left, right)
+			}
+			val, err := builtinShiftL(left.Number(), right.Number())
+			if err != nil {
+				return err
+			}
+			vm.Stack.Push(MakeNumber(val))
+
+		case OpShiftR:
+			right, left := vm.Stack.Pop2()
+			// TODO: force left and right
+			if !left.IsNumber() || !right.IsNumber() {
+				return typeErrorNotNumber(left, right)
+			}
+			val, err := builtinShiftR(left.Number(), right.Number())
+			if err != nil {
+				return err
+			}
+			vm.Stack.Push(MakeNumber(val))
 
 		case OpMakeThunk:
 
@@ -197,7 +294,7 @@ func (vm *VM) runLoop(targetFp int) error {
 			vm.Stack.Push(val)
 
 		case OpMakeObject:
-			// vm.handleMakeObject(prog, int(inst.operand), inst.operand2)
+			// vm.handleMakeObject(int(inst.operand), inst.operand2)
 
 		case OpMakeArray:
 			length := int(inst.operand)
@@ -308,7 +405,17 @@ func (vm *VM) ManifestValue(value Value) (any, error) {
 	}
 }
 
-// func (vm *VM) handleMakeObject(prog *Program, fieldCount int, flags uint16) {
+func typeErrorNotNumber(left, right Value) error {
+	if !left.IsNumber() {
+		return TypeErrorSpecific(ValueTypeNumber, left.Type())
+	}
+	if !right.IsNumber() {
+		return TypeErrorSpecific(ValueTypeNumber, right.Type())
+	}
+	return nil
+}
+
+// func (vm *VM) handleMakeObject(fieldCount int, flags uint16) {
 
 // 	var localsCount int
 // 	var assertsCount int
@@ -316,16 +423,15 @@ func (vm *VM) ManifestValue(value Value) (any, error) {
 // 	// Because the compiler emitted them in order, we just step the IP!
 // 	if (flags & FlagObjectHasLocals) != 0 {
 // 		vm.state.ip++
-// 		localsCount = int(prog.Instructions[vm.state.ip].operand)
+// 		localsCount = int(vm.prog.Instructions[vm.state.ip].operand)
 // 	}
 
 // 	if (flags & FlagObjectHasAsserts) != 0 {
 // 		vm.state.ip++
-// 		assertsCount = int(prog.Instructions[vm.state.ip].operand)
+// 		assertsCount = int(vm.prog.Instructions[vm.state.ip].operand)
 // 	}
 
-// 	layerId := vm.Registry.Layers.Alloc(Layer{})
-// 	layer := vm.Registry.Layers.GetPtr(layerId)
+// 	layer, _ := vm.Registry.Layers.New()
 
 // 	layer.ParentScopeId = scopeId
 

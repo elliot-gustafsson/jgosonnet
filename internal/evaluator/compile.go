@@ -20,7 +20,22 @@ const (
 	OpPushFalse
 	OpPushTrue
 
-	OpAdd
+	// binary ops
+	OpPlus
+	OpMinus
+	OpDiv
+	OpMult
+	OpBitwiseAnd
+	OpBitwiseOr
+	OpBitwiseXor
+	OpShiftL
+	OpShiftR
+	OpEqual
+	OpUnequal
+	OpGreater
+	OpGreaterEq
+	OpLess
+	OpLessEq
 
 	OpCall
 
@@ -107,12 +122,6 @@ type Program struct {
 	Instructions []Instruction
 	Strings      []string
 	Numbers      []float64
-
-	// Templates *arena.Arena[Layer]
-
-	// Interner    *Interner
-	// Registry    *Registry
-	// Environment *Environment
 }
 
 type CompilerVar struct {
@@ -322,11 +331,41 @@ func (c *Compiler) visit(n ast.Node) error {
 			return err
 		}
 
+		// TODO: handle literals directly at compile time
+
 		switch node.Op {
 		default:
 			return fmt.Errorf("unsupported binary operator: %s", node.Op.String())
 		case ast.BopPlus:
-			c.emit(OpAdd, 0)
+			c.emit(OpPlus, 0)
+		case ast.BopMinus:
+			c.emit(OpMinus, 0)
+		case ast.BopDiv:
+			c.emit(OpDiv, 0)
+		case ast.BopMult:
+			c.emit(OpMult, 0)
+		case ast.BopBitwiseAnd:
+			c.emit(OpBitwiseAnd, 0)
+		case ast.BopBitwiseOr:
+			c.emit(OpBitwiseOr, 0)
+		case ast.BopBitwiseXor:
+			c.emit(OpBitwiseXor, 0)
+		case ast.BopShiftL:
+			c.emit(OpShiftL, 0)
+		case ast.BopShiftR:
+			c.emit(OpShiftR, 0)
+		case ast.BopManifestEqual:
+			c.emit(OpEqual, 0)
+		case ast.BopManifestUnequal:
+			c.emit(OpUnequal, 0)
+		case ast.BopGreater:
+			c.emit(OpGreater, 0)
+		case ast.BopGreaterEq:
+			c.emit(OpGreaterEq, 0)
+		case ast.BopLess:
+			c.emit(OpLess, 0)
+		case ast.BopLessEq:
+			c.emit(OpLessEq, 0)
 		}
 
 	}
