@@ -63,10 +63,12 @@ func run() error {
 		interpreter.JPaths([]string{jpath})
 	}
 
-	_, err := interpreter.Evaluate(args[0])
+	s, err := interpreter.EvaluateJson(args[0])
 	if err != nil {
 		return err
 	}
+
+	fmt.Print(s)
 
 	// err = json.NewEncoder(os.Stdout).Encode(val)
 	// if err != nil {

@@ -181,7 +181,7 @@ var functions = map[string]func(evaluator.Context) evaluator.Function{
 	"objectKeysValues":    f(std_objectKeysValues, req("o")),
 	"objectKeysValuesAll": f(std_objectKeysValuesAll, req("o")),
 	"mapWithKey":          f(std_mapWithkey, req("func"), req("obj")),
-	"objectRemoveKey":     f(std_objectRemoveKey2, req("obj"), req("key")),
+	"objectRemoveKey":     f(std_objectRemoveKey, req("obj"), req("key")),
 	"mergePatch":          f(std_mergePatch, req("target"), req("patch")),
 
 	// --- Manifestation ---

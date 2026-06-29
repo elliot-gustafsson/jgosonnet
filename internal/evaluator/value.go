@@ -172,6 +172,10 @@ func MakeThunk(v Thunk, ctx Context) Value {
 	return Value{t: ValueTypeThunk, refId: refId}
 }
 
+func MakeTombstoneValue(scope int) Value {
+	return Value{refId: uint32(scope)}
+}
+
 func (v Value) Type() ValueType {
 	return v.t
 }

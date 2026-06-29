@@ -1,8 +1,6 @@
 package stdlib
 
 import (
-	"slices"
-
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 )
 
@@ -283,190 +281,20 @@ func std_objectRemoveKey(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 
 	keyId := ctx.Interner.Intern(key)
 
-	// ----------------
+	existingLayers := obj.GetLayers(ctx)
 
-	// objLayers := obj.GetLayers()
+	tombstoneLayer, _ := ctx.Registry.Layers.New()
+	tombstoneLayer.Keys = []uint32{keyId}
+	tombstoneLayer.Values = []evaluator.Value{evaluator.MakeTombstoneValue(len(existingLayers))}
+	tombstoneLayer.Meta = []uint8{evaluator.FlagTombstone | evaluator.DefaultFieldMeta}
 
-	// resLayers := make([]*evaluator.Layer, 0, len(objLayers))
-
-	// for _, l := range objLayers {
-
-	// 	fieldCount := len(l.Keys) - 1
-
-	// 	newLayer := &evaluator.Layer{
-	// 		Keys:  make([]uint32, 0, fieldCount),
-	// 		Nodes: make(ast.Nodes, 0, fieldCount),
-	// 		Meta:  make([]uint8, 0, fieldCount),
-	// 	}
-
-	// 	useMap := len(l.Keys) > evaluator.MaxLinearKeys
-	// 	if useMap {
-	// 		newLayer.Index = make(map[uint32]int, fieldCount)
-	// 	}
-
-	// 	index := 0
-	// 	for i, k := range l.Keys {
-	// 		if keyId == k {
-	// 			continue
-	// 		}
-
-	// 		var v evaluator.Value
-	// 		if l.Values != nil {
-	// 			v = l.Values[fieldId]
-	// 		} else {
-	// 			x, err := evaluator.EvaluateNode()
-	// 		}
-
-	// 		newLayer.Keys = append(newLayer.Keys, k)
-	// 		newLayer.Meta = append(newLayer.Meta, l.Meta[i])
-	// 		newLayer.Nodes = append(newLayer.Nodes, v)
-
-	// 		if useMap {
-	// 			newLayer.Index[k] = index
-	// 		}
-	// 		index++
-	// 	}
-	// 	resLayers = append(resLayers, newLayer)
-	// }
-
-	// resObj := evaluator.NewObject(resLayers)
-	// return evaluator.MakeObject(resObj, ctx), nil
-
-	// ----------------
-
-	// TODO: look over this, fairly sure is doesnt work for all cases...
-
-	evalCtx := ctx
-	evalCtx.Self = objVal
-
-	val, _, err := obj.GetField(keyId, evalCtx)
-	if err != nil {
-		return evaluator.Value{}, err
-	}
-
-	if val.IsNone() {
-		// If key doesnt exist, just copy the object
-		objLayers := obj.GetLayers(ctx)
-		newLayers := make([]*evaluator.Layer, len(objLayers))
-		copy(newLayers, objLayers)
-		res := evaluator.NewObject(newLayers)
-		return evaluator.MakeObject(res, ctx), nil
-	}
-
-	plans := evaluator.CompileObjectPlan(obj, ctx)
-
-	fieldCount := len(plans) - 1
-	layer := &evaluator.Layer{
-		Keys:   make([]uint32, 0, fieldCount),
-		Values: make([]evaluator.Value, 0, fieldCount),
-		Meta:   make([]uint8, 0, fieldCount),
-	}
-
-	useMap := len(plans) > evaluator.MaxLinearKeys
-	if useMap {
-		layer.Index = make(map[uint32]int, fieldCount)
-	}
-
-	for i, plan := range plans {
-		if plan.KeyId == keyId {
-			continue
-		}
-
-		v, err := plan.GetValue(obj, evalCtx)
-		if err != nil {
-			return evaluator.Value{}, err
-		}
-
-		layer.Keys = append(layer.Keys, plan.KeyId)
-		layer.Values = append(layer.Values, v)
-		layer.Meta = append(layer.Meta, evaluator.CreateFieldMeta(plan.Visibility, false))
-
-		if useMap {
-			layer.Index[plan.KeyId] = i
-		}
-
-	}
-
-	resObj := evaluator.NewObject([]*evaluator.Layer{layer})
-	return evaluator.MakeObject(resObj, ctx), nil
-}
-
-// TODO: doesnt really work...
-func std_objectRemoveKey2(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	objVal, err := args[0].Eval(ctx)
-	if err != nil {
-		return evaluator.Value{}, err
-	}
-	if !objVal.IsObject() {
-		return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, objVal.Type())
-	}
-	obj := objVal.Object(ctx)
-
-	key, err := args[1].EvalString(ctx)
-	if err != nil {
-		return evaluator.Value{}, err
-	}
-
-	keyId := ctx.Interner.Intern(key)
-
-	// evalCtx := ctx
-	// evalCtx.Self = objVal
-
-	layers := obj.GetLayers(ctx)
-
-	newLayers := make([]*evaluator.Layer, len(layers))
-
-	for i, layer := range layers {
-
-		keyIdx := -1
-		for j, k := range layer.Keys {
-			if k == keyId {
-				keyIdx = j
-			}
-		}
-
-		// NOTE: assertions and local vars are not copied intentionally to adhere to go-jsonnet
-
-		// Key was not found, just add the whole layer
-		if keyIdx == -1 {
-			l := &evaluator.Layer{
-				Keys: slices.Clone(layer.Keys),
-				Meta: slices.Clone(layer.Meta),
-			}
-			if l.Values != nil {
-				l.Values = slices.Clone(layer.Values)
-			} else {
-				l.Nodes = slices.Clone(layer.Nodes)
-			}
-
-			newLayers[i] = l
-			continue
-		}
-
-		l := &evaluator.Layer{
-			Keys: sliceRemoveIdx(layer.Keys, keyIdx),
-			Meta: sliceRemoveIdx(layer.Meta, keyIdx),
-		}
-		if layer.Values != nil {
-			l.Values = sliceRemoveIdx(layer.Values, keyIdx)
-		} else {
-			l.Nodes = sliceRemoveIdx(layer.Nodes, keyIdx)
-		}
-		newLayers[i] = l
-	}
+	newLen := len(existingLayers) + 1
+	newLayers := ctx.Registry.LayerBufs.Alloc(newLen, newLen)
+	copy(newLayers, existingLayers)
+	newLayers[newLen-1] = tombstoneLayer
 
 	resObj := evaluator.NewObject(newLayers)
 	return evaluator.MakeObject(resObj, ctx), nil
-}
-
-func sliceRemoveIdx[T any](s []T, i int) []T {
-	if i < 0 || i > len(s)-1 {
-		return slices.Clone(s)
-	}
-	newSlice := make([]T, len(s)-1)
-	copy(newSlice[:i], s[:i])
-	copy(newSlice[i:], s[i+1:])
-	return newSlice
 }
 
 func std_mergePatch(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {

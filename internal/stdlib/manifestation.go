@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
-	"github.com/google/go-jsonnet/ast"
 )
 
 const (
@@ -363,7 +362,7 @@ func std_manifestPythonVars(args []evaluator.NamedValue, ctx evaluator.Context) 
 	for _, plan := range plans {
 		keyId := plan.KeyId
 
-		if plan.Visibility == ast.ObjectFieldHidden {
+		if plan.IsHidden() {
 			continue
 		}
 

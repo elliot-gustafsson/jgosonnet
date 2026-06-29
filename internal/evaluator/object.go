@@ -2,6 +2,7 @@ package evaluator
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 
@@ -13,6 +14,7 @@ const (
 
 	MaskVisibility = 0x03 // Binary 00000011
 	FlagPlusSuper  = 0x04 // Binary 00000100
+	FlagTombstone  = 0x08 // Binary 00001000
 )
 
 type Field struct {
@@ -174,12 +176,17 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 			continue
 		}
 
+		visibility, plusSuper, tombstone := EvalFieldMeta(layer.Meta[fieldIndex])
+
+		if tombstone {
+			layerOffset -= int(layer.Values[fieldIndex].RefId())
+			continue
+		}
+
 		val, err := getValue(t, layerOffset, fieldIndex, ctx)
 		if err != nil {
 			return Value{}, false, err
 		}
-
-		visibility, plusSuper := EvalFieldMeta(layer.Meta[fieldIndex])
 
 		if visibility != ast.ObjectFieldInherit {
 			currentVisibility = visibility
@@ -222,7 +229,13 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 				continue
 			}
 
-			visibility, _ := EvalFieldMeta(layer.Meta[fieldIndex])
+			visibility, _, tombstone := EvalFieldMeta(layer.Meta[fieldIndex])
+
+			if tombstone {
+				j -= int(layer.Values[fieldIndex].RefId())
+				continue
+			}
+
 			if visibility != ast.ObjectFieldInherit {
 				currentVisibility = visibility
 				break
@@ -288,9 +301,10 @@ func CreateFieldMeta(visibility ast.ObjectFieldHide, plusSuper bool) uint8 {
 	return m
 }
 
-func EvalFieldMeta(m uint8) (visibility ast.ObjectFieldHide, plusSuper bool) {
+func EvalFieldMeta(m uint8) (visibility ast.ObjectFieldHide, plusSuper, tombstone bool) {
 	visibility = ast.ObjectFieldHide(m & MaskVisibility)
 	plusSuper = (m & FlagPlusSuper) != 0
+	tombstone = (m & FlagTombstone) != 0
 	return
 }
 
@@ -348,19 +362,28 @@ func MergeObjects(leftId, rightId uint32) Object {
 }
 
 type FieldPlan struct {
-	KeyId      uint32
-	Visibility ast.ObjectFieldHide
-	IsClosed   bool
-	Layers     []LayerRef
+	Layers           []LayerRef
+	KeyId            uint32
+	ShadowUntilLayer uint16
+	Visibility       uint8
+	IsClosed         bool
 }
 
 func (fp FieldPlan) IsHidden() bool {
-	return fp.Visibility == ast.ObjectFieldHidden
+	return fp.Visibility == uint8(ast.ObjectFieldHidden)
+}
+
+func (fp FieldPlan) IsInherit() bool {
+	return fp.Visibility == uint8(ast.ObjectFieldInherit)
+}
+
+func (fp FieldPlan) IsVisible() bool {
+	return fp.Visibility == uint8(ast.ObjectFieldVisible)
 }
 
 type LayerRef struct {
-	LayerIdx int
-	FieldIdx int
+	LayerIdx int32
+	FieldIdx int32
 }
 
 func CompileObjectPlan(obj *Object, ctx Context) []FieldPlan {
@@ -399,6 +422,8 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 
 	plans := ctx.Registry.FieldPlanBufs.Alloc(0, maxKeys)
 
+	var validate bool
+
 	for l := len(layers) - 1; l >= 0; l-- {
 		layer := layers[l]
 
@@ -414,23 +439,24 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 
 			if pIdx == -1 {
 				plans = append(plans, FieldPlan{
-					KeyId:      keyID,
-					Visibility: ast.ObjectFieldInherit,
-					Layers:     ctx.Registry.LayerRefBufs.Alloc(0, 4),
+					KeyId:            keyID,
+					Visibility:       uint8(ast.ObjectFieldInherit),
+					Layers:           ctx.Registry.LayerRefBufs.Alloc(0, 4),
+					ShadowUntilLayer: math.MaxUint16,
 				})
 				pIdx = len(plans) - 1
 			}
 
-			vis, plus := EvalFieldMeta(layer.Meta[f])
+			vis, plus, tombstone := EvalFieldMeta(layer.Meta[f])
 
 			plan := &plans[pIdx]
 
-			if plan.Visibility == ast.ObjectFieldInherit {
+			if plan.IsInherit() {
 				switch vis {
 				case ast.ObjectFieldHidden:
-					plan.Visibility = ast.ObjectFieldHidden
+					plan.Visibility = uint8(ast.ObjectFieldHidden)
 				case ast.ObjectFieldVisible:
-					plan.Visibility = ast.ObjectFieldVisible
+					plan.Visibility = uint8(ast.ObjectFieldVisible)
 				}
 			}
 
@@ -438,7 +464,17 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 				continue
 			}
 
-			plan.Layers = append(plan.Layers, LayerRef{l, f})
+			if plan.ShadowUntilLayer != math.MaxUint16 && l >= int(plan.ShadowUntilLayer) {
+				continue
+			}
+
+			if tombstone {
+				validate = true
+				plan.ShadowUntilLayer = uint16(l - int(layer.Values[f].RefId()))
+				continue
+			}
+
+			plan.Layers = append(plan.Layers, LayerRef{int32(l), int32(f)})
 
 			if !plus {
 				plan.IsClosed = true
@@ -446,7 +482,18 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 		}
 	}
 
-	return plans
+	if !validate {
+		return plans
+	}
+
+	validPlans := plans[:0]
+	for _, p := range plans {
+		if len(p.Layers) > 0 {
+			validPlans = append(validPlans, p)
+		}
+	}
+
+	return validPlans
 }
 
 func (t *FieldPlan) GetValue(obj *Object, ctx Context) (Value, error) {
@@ -465,7 +512,7 @@ func (t *FieldPlan) GetValue(obj *Object, ctx Context) (Value, error) {
 
 	layerRef := t.Layers[0]
 
-	value, err := getValue(obj, layerRef.LayerIdx, layerRef.FieldIdx, ctx)
+	value, err := getValue(obj, int(layerRef.LayerIdx), int(layerRef.FieldIdx), ctx)
 	if err != nil {
 		return Value{}, err
 	}
@@ -474,7 +521,7 @@ func (t *FieldPlan) GetValue(obj *Object, ctx Context) (Value, error) {
 
 		overlayRef := t.Layers[i]
 
-		innerVal, err := getValue(obj, overlayRef.LayerIdx, overlayRef.FieldIdx, ctx)
+		innerVal, err := getValue(obj, int(overlayRef.LayerIdx), int(overlayRef.FieldIdx), ctx)
 		if err != nil {
 			return Value{}, err
 		}
@@ -496,7 +543,7 @@ func (t *FieldPlan) GetValue(obj *Object, ctx Context) (Value, error) {
 		value = res
 	}
 
-	obj.Cache.Set(t.KeyId, CachedValue{value, t.Visibility != ast.ObjectFieldHidden})
+	obj.Cache.Set(t.KeyId, CachedValue{value, !t.IsHidden()})
 
 	return value, nil
 }
@@ -517,7 +564,7 @@ func manifestObject(obj *Object, ctx Context) (map[string]any, error) {
 		// }
 		keyId := plan.KeyId
 
-		if plan.Visibility == ast.ObjectFieldHidden {
+		if plan.IsHidden() {
 			continue
 		}
 
@@ -558,7 +605,7 @@ func ManifestObjectRoot(obj *Object, ctx Context) (map[string]Value, error) {
 		// }
 		keyId := plan.KeyId
 
-		if plan.Visibility == ast.ObjectFieldHidden {
+		if plan.IsHidden() {
 			continue
 		}
 
@@ -663,7 +710,7 @@ func GetObjectValues(obj *Object, ctx Context, inclHidden bool) ([]Value, error)
 	res := make([]Value, 0, len(plans))
 	for _, plan := range plans {
 
-		if !inclHidden && plan.Visibility == ast.ObjectFieldHidden {
+		if !inclHidden && plan.IsHidden() {
 			continue
 		}
 
@@ -685,7 +732,7 @@ func GetObjectKeysValues(obj *Object, ctx Context, inclHidden bool) ([]Value, er
 	res := make([]Value, 0, len(plans))
 	for _, plan := range plans {
 
-		if !inclHidden && plan.Visibility == ast.ObjectFieldHidden {
+		if !inclHidden && plan.IsHidden() {
 			continue
 		}
 
@@ -724,7 +771,7 @@ func GetObjectKeysValuesArray(obj *Object, ctx Context, inclHidden bool) ([]uint
 	vals := make([]Value, 0, len(plans))
 	for _, plan := range plans {
 
-		if !inclHidden && plan.Visibility == ast.ObjectFieldHidden {
+		if !inclHidden && plan.IsHidden() {
 			continue
 		}
 
@@ -788,7 +835,7 @@ func (t *Object) Prune(ctx Context) (Value, error) {
 
 		layer.Keys = append(layer.Keys, plan.KeyId)
 		layer.Values = append(layer.Values, prunedVal)
-		layer.Meta = append(layer.Meta, CreateFieldMeta(plan.Visibility, false))
+		layer.Meta = append(layer.Meta, CreateFieldMeta(ast.ObjectFieldHide(plan.Visibility), false))
 
 		if useMap {
 			layer.Index[plan.KeyId] = index
