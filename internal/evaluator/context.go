@@ -18,42 +18,6 @@ type Context struct {
 	SuperOffset int
 }
 
-type Interner struct {
-	mapping map[string]uint32
-	strings []string
-}
-
-func NewInterner() *Interner {
-	return &Interner{
-		mapping: make(map[string]uint32, 8192),
-		strings: make([]string, 0, 8192),
-	}
-}
-
-func (i *Interner) Intern(s string) uint32 {
-	if id, ok := i.mapping[s]; ok {
-		return id
-	}
-
-	id := uint32(len(i.strings))
-	i.strings = append(i.strings, s)
-	i.mapping[s] = id
-
-	return id
-}
-
-func (i *Interner) Get(id uint32) string {
-	if id >= uint32(len(i.strings)) {
-		return ""
-	}
-	return i.strings[id]
-}
-
-func (i *Interner) Reset() {
-	clear(i.mapping)
-	i.strings = i.strings[:0]
-}
-
 type Registry struct {
 	Objects   *arena.Arena[Object]
 	Arrays    *arena.SliceArena[Value]
