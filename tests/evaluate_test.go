@@ -424,9 +424,10 @@ func TestEvaluatorLoop(t *testing.T) {
 	interpreter := jgosonnet.NewEvaluator()
 	interpreter.JPaths([]string{filepath.Join(infraDir, "vendor")})
 
-	file := "sto3-prod001.jsonnet"
+	// file := filepath.Join(infraDir, "sto3-prod001.jsonnet")
+	file := "../benchmarks/resources/realistic_benchmark2.jsonnet"
 
-	_, err = interpreter.Evaluate(filepath.Join(infraDir, file))
+	_, err = interpreter.Evaluate(file)
 	assert.NoError(t, err)
 	if err != nil {
 		return
@@ -442,7 +443,7 @@ func TestEvaluatorLoop(t *testing.T) {
 	jgosonnetStart := time.Now()
 
 	for range 30 {
-		_, err := interpreter.Evaluate(filepath.Join(infraDir, file))
+		_, err := interpreter.EvaluateJson(file)
 		assert.NoError(t, err)
 		if err != nil {
 			return
