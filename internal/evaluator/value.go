@@ -127,11 +127,13 @@ func MakeNull() Value {
 	return Value{t: ValueTypeNull}
 }
 
-// const dataStringFlag uint32 = 1 << 31
-
 func MakeString(v string, ctx Context) Value {
 	id := ctx.Registry.Strings.Alloc(v)
-	// return Value{t: ValueTypeString, refId: id | dataStringFlag}
+	return Value{t: ValueTypeString, refId: id}
+}
+
+func MakeStringConcat(v1, v2 string, ctx Context) Value {
+	id := ctx.Registry.Strings.AllocConcat(v1, v2)
 	return Value{t: ValueTypeString, refId: id}
 }
 

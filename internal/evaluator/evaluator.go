@@ -361,7 +361,7 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 
 	}
 
-	useMap := fieldCount > MaxLinearKeys
+	useMap := fieldCount > MaxLayerLinearKeys
 
 	if useMap {
 		layer.Index = make(map[uint32]int, fieldCount)

@@ -24,39 +24,42 @@ func NewStringArena(blockSize int) *StringArena {
 
 func (a *StringArena) Alloc(s string) uint32 {
 	length := len(s)
-	var arenaStr string
 
 	if length == 0 {
 		return a.headers.Alloc("")
 	}
 
 	if length > a.blockSize {
-		// If length is larger than blocksize just create it on the heap
+		return a.headers.Alloc(s) // Avoid copying jumbo strings
+	}
+
+	targetBytes := a.reserve(length)
+	copy(targetBytes, s)
+
+	arenaStr := unsafe.String(&targetBytes[0], length)
+	return a.headers.Alloc(arenaStr)
+}
+
+func (a *StringArena) AllocConcat(s1, s2 string) uint32 {
+	length := len(s1) + len(s2)
+
+	if length == 0 {
+		return a.headers.Alloc("")
+	}
+	if length > a.blockSize {
 		jumboBlock := make([]byte, length)
-		copy(jumboBlock, s)
+		copy(jumboBlock, s1)
+		copy(jumboBlock[len(s1):], s2)
+
 		arenaStr := unsafe.String(&jumboBlock[0], length)
 		return a.headers.Alloc(arenaStr)
 	}
 
-	currBlock := a.elementBlocks[a.activeIdx]
-	if a.offset+length > len(currBlock) {
-		a.activeIdx++
-		a.offset = 0
-		// do we already have a block allocated?
-		if a.activeIdx < len(a.elementBlocks) {
-			currBlock = a.elementBlocks[a.activeIdx]
-		} else {
-			currBlock = make([]byte, a.blockSize)
-			a.elementBlocks = append(a.elementBlocks, currBlock)
-		}
-	}
+	targetBytes := a.reserve(length)
+	copy(targetBytes, s1)
+	copy(targetBytes[len(s1):], s2)
 
-	targetBytes := currBlock[a.offset : a.offset+length]
-
-	copy(targetBytes, s)
-	a.offset += length
-
-	arenaStr = unsafe.String(&targetBytes[0], length)
+	arenaStr := unsafe.String(&targetBytes[0], length)
 	return a.headers.Alloc(arenaStr)
 }
 
@@ -69,4 +72,22 @@ func (a *StringArena) Reset() {
 	a.offset = 0
 
 	a.headers.Reset()
+}
+
+func (a *StringArena) reserve(length int) []byte {
+	currBlock := a.elementBlocks[a.activeIdx]
+	if a.offset+length > len(currBlock) {
+		a.activeIdx++
+		a.offset = 0
+		if a.activeIdx < len(a.elementBlocks) {
+			currBlock = a.elementBlocks[a.activeIdx]
+		} else {
+			currBlock = make([]byte, a.blockSize)
+			a.elementBlocks = append(a.elementBlocks, currBlock)
+		}
+	}
+
+	targetBytes := currBlock[a.offset : a.offset+length]
+	a.offset += length
+	return targetBytes
 }

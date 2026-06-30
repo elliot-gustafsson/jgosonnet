@@ -70,8 +70,8 @@ func bopPlus(left, right Value, ctx Context) (Value, error) {
 		if err != nil {
 			return Value{}, err
 		}
-		res := left.String(ctx) + rs
-		return MakeString(res, ctx), nil
+		ls := left.String(ctx)
+		return MakeStringConcat(ls, rs, ctx), nil
 	}
 
 	if right.IsString() {
@@ -79,8 +79,8 @@ func bopPlus(left, right Value, ctx Context) (Value, error) {
 		if err != nil {
 			return Value{}, err
 		}
-		res := ls + right.String(ctx)
-		return MakeString(res, ctx), nil
+		rs := right.String(ctx)
+		return MakeStringConcat(ls, rs, ctx), nil
 	}
 
 	if left.Type() != right.Type() {
@@ -92,8 +92,9 @@ func bopPlus(left, right Value, ctx Context) (Value, error) {
 		return MakeNull(), nil
 
 	case ValueTypeString:
-		val := left.String(ctx) + right.String(ctx)
-		return MakeString(val, ctx), nil
+		ls := left.String(ctx)
+		rs := right.String(ctx)
+		return MakeStringConcat(ls, rs, ctx), nil
 
 	case ValueTypeNumber:
 		val := left.Number() + right.Number()

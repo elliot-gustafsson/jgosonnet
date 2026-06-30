@@ -10,7 +10,8 @@ import (
 )
 
 const (
-	MaxLinearKeys = 16
+	MaxPlanLinearKeys  = 96  // Threshold for compileObjectPlan map fallback
+	MaxLayerLinearKeys = 256 // Threshold for Layer.Index map fallback
 
 	MaskVisibility = 0x03 // Binary 00000011
 	FlagPlusSuper  = 0x04 // Binary 00000100
@@ -422,6 +423,12 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 
 	plans := ctx.Registry.FieldPlanBufs.Alloc(0, maxKeys)
 
+	var planIdxMap map[uint32]int
+	useMap := maxKeys > MaxPlanLinearKeys
+	if useMap {
+		planIdxMap = make(map[uint32]int, maxKeys)
+	}
+
 	var validate bool
 
 	for l := len(layers) - 1; l >= 0; l-- {
@@ -430,10 +437,16 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 		for f, keyID := range layer.Keys {
 
 			pIdx := -1
-			for i := 0; i < len(plans); i++ {
-				if plans[i].KeyId == keyID {
-					pIdx = i
-					break
+			if useMap {
+				if idx, exists := planIdxMap[keyID]; exists {
+					pIdx = idx
+				}
+			} else {
+				for i := 0; i < len(plans); i++ {
+					if plans[i].KeyId == keyID {
+						pIdx = i
+						break
+					}
 				}
 			}
 
@@ -445,6 +458,11 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 					ShadowUntilLayer: math.MaxUint16,
 				})
 				pIdx = len(plans) - 1
+
+				if useMap {
+					planIdxMap[keyID] = pIdx
+				}
+
 			}
 
 			vis, plus, tombstone := EvalFieldMeta(layer.Meta[f])
@@ -802,7 +820,7 @@ func (t *Object) Prune(ctx Context) (Value, error) {
 
 	resObj := NewObject([]*Layer{layer})
 
-	useMap := len(plans) > MaxLinearKeys
+	useMap := len(plans) > MaxLayerLinearKeys
 	if useMap {
 		layer.Index = make(map[uint32]int, len(layer.Keys))
 	}
