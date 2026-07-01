@@ -283,7 +283,7 @@ func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
 		Index: make(map[uint32]int, fieldCount),
 	}
 
-	obj := evaluator.NewObject([]*evaluator.Layer{layer})
+	objId := evaluator.NewObject([]*evaluator.Layer{layer}, ctx)
 
 	index := 0
 	for name, f := range functions {
@@ -311,7 +311,7 @@ func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
 		index++
 	}
 
-	val := evaluator.MakeObject(obj, ctx)
+	val := evaluator.MakeObjectValue(objId)
 
 	return val, nil
 }

@@ -129,7 +129,7 @@ func rawDataToValue(x any, ctx evaluator.Context) (evaluator.Value, error) {
 			Index: make(map[uint32]int, fieldCount),
 		}
 
-		obj := evaluator.NewObject([]*evaluator.Layer{layer})
+		objId := evaluator.NewObject([]*evaluator.Layer{layer}, ctx)
 
 		index := 0
 		for keyName, value := range data {
@@ -148,7 +148,7 @@ func rawDataToValue(x any, ctx evaluator.Context) (evaluator.Value, error) {
 			index++
 		}
 
-		return evaluator.MakeObject(obj, ctx), nil
+		return evaluator.MakeObjectValue(objId), nil
 	default:
 		return evaluator.Value{}, fmt.Errorf("unahandled type %T when converting data to value", x)
 	}

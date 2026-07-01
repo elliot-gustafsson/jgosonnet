@@ -415,8 +415,8 @@ func toValue(v any, ctx evaluator.Context) evaluator.Value {
 			layer.Meta = append(layer.Meta, evaluator.DefaultFieldMeta)
 
 		}
-		obj := evaluator.NewObject([]*evaluator.Layer{layer})
-		return evaluator.MakeObject(obj, ctx)
+		objId := evaluator.NewObject([]*evaluator.Layer{layer}, ctx)
+		return evaluator.MakeObjectValue(objId)
 	default:
 		panic(fmt.Sprintf("unhandled type %T", val))
 	}

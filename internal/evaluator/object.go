@@ -52,10 +52,10 @@ func (l *Layer) findField(key uint32) (layerId int) {
 	return -1
 }
 
-func NewObject(layers []*Layer) Object {
-	return Object{
-		Layers: layers,
-	}
+func NewObject(layers []*Layer, ctx Context) uint32 {
+	o, id := ctx.Registry.Objects.New()
+	o.Layers = layers
+	return id
 }
 
 const (
@@ -332,11 +332,11 @@ func (t *Object) GetLayers(ctx Context) []*Layer {
 	return t.Layers
 }
 
-func MergeObjects(leftId, rightId uint32) Object {
-	return Object{
-		LeftId:  leftId,
-		RightId: rightId,
-	}
+func MergeObjects(leftId, rightId uint32, ctx Context) uint32 {
+	o, id := ctx.Registry.Objects.New()
+	o.LeftId = leftId
+	o.RightId = rightId
+	return id
 }
 
 type FieldPlan struct {
@@ -737,7 +737,7 @@ func GetObjectKeysValues(obj *Object, ctx Context, inclHidden bool) ([]Value, er
 		}
 
 		layer := &Layer{}
-		obj := NewObject([]*Layer{layer})
+		objId := NewObject([]*Layer{layer}, ctx)
 
 		layer.Keys = []uint32{
 			ctx.Interner.Intern("key"),
@@ -750,7 +750,7 @@ func GetObjectKeysValues(obj *Object, ctx Context, inclHidden bool) ([]Value, er
 
 		layer.Meta = []uint8{DefaultFieldMeta, DefaultFieldMeta}
 
-		kv := MakeObject(obj, ctx)
+		kv := MakeObjectValue(objId)
 
 		res = append(res, kv)
 
@@ -795,7 +795,7 @@ func (t *Object) Prune(ctx Context) (Value, error) {
 		Meta: make([]uint8, 0, len(plans)),
 	}
 
-	resObj := NewObject([]*Layer{layer})
+	resObjId := NewObject([]*Layer{layer}, ctx)
 
 	useMap := len(plans) > MaxLayerLinearKeys
 	if useMap {
@@ -838,7 +838,7 @@ func (t *Object) Prune(ctx Context) (Value, error) {
 		index++
 	}
 
-	return MakeObject(resObj, ctx), nil
+	return MakeObjectValue(resObjId), nil
 }
 
 func (a *Object) Equal(b *Object, ctx Context) (bool, error) {

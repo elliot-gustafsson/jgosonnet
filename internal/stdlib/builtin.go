@@ -29,9 +29,9 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 		layers = append(layers, v.Object(ctx).GetLayers(ctx)...)
 	}
 
-	obj := evaluator.NewObject(layers)
+	objId := evaluator.NewObject(layers, ctx)
 
-	return evaluator.MakeObject(obj, ctx), nil
+	return evaluator.MakeObjectValue(objId), nil
 }
 
 func builtin_flatMapArray(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {

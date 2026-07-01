@@ -81,11 +81,11 @@ func CreateFileScope(filename string, baseStd Value, ctx Context) uint32 {
 		Meta:   []uint8{0},
 	}
 
-	fileObj := NewObject([]*Layer{layer})
-	fileObjVal := MakeObject(fileObj, ctx)
+	fileObjId := NewObject([]*Layer{layer}, ctx)
+	fileObjVal := MakeObjectValue(fileObjId)
 
-	mergedObj := MergeObjects(baseStd.RefId(), fileObjVal.RefId())
-	fileStd := MakeObject(mergedObj, ctx)
+	mergedObjId := MergeObjects(baseStd.RefId(), fileObjVal.RefId(), ctx)
+	fileStd := MakeObjectValue(mergedObjId)
 
 	s, scopeId := ctx.NewScope(2, 2)
 	// s := ctx.Registry.Scopes.GetPtr(scopeId)
@@ -400,9 +400,9 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 
 	layers := ctx.Registry.LayerBufs.Alloc(1, 1)
 	layers[0] = layer
-	obj := NewObject(layers)
+	objId := NewObject(layers, ctx)
 
-	return MakeObject(obj, ctx), nil
+	return MakeObjectValue(objId), nil
 }
 
 func handleLocal(node *ast.Local, scopeId uint32, ctx Context) (Value, error) {

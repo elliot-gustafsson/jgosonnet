@@ -154,6 +154,10 @@ func MakeObject(v Object, ctx Context) Value {
 	return Value{t: ValueTypeObject, refId: refId}
 }
 
+func MakeObjectValue(id uint32) Value {
+	return Value{t: ValueTypeObject, refId: id}
+}
+
 func MakeArray(v []Value, ctx Context) Value {
 	refId := ctx.Registry.Arrays.Alloc(v)
 	return Value{t: ValueTypeArray, refId: refId}

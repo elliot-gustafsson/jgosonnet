@@ -230,9 +230,9 @@ func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 		Meta:   make([]uint8, 0, fieldCount),
 	}
 
-	res := evaluator.NewObject([]*evaluator.Layer{layer})
+	resId := evaluator.NewObject([]*evaluator.Layer{layer}, ctx)
 
-	resObjVal := evaluator.MakeObject(res, ctx)
+	resObjVal := evaluator.MakeObjectValue(resId)
 
 	mapCtx := ctx
 	mapCtx.Self = resObjVal
@@ -293,8 +293,8 @@ func std_objectRemoveKey(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 	copy(newLayers, existingLayers)
 	newLayers[newLen-1] = tombstoneLayer
 
-	resObj := evaluator.NewObject(newLayers)
-	return evaluator.MakeObject(resObj, ctx), nil
+	resObjId := evaluator.NewObject(newLayers, ctx)
+	return evaluator.MakeObjectValue(resObjId), nil
 }
 
 func std_mergePatch(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -320,8 +320,8 @@ func std_mergePatch(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	// std.mergePatch({ a: 1 }, { b: 2, c: self.a }) should not work according to go-jsonnet
 	// but with this kinda merge it does... so some solution where the objects are individually evaled is needed
 	if targetVal.IsObject() {
-		combined := evaluator.MergeObjects(targetVal.RefId(), patchVal.RefId())
-		objVal = evaluator.MakeObject(combined, ctx)
+		mergedObjId := evaluator.MergeObjects(targetVal.RefId(), patchVal.RefId(), ctx)
+		objVal = evaluator.MakeObjectValue(mergedObjId)
 	} else {
 		// If target val is not an object, just scrap it and only use the patch object
 		objVal = patchVal
@@ -361,8 +361,8 @@ func std_mergePatch(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 
 	}
 
-	resObj := evaluator.NewObject([]*evaluator.Layer{layer})
+	resObjId := evaluator.NewObject([]*evaluator.Layer{layer}, ctx)
 
-	return evaluator.MakeObject(resObj, ctx), nil
+	return evaluator.MakeObjectValue(resObjId), nil
 
 }
