@@ -247,10 +247,9 @@ func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 		allArgs[idx] = evaluator.NamedValue{Value: evaluator.MakeString(keyString, ctx)}
 		allArgs[idx+1] = evaluator.NamedValue{Value: v}
 
-		n := &evaluator.GoCallbackNode{
-			Func: mapFunc,
-			Args: allArgs[idx : idx+2],
-		}
+		n, _ := ctx.Registry.GoCallbackNodes.New()
+		n.Func = mapFunc
+		n.Args = allArgs[idx : idx+2]
 
 		thunk := evaluator.NewThunk(n, 0, mapCtx)
 

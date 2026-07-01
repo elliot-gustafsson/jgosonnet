@@ -424,8 +424,8 @@ func TestEvaluatorLoop(t *testing.T) {
 	interpreter := jgosonnet.NewEvaluator()
 	interpreter.JPaths([]string{filepath.Join(infraDir, "vendor")})
 
-	// file := filepath.Join(infraDir, "sto3-prod001.jsonnet")
-	file := "../benchmarks/resources/realistic_benchmark2.jsonnet"
+	file := filepath.Join(infraDir, "sto3-prod001.jsonnet")
+	// file := "../benchmarks/resources/realistic_benchmark2.jsonnet"
 
 	_, err = interpreter.Evaluate(file)
 	assert.NoError(t, err)

@@ -28,10 +28,10 @@ var (
 
 func ManifestJson(b *strings.Builder, value Value, ctx Context, config *JsonManifestConfig) error {
 	config.hasNewline = config.Newline != ""
-	return manifestJson(value, ctx, b, "", config)
+	return manifestJson(value, ctx, b, 0, config)
 }
 
-func manifestJson(value Value, ctx Context, b *strings.Builder, cindent string, config *JsonManifestConfig) error {
+func manifestJson(value Value, ctx Context, b *strings.Builder, indentLevel int, config *JsonManifestConfig) error {
 
 	value, err := value.Eval(ctx)
 	if err != nil {
@@ -91,7 +91,7 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, cindent string, 
 				b.WriteByte('[')
 				b.WriteString(config.Newline)
 				b.WriteString(config.Newline)
-				b.WriteString(cindent)
+				writeIndent(b, indentLevel, config.IndentStep)
 				b.WriteByte(']')
 				return nil
 			}
@@ -101,7 +101,10 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, cindent string, 
 		}
 
 		b.WriteByte('[')
-		nextIndent := cindent + config.IndentStep
+		nextIndentLevel := indentLevel
+		if config.IndentStep != "" {
+			nextIndentLevel++
+		}
 
 		b.WriteString(config.Newline)
 
@@ -121,10 +124,10 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, cindent string, 
 			}
 
 			if i != 0 || config.hasNewline {
-				b.WriteString(nextIndent)
+				writeIndent(b, nextIndentLevel, config.IndentStep)
 			}
 
-			err = manifestJson(v, ctx, b, nextIndent, config)
+			err = manifestJson(v, ctx, b, nextIndentLevel, config)
 			if err != nil {
 				return err
 			}
@@ -132,7 +135,7 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, cindent string, 
 		}
 
 		b.WriteString(config.Newline)
-		b.WriteString(cindent)
+		writeIndent(b, indentLevel, config.IndentStep)
 		b.WriteByte(']')
 		return nil
 	case ValueTypeObject:
@@ -148,7 +151,7 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, cindent string, 
 				b.WriteByte('{')
 				b.WriteString(config.Newline)
 				b.WriteString(config.Newline)
-				b.WriteString(cindent)
+				writeIndent(b, indentLevel, config.IndentStep)
 				b.WriteByte('}')
 				return nil
 			}
@@ -158,7 +161,10 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, cindent string, 
 		}
 
 		b.WriteByte('{')
-		nextIndent := cindent + config.IndentStep
+		nextIndentLevel := indentLevel
+		if config.IndentStep != "" {
+			nextIndentLevel++
+		}
 		b.WriteString(config.Newline)
 
 		subCtx := ctx
@@ -180,7 +186,7 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, cindent string, 
 				}
 			}
 
-			b.WriteString(nextIndent)
+			writeIndent(b, nextIndentLevel, config.IndentStep)
 
 			writeJsonString(b, subCtx.Interner.Get(p.KeyId))
 			b.WriteString(config.KeyValSep)
@@ -190,7 +196,7 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, cindent string, 
 				return err
 			}
 
-			err = manifestJson(fieldValue, subCtx, b, nextIndent, config)
+			err = manifestJson(fieldValue, subCtx, b, nextIndentLevel, config)
 			if err != nil {
 				return err
 			}
@@ -199,7 +205,7 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, cindent string, 
 		}
 
 		b.WriteString(config.Newline)
-		b.WriteString(cindent)
+		writeIndent(b, indentLevel, config.IndentStep)
 		b.WriteByte('}')
 
 		return nil
@@ -207,16 +213,24 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, cindent string, 
 
 }
 
-// Borrowed from go-jsonnet
+func writeIndent(b *strings.Builder, indentLevel int, step string) {
+	for range indentLevel {
+		b.WriteString(step)
+	}
+}
+
+// Borrowed from go-jsonnet, optimized to avoid fmt reflection
 func unparseNumber(v float64) string {
 	if v == math.Floor(v) {
-		return fmt.Sprintf("%.0f", v)
+		// return fmt.Sprintf("%.0f", v)
+		return strconv.FormatFloat(v, 'f', 0, 64)
 	}
 
 	// See "What Every Computer Scientist Should Know About Floating-Point Arithmetic"
 	// Theorem 15
 	// http://docs.oracle.com/cd/E19957-01/806-3568/ncg_goldberg.html
-	return fmt.Sprintf("%.17g", v)
+	// return fmt.Sprintf("%.17g", v)
+	return strconv.FormatFloat(v, 'g', 17, 64)
 }
 
 const (
@@ -224,64 +238,57 @@ const (
 )
 
 func writeJsonString(b *strings.Builder, s string) {
-	needsEscape := false
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		if c < 0x20 || c == '"' || c == '\\' {
-			needsEscape = true
-			break
+
+			// Fast path failed, proceed to slow path
+			b.WriteByte('"')
+			b.WriteString(s[:i])
+
+			start := i
+			for ; i < len(s); i++ {
+				c := s[i]
+				if c >= 0x20 && c != '"' && c != '\\' {
+					continue
+				}
+
+				if start < i {
+					b.WriteString(s[start:i])
+				}
+
+				switch c {
+				case '"', '\\':
+					b.WriteByte('\\')
+					b.WriteByte(c)
+				case '\n':
+					b.WriteString(`\n`)
+				case '\r':
+					b.WriteString(`\r`)
+				case '\t':
+					b.WriteString(`\t`)
+				case '\b':
+					b.WriteString(`\b`)
+				case '\f':
+					b.WriteString(`\f`)
+				default:
+					b.WriteString(`\u00`)
+					b.WriteByte(hexChars[c>>4])
+					b.WriteByte(hexChars[c&0xF])
+				}
+				start = i + 1
+			}
+
+			if start < len(s) {
+				b.WriteString(s[start:])
+			}
+			b.WriteByte('"')
+			return
 		}
 	}
 
-	if !needsEscape {
-		// Fast path: Just wrap in double quotes
-		b.WriteByte('"')
-		b.WriteString(s)
-		b.WriteByte('"')
-		return
-	}
-
-	// SLOW PATH: Full Builder Escaping
-	// var b strings.Builder
-	b.Grow(len(s) + 8)
+	// Fast path: No escapes needed. Just wrap in double quotes
 	b.WriteByte('"')
-
-	start := 0
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c >= 0x20 && c != '"' && c != '\\' {
-			continue
-		}
-
-		if start < i {
-			b.WriteString(s[start:i])
-		}
-
-		switch c {
-		case '"', '\\':
-			b.WriteByte('\\')
-			b.WriteByte(c)
-		case '\n':
-			b.WriteString(`\n`)
-		case '\r':
-			b.WriteString(`\r`)
-		case '\t':
-			b.WriteString(`\t`)
-		case '\b':
-			b.WriteString(`\b`)
-		case '\f':
-			b.WriteString(`\f`)
-		default:
-			b.WriteString(`\u00`)
-			b.WriteByte(hexChars[c>>4])
-			b.WriteByte(hexChars[c&0xF])
-		}
-		start = i + 1
-	}
-
-	if start < len(s) {
-		b.WriteString(s[start:])
-	}
+	b.WriteString(s)
 	b.WriteByte('"')
-
 }

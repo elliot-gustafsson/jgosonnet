@@ -13,20 +13,17 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 		return evaluator.Value{}, err
 	}
 
-	// TODO: Think. Either just add layers or put all fields in a single layer. Test this later
 	layers := make([]*evaluator.Layer, 0, len(inputArr))
 	for _, v := range inputArr {
 
-		v, err := v.Eval(ctx)
+		obj, err := v.EvalObject(ctx)
 		if err != nil {
 			return evaluator.Value{}, err
 		}
 
-		if !v.IsObject() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type of builtin_objectFlatMerge arg: %s, expected object", v.Type().String())
+		for _, l := range obj.GetLayers(ctx) {
+			layers = append(layers, l)
 		}
-
-		layers = append(layers, v.Object(ctx).GetLayers(ctx)...)
 	}
 
 	objId := evaluator.NewObject(layers, ctx)
@@ -48,8 +45,9 @@ func builtin_flatMapArray(args []evaluator.NamedValue, ctx evaluator.Context) (e
 
 	mapperFuncInput := []evaluator.NamedValue{{}}
 
-	res := make([]evaluator.Value, 0, len(inputArr))
-	for _, v := range inputArr {
+	subArrays := make([][]evaluator.Value, len(inputArr))
+	totalLen := 0
+	for i, v := range inputArr {
 		mapperFuncInput[0] = evaluator.NamedValue{Value: v}
 		out, err := mapperFunc.Exec(mapperFuncInput, ctx)
 		if err != nil {
@@ -58,7 +56,14 @@ func builtin_flatMapArray(args []evaluator.NamedValue, ctx evaluator.Context) (e
 		if !out.IsArray() {
 			return evaluator.Value{}, fmt.Errorf("unexpected response type of builtin_flatMapArray map func call: %s, expected array", out.Type().String())
 		}
-		res = append(res, out.Array(ctx)...)
+		arr := out.Array(ctx)
+		subArrays[i] = arr
+		totalLen += len(arr)
+	}
+
+	res := make([]evaluator.Value, 0, totalLen)
+	for _, arr := range subArrays {
+		res = append(res, arr...)
 	}
 
 	return evaluator.MakeArray(res, ctx), nil

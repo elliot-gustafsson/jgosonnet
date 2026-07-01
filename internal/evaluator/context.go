@@ -28,7 +28,8 @@ type Registry struct {
 	Scopes *arena.Arena[Scope]
 	Layers *arena.Arena[Layer]
 
-	Nodes *arena.Arena[ast.Node]
+	Nodes           *arena.Arena[ast.Node]
+	GoCallbackNodes *arena.Arena[GoCallbackNode]
 
 	Uint8Bufs      *arena.BufferArena[uint8]
 	Uint32Bufs     *arena.BufferArena[uint32]
@@ -61,7 +62,8 @@ func NewRegistry() *Registry {
 		Scopes: arena.NewArena[Scope](),
 		Layers: arena.NewArena[Layer](),
 
-		Nodes: arena.NewArena[ast.Node](),
+		Nodes:           arena.NewArena[ast.Node](),
+		GoCallbackNodes: arena.NewArena[GoCallbackNode](),
 
 		Uint8Bufs:      arena.NewBufferArena[uint8](bufferArenaBlockSize),
 		Uint32Bufs:     arena.NewBufferArena[uint32](bufferArenaBlockSize),
@@ -85,6 +87,7 @@ func (t *Registry) Reset() {
 	t.Layers.Reset()
 
 	t.Nodes.Reset()
+	t.GoCallbackNodes.Reset()
 
 	t.Uint8Bufs.Reset()
 	t.Uint32Bufs.Reset()
