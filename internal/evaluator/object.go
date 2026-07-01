@@ -18,13 +18,6 @@ const (
 	FlagTombstone  = 0x08 // Binary 00001000
 )
 
-type Field struct {
-	Key        uint32
-	Node       ast.Node
-	Visibility ast.ObjectFieldHide
-	PlusSuper  bool
-}
-
 type Layer struct {
 	Keys   []uint32
 	Nodes  ast.Nodes
@@ -125,18 +118,6 @@ type Object struct {
 	AssertionState uint8
 }
 
-func (t *Field) Hidden() bool {
-	return t.Visibility == ast.ObjectFieldHidden
-}
-
-func (t *Field) Visible() bool {
-	return t.Visibility == ast.ObjectFieldVisible
-}
-
-func (t *Field) Inherit() bool {
-	return t.Visibility == ast.ObjectFieldInherit
-}
-
 func (t *Object) GetField(key uint32, ctx Context) (Value, bool, error) {
 	return t.getField(key, ctx, 0)
 }
@@ -151,16 +132,16 @@ func (t *Object) GetFieldWithOffset(key uint32, ctx Context, offset int) (Value,
 
 func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visible bool, err error) {
 
-	err = runAssertions(t, ctx)
-	if err != nil {
-		return Value{}, false, err
-	}
-
 	if offset == 0 {
 		cached, ok := t.Cache.Get(key)
 		if ok {
 			return cached.Value, cached.Visible, nil
 		}
+	}
+
+	err = runAssertions(t, ctx)
+	if err != nil {
+		return Value{}, false, err
 	}
 
 	currentVisibility := ast.ObjectFieldInherit
@@ -260,23 +241,17 @@ func (t *Object) getScope(layerIndex int, layer *Layer, ctx Context) (uint32, er
 	}
 
 	scopeId := t.Scopes[layerIndex]
-	if scopeId == 0 {
-		sid, err := createScope(layer, ctx)
-		if err != nil {
-			return 0, err
-		}
-		t.Scopes[layerIndex] = sid
-		scopeId = sid
+	if scopeId != 0 {
+		return scopeId, nil
 	}
 
-	return scopeId, nil
-}
+	// no locals no need to create another scope
+	if len(layer.LocalKeys) == 0 {
+		t.Scopes[layerIndex] = layer.ParentScopeId
+		return layer.ParentScopeId, nil
+	}
 
-func createScope(layer *Layer, ctx Context) (uint32, error) {
-
-	scopeId := ctx.NewScope(layer.ParentScopeId, len(layer.LocalKeys))
-
-	s := ctx.Registry.Scopes.GetPtr(scopeId)
+	s, scopeId := ctx.NewScope(layer.ParentScopeId, len(layer.LocalKeys))
 
 	for i := range layer.LocalKeys {
 		node := layer.LocalNodes[i]
@@ -288,6 +263,8 @@ func createScope(layer *Layer, ctx Context) (uint32, error) {
 
 		s.Bindings[i] = NamedValue{layer.LocalKeys[i], val}
 	}
+
+	t.Scopes[layerIndex] = scopeId
 
 	return scopeId, nil
 }
@@ -322,7 +299,7 @@ func (t *Object) Length(ctx Context) int {
 	return length
 }
 
-func (t Object) appendLayers(dest []*Layer, ctx Context) []*Layer {
+func (t *Object) appendLayers(dest []*Layer, ctx Context) []*Layer {
 	if t.Layers != nil {
 		return append(dest, t.Layers...)
 	}

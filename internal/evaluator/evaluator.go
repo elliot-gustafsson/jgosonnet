@@ -87,8 +87,8 @@ func CreateFileScope(filename string, baseStd Value, ctx Context) uint32 {
 	mergedObj := MergeObjects(baseStd.RefId(), fileObjVal.RefId())
 	fileStd := MakeObject(mergedObj, ctx)
 
-	scopeId := ctx.NewScope(2, 2)
-	s := ctx.Registry.Scopes.GetPtr(scopeId)
+	s, scopeId := ctx.NewScope(2, 2)
+	// s := ctx.Registry.Scopes.GetPtr(scopeId)
 
 	s.Bindings[0] = NamedValue{Key: ctx.Interner.Intern("$std"), Value: fileStd}
 	s.Bindings[1] = NamedValue{Key: ctx.Interner.Intern("std"), Value: fileStd}
@@ -407,9 +407,7 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 
 func handleLocal(node *ast.Local, scopeId uint32, ctx Context) (Value, error) {
 
-	childScopeId := ctx.NewScope(scopeId, len(node.Binds))
-
-	s := ctx.Registry.Scopes.GetPtr(childScopeId)
+	s, childScopeId := ctx.NewScope(scopeId, len(node.Binds))
 
 	for i, v := range node.Binds {
 		vname := string(v.Variable)
@@ -506,8 +504,11 @@ func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, err
 			return Value{}, fmt.Errorf("unexpected amount of args passed to function")
 		}
 
-		childScopeId := ctx.NewScope(scopeId, paramCount)
-		s := ctx.Registry.Scopes.GetPtr(childScopeId)
+		if paramCount == 0 {
+			return EvaluateNode(node.Body, scopeId, ctx)
+		}
+
+		s, childScopeId := ctx.NewScope(scopeId, paramCount)
 
 		posIndex := 0
 		for i := range paramCount {
@@ -547,12 +548,7 @@ func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, err
 			s.Bindings[i] = NamedValue{keyId, da}
 		}
 
-		val, err := EvaluateNode(node.Body, childScopeId, ctx)
-		if err != nil {
-			return Value{}, err
-		}
-
-		return val, nil
+		return EvaluateNode(node.Body, childScopeId, ctx)
 	}
 
 	f := Function{

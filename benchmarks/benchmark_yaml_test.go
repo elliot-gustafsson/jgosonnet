@@ -7,98 +7,98 @@ import (
 	"github.com/elliot-gustafsson/jgosonnet"
 )
 
-func BenchmarkLargeStringJoin(b *testing.B) {
+func BenchmarkLargeStringJoinYaml(b *testing.B) {
 	file := filepath.Join("resources", "large_string_join.jsonnet")
 
 	b.ResetTimer()
 
 	for b.Loop() {
 		ev := jgosonnet.NewEvaluator()
-		_, err := ev.EvaluateJson(file)
+		_, err := ev.EvaluateYaml(file)
 		if err != nil {
 			b.Fatal(err.Error())
 		}
 	}
 }
 
-func BenchmarkLargeStringTemplate(b *testing.B) {
+func BenchmarkLargeStringTemplateYaml(b *testing.B) {
 	file := filepath.Join("resources", "large_string_template.jsonnet")
 
 	b.ResetTimer()
 
 	for b.Loop() {
 		ev := jgosonnet.NewEvaluator()
-		_, err := ev.EvaluateJson(file)
+		_, err := ev.EvaluateYaml(file)
 		if err != nil {
 			b.Fatal(err.Error())
 		}
 	}
 }
 
-func BenchmarkRealisticBenchmark1(b *testing.B) {
+func BenchmarkRealisticBenchmark1Yaml(b *testing.B) {
 	file := filepath.Join("resources", "realistic_benchmark1.jsonnet")
 
 	b.ResetTimer()
 
 	for b.Loop() {
 		ev := jgosonnet.NewEvaluator()
-		_, err := ev.EvaluateJson(file)
+		_, err := ev.EvaluateYaml(file)
 		if err != nil {
 			b.Fatal(err.Error())
 		}
 	}
 }
 
-func BenchmarkRealisticBenchmark2(b *testing.B) {
+func BenchmarkRealisticBenchmark2Yaml(b *testing.B) {
 	file := filepath.Join("resources", "realistic_benchmark2.jsonnet")
 
 	b.ResetTimer()
 
 	for b.Loop() {
 		ev := jgosonnet.NewEvaluator()
-		_, err := ev.EvaluateJson(file)
+		_, err := ev.EvaluateYaml(file)
 		if err != nil {
 			b.Fatal(err.Error())
 		}
 	}
 }
 
-func BenchmarkTailCall(b *testing.B) {
+func BenchmarkTailCallYaml(b *testing.B) {
 	file := filepath.Join("resources", "tail_call.jsonnet")
 
 	b.ResetTimer()
 
 	for b.Loop() {
 		ev := jgosonnet.NewEvaluator()
-		_, err := ev.EvaluateJson(file)
+		_, err := ev.EvaluateYaml(file)
 		if err != nil {
 			b.Fatal(err.Error())
 		}
 	}
 }
 
-func BenchmarkInheritenceRecursion(b *testing.B) {
+func BenchmarkInheritenceRecursionYaml(b *testing.B) {
 	file := filepath.Join("resources", "inheritence_recursion.jsonnet")
 
 	b.ResetTimer()
 
 	for b.Loop() {
 		ev := jgosonnet.NewEvaluator()
-		_, err := ev.EvaluateJson(file)
+		_, err := ev.EvaluateYaml(file)
 		if err != nil {
 			b.Fatal(err.Error())
 		}
 	}
 }
 
-func BenchmarkComparisonsPrimitives(b *testing.B) {
+func BenchmarkComparisonsPrimitivesYaml(b *testing.B) {
 	file := filepath.Join("resources", "comparisons_primitives.jsonnet")
 
 	b.ResetTimer()
 
 	for b.Loop() {
 		ev := jgosonnet.NewEvaluator()
-		_, err := ev.EvaluateJson(file)
+		_, err := ev.EvaluateYaml(file)
 		if err != nil {
 			b.Fatal(err.Error())
 		}

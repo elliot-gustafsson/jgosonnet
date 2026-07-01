@@ -96,22 +96,15 @@ func (t *Registry) Reset() {
 	t.FieldPlanBufs.Reset()
 }
 
-func (c Context) NewScope(parentId uint32, length int) uint32 {
+func (c Context) NewScope(parentId uint32, length int) (*Scope, uint32) {
 
-	s := Scope{
-		ParentId: parentId,
-		Bindings: c.Registry.NamedValueBufs.Alloc(length, length),
-	}
+	s, id := c.Registry.Scopes.New()
 
-	id := c.Registry.Scopes.Alloc(s)
+	s.ParentId = parentId
+	s.Bindings = c.Registry.NamedValueBufs.Alloc(length, length)
 
-	return id
+	return s, id
 }
-
-// func (c Context) AddScopeBind(scopeId uint32, val NamedValue) {
-// 	s := c.Registry.Scopes.GetPtr(scopeId)
-// 	s.Bindings = append(s.Bindings, val)
-// }
 
 func (c Context) GetScopeBind(scopeId, key uint32) (Value, bool) {
 	currId := scopeId
@@ -181,6 +174,4 @@ type Environment struct {
 	ExtVars         map[string]string
 	ExtCodes        map[string]string
 	NativeFunctions map[string]Function
-
-	Location *ast.LocationRange
 }

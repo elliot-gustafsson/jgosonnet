@@ -20,18 +20,18 @@ type JsonManifestConfig struct {
 
 // Pre-defined configurations matching Jsonnet's standard library.
 var (
-	JsonConfigPretty   = JsonManifestConfig{IndentStep: "    ", Newline: "\n", KeyValSep: ": ", SpaceComma: false, StrictFloat: true}
-	JsonConfigMinified = JsonManifestConfig{IndentStep: "", Newline: "", KeyValSep: ":", SpaceComma: false, StrictFloat: true}
-	JsonConfigToString = JsonManifestConfig{IndentStep: "", Newline: "", KeyValSep: ": ", SpaceComma: true}
-	JsonConfigPython   = JsonManifestConfig{IndentStep: "", Newline: "", KeyValSep: ": ", SpaceComma: true, Python: true}
+	JsonConfigPretty   = &JsonManifestConfig{IndentStep: "    ", Newline: "\n", KeyValSep: ": ", SpaceComma: false, StrictFloat: true}
+	JsonConfigMinified = &JsonManifestConfig{IndentStep: "", Newline: "", KeyValSep: ":", SpaceComma: false, StrictFloat: true}
+	JsonConfigToString = &JsonManifestConfig{IndentStep: "", Newline: "", KeyValSep: ": ", SpaceComma: true}
+	JsonConfigPython   = &JsonManifestConfig{IndentStep: "", Newline: "", KeyValSep: ": ", SpaceComma: true, Python: true}
 )
 
-func ManifestJson(b *strings.Builder, value Value, ctx Context, config JsonManifestConfig) error {
+func ManifestJson(b *strings.Builder, value Value, ctx Context, config *JsonManifestConfig) error {
 	config.hasNewline = config.Newline != ""
 	return manifestJson(value, ctx, b, "", config)
 }
 
-func manifestJson(value Value, ctx Context, b *strings.Builder, cindent string, config JsonManifestConfig) error {
+func manifestJson(value Value, ctx Context, b *strings.Builder, cindent string, config *JsonManifestConfig) error {
 
 	value, err := value.Eval(ctx)
 	if err != nil {

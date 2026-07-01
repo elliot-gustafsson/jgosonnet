@@ -82,7 +82,7 @@ func (t *Evaluator) EvaluateJson(file string) (string, error) {
 	var b strings.Builder
 	b.Grow(1024 * 1024)
 
-	c := evaluator.JsonManifestConfig{
+	c := &evaluator.JsonManifestConfig{
 		IndentStep: "   ",
 		Newline:    "\n",
 		KeyValSep:  ": ",
@@ -118,7 +118,7 @@ func (t *Evaluator) EvaluateJsonMulti(file string) (map[string]string, error) {
 		return nil, wrapManifestationErr(err)
 	}
 
-	c := evaluator.JsonManifestConfig{
+	c := &evaluator.JsonManifestConfig{
 		IndentStep: "   ",
 		Newline:    "\n",
 		KeyValSep:  ": ",

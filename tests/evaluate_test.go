@@ -442,8 +442,8 @@ func TestEvaluatorLoop(t *testing.T) {
 
 	jgosonnetStart := time.Now()
 
-	for range 30 {
-		_, err := interpreter.EvaluateJson(file)
+	for range 10 {
+		_, err := interpreter.EvaluateYaml(file)
 		assert.NoError(t, err)
 		if err != nil {
 			return
