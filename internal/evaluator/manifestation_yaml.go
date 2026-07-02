@@ -15,15 +15,14 @@ type YamlManifestConfig struct {
 	NaturalSort          bool
 	FormatIntegers       bool
 	UseBlockScalars      bool
+	Modern               bool
 }
-
-// TODO: Make two distinct paths for legacy jsonnet compliant yaml and yaml.v3 like yaml
 
 func ManifestYaml(b *strings.Builder, value Value, ctx Context, config YamlManifestConfig) error {
-	return manifestYaml(value, ctx, b, "", config)
+	return manifestYaml(value, ctx, b, 0, config)
 }
 
-func manifestYaml(value Value, ctx Context, buf *strings.Builder, cindent string, config YamlManifestConfig) error {
+func manifestYaml(value Value, ctx Context, buf *strings.Builder, indentLevel int, config YamlManifestConfig) error {
 	value, err := value.Eval(ctx)
 	if err != nil {
 		return err
@@ -35,7 +34,7 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, cindent string
 	case ValueTypeNumber:
 		data := value.Number()
 		if config.FormatIntegers && data == math.Floor(data) {
-			fmt.Fprintf(buf, "%.0f", data)
+			buf.WriteString(strconv.FormatFloat(data, 'f', 0, 64))
 			return nil
 		}
 		buf.WriteString(strconv.FormatFloat(data, 'f', -1, 64))
@@ -53,58 +52,97 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, cindent string
 		return nil
 	case ValueTypeString:
 		data := value.String(ctx)
-		if data == "" {
+
+		n := len(data)
+		if n == 0 {
 			buf.WriteString(`""`)
 			return nil
 		}
 
 		var multiline bool
+		lastByte := data[n-1]
+
 		if config.UseBlockScalars {
-			multiline = strings.Contains(data, "\n") && !strings.HasSuffix(data, " ")
+			// Check if the string contains newlines to determine if it can be a block scalar.
+			// Since YAML block scalars do not safely preserve trailing whitespace on lines,
+			// we must safely fall back to a quoted single-line string if any line ends with a space or tab.
+			for i := 0; i < n; i++ {
+				if data[i] != '\n' {
+					continue
+				}
+
+				multiline = true
+				if i > 0 && (data[i-1] == ' ' || data[i-1] == '\t') {
+					multiline = false
+					break
+				}
+			}
+			if multiline && (lastByte == ' ' || lastByte == '\t') {
+				multiline = false
+			}
+
 		} else {
-			multiline = strings.HasSuffix(data, "\n")
+			multiline = lastByte == '\n'
 		}
 
 		if !multiline {
 			if config.QuoteValues {
-				writeYamlString(buf, data, true, false)
+				writeYamlString(buf, data, true, false, config.Modern)
 				return nil
 			}
 
-			writeYamlString(buf, data, false, true)
+			writeYamlString(buf, data, false, true, config.Modern)
 			return nil
 		}
 
-		// if multiline {
-
 		buf.WriteByte('|')
 		if config.UseBlockScalars {
-			if data[0] == ' ' || /* data[0] == '\t' || */ data[0] == '\n' {
-				buf.WriteString(strconv.Itoa(len(yamlIndent)))
+			firstByte := data[0]
+			if firstByte == ' ' || /* data[0] == '\t' || */ firstByte == '\n' {
+				buf.WriteString(yamlIndentNumber)
 			}
 
-			if !strings.HasSuffix(data, "\n") {
+			if lastByte != '\n' {
 				buf.WriteByte('-')
-			} else if strings.HasSuffix(data, "\n\n") || data == "\n" {
+			} else if n >= 2 && data[n-2] == '\n' || n == 1 {
 				buf.WriteByte('+')
-				// if data == "\n" {
-				// 	return nil
-				// }
 			}
-			data = strings.TrimPrefix(data, "\n")
-			if data == "" {
-				return nil
+
+			if firstByte == '\n' {
+				data = data[1:] // prefix trim
+				n--             // update length
+				if n == 0 {
+					return nil
+				}
 			}
 		}
 
-		for line := range strings.SplitSeq(strings.TrimSuffix(data, "\n"), "\n") {
+		start := 0
+		end := n
+		if end > 0 && data[end-1] == '\n' {
+			end--
+		}
+
+		// read data up to newlines, print newline then print line if not empty
+		for start <= end {
+			idx := strings.IndexByte(data[start:end], '\n')
+
+			var line string
+			if idx == -1 {
+				line = data[start:end]
+				start = end + 1 // Break next loop
+			} else {
+				line = data[start : start+idx]
+				start += idx + 1
+			}
+
 			buf.WriteByte('\n')
 			if line != "" || !config.UseBlockScalars {
-				buf.WriteString(cindent)
-				buf.WriteString(yamlIndent)
+				writeYamlIndent(buf, indentLevel+1)
 				buf.WriteString(line)
 			}
 		}
+
 		return nil
 	case ValueTypeArray:
 		data := value.Array(ctx)
@@ -120,29 +158,27 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, cindent string
 
 			if i != 0 {
 				buf.WriteByte('\n')
-				buf.WriteString(cindent)
+				writeYamlIndent(buf, indentLevel)
 			}
 			buf.WriteByte('-')
 
 			if v.IsArray() && len(v.Array(ctx)) > 0 {
 				buf.WriteByte('\n')
-				buf.WriteString(cindent)
-				buf.WriteString(yamlIndent)
+				writeYamlIndent(buf, indentLevel+1)
 			} else {
 				buf.WriteByte(' ')
 			}
 
-			prevIndent := cindent
+			nextIndentLevel := indentLevel
 			switch v.Type() {
 			case ValueTypeArray, ValueTypeObject:
-				cindent = cindent + yamlIndent
+				nextIndentLevel++
 			}
 
-			err = manifestYaml(v, ctx, buf, cindent, config)
+			err = manifestYaml(v, ctx, buf, nextIndentLevel, config)
 			if err != nil {
 				return err
 			}
-			cindent = prevIndent
 		}
 		return nil
 	case ValueTypeObject:
@@ -163,40 +199,44 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, cindent string
 			}
 			if hasWritten {
 				buf.WriteByte('\n')
-				buf.WriteString(cindent)
+				writeYamlIndent(buf, indentLevel)
 			}
 
 			keyStr := ctx.Interner.Get(p.KeyId)
-			if config.QuoteKeys || !yamlBareSafe(keyStr) {
-				// buf.WriteByte('"')
-				writeYamlString(buf, keyStr, true, false)
-				// buf.WriteByte('"')
-			} else {
-				buf.WriteString(keyStr)
-			}
+			writeYamlString(buf, keyStr, config.QuoteKeys, config.Modern, config.Modern)
+
 			buf.WriteByte(':')
-			prevIndent := cindent
 
 			fieldValue, err := p.GetValue(obj, subCtx)
 			if err != nil {
 				return err
 			}
 
+			nextIndentLevel := indentLevel
+
 			if fieldValue.IsArray() && len(fieldValue.Array(subCtx)) > 0 {
 				buf.WriteByte('\n')
-				buf.WriteString(cindent)
+				writeYamlIndent(buf, indentLevel)
 				if config.IndentArrayInObjects {
-					buf.WriteString(yamlIndent)
-					cindent = cindent + yamlIndent
+					writeYamlIndent(buf, 1)
+					nextIndentLevel++
 				}
 
 			} else if fieldValue.IsObject() {
-				// TODO: Write object isEmpty && isEmptyAll
-				if len(GetObjectFields(fieldValue.Object(subCtx), subCtx, false)) > 0 {
+				hasFields := false
+
+				plans := compileObjectPlan(fieldValue.Object(subCtx), subCtx)
+				for i := range plans {
+					if !plans[i].IsHidden() {
+						hasFields = true
+						break
+					}
+				}
+
+				if hasFields {
 					buf.WriteByte('\n')
-					buf.WriteString(cindent)
-					buf.WriteString(yamlIndent)
-					cindent = cindent + yamlIndent
+					writeYamlIndent(buf, indentLevel+1)
+					nextIndentLevel++
 				} else {
 					buf.WriteByte(' ')
 				}
@@ -204,12 +244,11 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, cindent string
 				buf.WriteByte(' ')
 			}
 
-			err = manifestYaml(fieldValue, subCtx, buf, cindent, config)
+			err = manifestYaml(fieldValue, subCtx, buf, nextIndentLevel, config)
 			if err != nil {
 				return err
 			}
 			hasWritten = true
-			cindent = prevIndent
 		}
 
 		return nil
@@ -217,8 +256,32 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, cindent string
 }
 
 const (
-	yamlIndent = "  " // TODO: make configurable?
+	yamlIndentSpaces = 2
 )
+
+var (
+	yamlIndentNumber = strconv.Itoa(yamlIndentSpaces)
+)
+
+func writeYamlIndent(b *strings.Builder, indentLevel int) {
+	// 64 spaces
+	const maxIndentString = "                                                                "
+
+	totalSpaces := indentLevel * yamlIndentSpaces
+
+	for totalSpaces > 0 {
+		// If the remaining spaces fit in our pre-allocated string,
+		// slice it, write it, and we are done!
+		if totalSpaces <= len(maxIndentString) {
+			b.WriteString(maxIndentString[:totalSpaces])
+			break
+		}
+
+		// Otherwise, write the max chunk of 64 spaces and subtract it
+		b.WriteString(maxIndentString)
+		totalSpaces -= len(maxIndentString)
+	}
+}
 
 func yamlReserved(s string) bool {
 	switch s {
@@ -245,137 +308,26 @@ func yamlReserved(s string) bool {
 	return false
 }
 
-func yamlBareSafe(s string) bool {
+func writeYamlString(b *strings.Builder, s string, forceQuotes, preferSingleQuotes, modern bool) {
 	if len(s) == 0 {
-		return false
-	}
-
-	if yamlReserved(s) {
-		return false
-	}
-
-	hasAlpha := false
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		isAlpha := (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
-		isDigit := c >= '0' && c <= '9'
-
-		if isAlpha {
-			hasAlpha = true
+		if preferSingleQuotes {
+			b.WriteString("''")
+		} else {
+			b.WriteString(`""`)
 		}
-
-		if !isAlpha && !isDigit && c != '_' && c != '-' && c != '/' && c != '.' /*&& c != ':'*/ {
-			return false
-		}
+		return
 	}
 
-	if hasAlpha {
-		// if s[0] == '0' && len(s) > 1 && (s[1] == 'x' || s[1] == 'X') {
-		// 	return false
-		// }
-
-		offset := 0
-		if s[0] == '-' || s[0] == '+' {
-			offset = 1
-		}
-		if len(s) > offset+1 && s[offset] == '0' && (s[offset+1] == 'x' || s[offset+1] == 'b') {
-			return false
-		}
-
-		if _, err := strconv.ParseFloat(s, 64); err == nil {
-			return false
-		}
-		return true
-	}
-
-	if _, err := strconv.ParseFloat(s, 64); err == nil {
-		return false
-	}
-
-	// for i := 0; i < len(s); i++ {
-	// 	if s[i] == '-' {
-	// 		return false
-	// 	}
-	// }
-
-	// Catch dates (e.g. 2001-12-14) but allow phone numbers (1-234-567-8901)
-	hyphens := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '-' {
-			hyphens++
-		}
-	}
-	if hyphens == 2 {
-		return false
-	}
-
-	return true
-}
-
-func isYamlNumber(s string) bool {
-	if len(s) == 0 {
-		return false
-	}
-
-	c1 := s[0]
-	if (c1 < '0' || c1 > '9') && c1 != '+' && c1 != '-' && c1 != '.' {
-		return false
-	}
-
-	// TODO: have this configurable? Maybe with config.Modern or smt
-	// Catch ex 0X1 (hex), 0O1 (octal), 0B1 (binary) incl leading (+/-)
-	// These are all valid to the strconv.ParseInt func, jsonnet only regards is as a number if the base specifier is lowercase
-	// offset := 0
-	// if s[0] == '-' || s[0] == '+' {
-	// 	offset = 1
-	// }
-	// if s[offset] == '0' && (s[offset+1] == 'X' || s[offset+1] == 'B' || s[offset+1] == 'O') {
-	// 	return false
-	// }
-
-	if _, err := strconv.ParseInt(s, 0, 64); err == nil {
-		return true
-	}
-
-	if n, err := strconv.ParseFloat(s, 64); err == nil {
-		if math.IsInf(n, 0) || math.IsNaN(n) {
-			// Note NaN and Inf are valid yaml strings even if they are interpreted as numbers by go
-			return false
-		}
-		return true
-	}
-
-	return false
-}
-
-func writeYamlString(b *strings.Builder, s string, forceQuotes, preferSingleQuotes bool) {
 	needsQuotes := forceQuotes
 	useSingle := preferSingleQuotes
 
-	// Look for control chars
-	for _, c := range s {
-		if c < 0x20 {
-			needsQuotes = true
-			useSingle = false
-			break
-		}
-	}
-
+	// prefix and suffix checks
 	if !needsQuotes {
-		if len(s) == 0 {
-			needsQuotes = true
-		} else if yamlReserved(s) {
-			needsQuotes = true
-			useSingle = false
-		} else if isYamlNumber(s) {
-			needsQuotes = true
-			useSingle = false
-		} else if unicode.IsSpace(rune(s[0])) || unicode.IsSpace(rune(s[len(s)-1])) {
-			// If leading or trailing whitespace
+
+		if unicode.IsSpace(rune(s[0])) || unicode.IsSpace(rune(s[len(s)-1])) {
 			needsQuotes = true
 		} else {
-
-			// check for structural indicators at the start
+			// structural indicators at the start
 			switch s[0] {
 			case '[', ']', '{', '}', ',', '#', '&', '*', '!', '|', '>', '\'', '"', '%', '@', '`':
 				needsQuotes = true
@@ -384,12 +336,60 @@ func writeYamlString(b *strings.Builder, s string, forceQuotes, preferSingleQuot
 					needsQuotes = true
 				}
 			}
+		}
 
-			if !needsQuotes {
-				if strings.Contains(s, ": ") || strings.Contains(s, ":\n") || strings.Contains(s, " #") || strings.HasSuffix(s, ":") {
+		if !needsQuotes {
+
+			if yamlReserved(s) || isYamlNumber(s) || isYamlTimestamp(s) {
+				b.WriteByte('"')
+				b.WriteString(s)
+				b.WriteByte('"')
+				return
+			}
+		}
+	}
+
+	hasSingleQuote := false
+	for i := 0; i < len(s); i++ {
+		if needsQuotes && !useSingle {
+			break
+		}
+
+		c := s[i]
+
+		// force quotes on control chars
+		if c < 0x20 || c == 0x7F {
+			useSingle = false
+			needsQuotes = true
+			break
+		}
+
+		if c == '\'' {
+			hasSingleQuote = true
+		}
+
+		// look for internal structural markers (": ", ":\n", trailing ":", " #")
+		if !needsQuotes {
+
+			if modern {
+				if c == ':' {
+					if i == len(s)-1 || s[i+1] == ' ' || s[i+1] == '\n' {
+						needsQuotes = true
+					}
+				} else if c == ' ' && i+1 < len(s) && s[i+1] == '#' {
 					needsQuotes = true
 				}
+			} else {
+
+				isAlpha := (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+				isDigit := c >= '0' && c <= '9'
+				if !isAlpha && !isDigit && c != '_' && c != '-' && c != '/' && c != '.' {
+					needsQuotes = true
+					useSingle = false
+					break
+				}
 			}
+
 		}
 	}
 
@@ -398,27 +398,174 @@ func writeYamlString(b *strings.Builder, s string, forceQuotes, preferSingleQuot
 		return
 	}
 
-	// apply quotes
-	if useSingle {
-
-		b.WriteByte('\'')
-		remaining := s
-		for {
-			idx := strings.IndexByte(remaining, '\'')
-			if idx == -1 {
-				// no more quotes found, write the rest of the string
-				b.WriteString(remaining)
-				break
-			}
-			b.WriteString(remaining[:idx])
-			b.WriteString("''")
-			remaining = remaining[idx+1:]
-		}
-		b.WriteByte('\'')
-
+	if !useSingle {
+		writeJsonString(b, s)
 		return
 	}
 
-	// fallback to json logic for double quotes
-	writeJsonString(b, s)
+	if !hasSingleQuote {
+		b.WriteByte('\'')
+		b.WriteString(s)
+		b.WriteByte('\'')
+		return
+	}
+
+	// escape single quotes
+	b.WriteByte('\'')
+	remaining := s
+	for {
+		idx := strings.IndexByte(remaining, '\'')
+		if idx == -1 {
+			// No more quotes found, write the rest of the string
+			b.WriteString(remaining)
+			break
+		}
+		b.WriteString(remaining[:idx])
+		b.WriteString("''")
+		remaining = remaining[idx+1:]
+	}
+	b.WriteByte('\'')
+}
+
+func isYamlNumber(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+
+	first := s[0]
+	if first != '+' && first != '-' && first != '.' && (first < '0' || first > '9') {
+		return false
+	}
+
+	i := 0
+	if s[i] == '+' || s[i] == '-' {
+		i++
+	}
+
+	// binary, hex, octal checks
+	if i+2 < len(s) && s[i] == '0' {
+		base := s[i+1]
+		if base == 'b' || base == 'x' || base == 'o' {
+			return checkBaseFormat(s, i+2, base)
+		}
+	}
+
+	hasDot, hasE, hasColon, hasDigit := false, false, false, false
+	digitsSinceColon, colonValue := 0, 0
+
+	for j := i; j < len(s); j++ {
+		c := s[j]
+		if c >= '0' && c <= '9' {
+			hasDigit = true
+
+			// validate base-60 number
+			if hasColon && !hasDot {
+				digitsSinceColon++
+				if digitsSinceColon > 2 {
+					return false
+				}
+				if digitsSinceColon == 1 {
+					colonValue = int(c - '0')
+				} else {
+					colonValue = colonValue*10 + int(c-'0')
+				}
+				if colonValue >= 60 {
+					return false
+				}
+			}
+		} else if c == '_' {
+			// underscores are treated as spacers
+			continue
+		} else if c == '.' {
+			if hasDot || hasE {
+				// only a single dot can be present in a valid number. scientific notation numbers cannot have a dot.
+				return false
+			}
+			hasDot = true
+		} else if c == 'e' || c == 'E' {
+			// scientific notation numbers cannot have multiple e's or contain colon
+			// e's must come after a digit
+			if hasE || !hasDigit || hasColon {
+				return false
+			}
+			hasE = true
+			if j+1 < len(s) && (s[j+1] == '+' || s[j+1] == '-') {
+				j++
+			}
+			hasDigit = false // force the exponent to have trailing digits
+		} else if c == ':' {
+			// base 60 numbers must have digits before colon, cannot contains anything but colons and numbers
+			if !hasDigit || hasDot || hasE {
+				return false
+			}
+			hasColon = true
+			hasDigit = false // force digits after colon
+			digitsSinceColon = 0
+			colonValue = 0
+		} else {
+			return false
+		}
+	}
+
+	return hasDigit
+}
+
+func checkBaseFormat(s string, start int, base byte) bool {
+	seenDigit := false
+	for j := start; j < len(s); j++ {
+		c := s[j]
+		if c == '_' {
+			continue
+		}
+
+		isValid := false
+		switch base {
+		case 'b':
+			isValid = (c == '0' || c == '1')
+		case 'x':
+			isValid = isHex(c)
+		case 'o':
+			isValid = (c >= '0' && c <= '7')
+		}
+
+		if !isValid {
+			return false
+		}
+		seenDigit = true
+	}
+	return seenDigit
+}
+
+func isHex(c byte) bool {
+	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+}
+
+func isYamlTimestamp(s string) bool {
+	if len(s) < 10 {
+		return false
+	}
+
+	if s[4] != '-' || s[7] != '-' {
+		return false
+	}
+
+	for i := range 10 {
+		if i == 4 || i == 7 {
+			continue
+		}
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+
+	if len(s) == 10 {
+		return true
+	}
+
+	c := s[10]
+	if c == 'T' || c == 't' || c == ' ' {
+		return true
+	}
+
+	return false
 }
