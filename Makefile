@@ -24,8 +24,10 @@ test-coverage:
 
 benchmark:
 	mkdir -p benchmarks/out
-	cd benchmarks && go test -benchmem -bench=. -cpuprofile=out/cpu.prof -memprofile=out/mem.prof -o=out/benchmarks.test -count=5 -v
+	cd benchmarks && go test benchmark_test.go -benchmem -bench=. -cpuprofile=out/cpu.prof -memprofile=out/mem.prof -o=out/benchmarks.test -count=5 -v
 
+benchmark-compare:
+	cd benchmarks && go test benchmark_binaries_test.go -bench=. -benchtime=5x -count=3 -v
 
 benchmark-prof-cpu:
 	go tool pprof -http=:8080 benchmarks/out/cpu.prof

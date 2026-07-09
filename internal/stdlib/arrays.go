@@ -70,19 +70,14 @@ func std_join(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 	if err != nil {
 		return evaluator.Value{}, err
 	}
-	arr, err := args[1].Eval(ctx)
+	inputArray, err := args[1].EvalArray(ctx)
 	if err != nil {
 		return evaluator.Value{}, err
 	}
 
-	inputArray := arr.Array(ctx)
 	inputLen := len(inputArray)
 
 	if sep.IsString() {
-
-		if !arr.IsArray() {
-			return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeArray, arr.Type())
-		}
 
 		totalLen := 0
 		validCount := 0
