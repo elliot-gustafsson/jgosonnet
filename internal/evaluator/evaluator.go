@@ -57,8 +57,8 @@ func ManifestValue(value Value, ctx Context) (any, error) {
 			res = append(res, ev)
 		}
 		return res, nil
-	case ValueTypeFunction:
-		res, err := value.Function(ctx).Exec(nil, ctx)
+	case ValueTypeNativeFunction:
+		res, err := value.NativeFunction(ctx).Exec(nil, ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -159,8 +159,8 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 			return ValueNone, err
 		}
 
-		if !val.IsFunction() {
-			return ValueNone, TypeErrorSpecific(ValueTypeFunction, val.Type())
+		if !val.IsNativeFunction() {
+			return ValueNone, TypeErrorSpecific(ValueTypeNativeFunction, val.Type())
 		}
 
 		args := ctx.State.Registry.NamedValueBufs.Alloc(0, len(node.Arguments.Positional)+len(node.Arguments.Named))
@@ -183,7 +183,7 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 			args = append(args, NamedValue{nameKeyId, v})
 		}
 
-		res, err := val.Function(ctx).Exec(args, ctx)
+		res, err := val.NativeFunction(ctx).Exec(args, ctx)
 		if err != nil {
 			return ValueNone, err
 		}
@@ -315,7 +315,7 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 }
 
 type GoCallbackNode struct {
-	Func Function
+	Func NativeFunction
 	Args []NamedValue
 }
 
@@ -551,12 +551,12 @@ func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, err
 		return EvaluateNode(node.Body, childScopeId, ctx)
 	}
 
-	f := Function{
+	f := NativeFunction{
 		argsCount: len(paramKeyIds),
 		fn:        fn,
 	}
 
-	return MakeFunction(f, ctx), nil
+	return MakeNativeFunction(f, ctx), nil
 }
 
 func handleIndex(node *ast.Index, scopeId uint32, ctx Context) (Value, error) {

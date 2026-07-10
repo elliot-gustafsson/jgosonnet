@@ -363,7 +363,7 @@ func std_uniq(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 		return evaluator.ValueNone, err
 	}
 
-	var keyF evaluator.Function
+	var keyF evaluator.NativeFunction
 	if !args[1].IsNone() {
 		f, err := args[1].EvalFunction(ctx)
 		if err != nil {
@@ -444,7 +444,7 @@ func std_sort(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 		return evaluator.ValueNone, err
 	}
 
-	var keyF evaluator.Function
+	var keyF evaluator.NativeFunction
 	if !args[1].IsNone() {
 		f, err := args[1].EvalFunction(ctx)
 		if err != nil {
@@ -462,7 +462,7 @@ func std_sort(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 
 }
 
-func sortArray(arr []evaluator.Value, keyF evaluator.Function, ctx evaluator.Context) (res []evaluator.Value, err error) {
+func sortArray(arr []evaluator.Value, keyF evaluator.NativeFunction, ctx evaluator.Context) (res []evaluator.Value, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			if e, ok := r.(error); ok {
@@ -682,7 +682,7 @@ func std_setMember(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 		return evaluator.ValueNone, err
 	}
 
-	var keyF evaluator.Function
+	var keyF evaluator.NativeFunction
 	if !args[2].IsNone() {
 		f, err := args[2].EvalFunction(ctx)
 		if err != nil {
@@ -909,10 +909,10 @@ func std_foldl(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	if !fVal.IsFunction() {
+	if !fVal.IsNativeFunction() {
 		return evaluator.ValueNone, fmt.Errorf("unexpected type passed to std.foldl (arg 0): %s, expected function", fVal.Type().String())
 	}
-	foldFunc := fVal.Function(ctx)
+	foldFunc := fVal.NativeFunction(ctx)
 	foldFuncArgs := []evaluator.NamedValue{{}, {}}
 
 	state, err := args[2].Eval(ctx)
@@ -972,10 +972,10 @@ func std_foldr(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	if !fVal.IsFunction() {
+	if !fVal.IsNativeFunction() {
 		return evaluator.ValueNone, fmt.Errorf("unexpected type passed to std.foldr (arg 0): %s, expected function", fVal.Type().String())
 	}
-	foldFunc := fVal.Function(ctx)
+	foldFunc := fVal.NativeFunction(ctx)
 	foldFuncArgs := []evaluator.NamedValue{{}, {}}
 
 	state, err := args[2].Eval(ctx)
@@ -1200,17 +1200,17 @@ func std_setUnion(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator
 		return evaluator.ValueNone, fmt.Errorf("unexpected type passed to std.setUnion (arg 1): %s, expected array", bVal.Type().String())
 	}
 
-	var keyF evaluator.Function
+	var keyF evaluator.NativeFunction
 	var funcArgs []evaluator.NamedValue
 	if !args[2].IsNone() {
 		f, err := args[2].Eval(ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
-		if !f.IsFunction() {
+		if !f.IsNativeFunction() {
 			return evaluator.ValueNone, fmt.Errorf("unexpected type passed to std.setUnion (arg 1): %s, expected function", f.Type().String())
 		}
-		keyF = f.Function(ctx)
+		keyF = f.NativeFunction(ctx)
 		funcArgs = []evaluator.NamedValue{{}}
 	}
 
@@ -1329,17 +1329,17 @@ func std_setInter(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator
 		return evaluator.ValueNone, fmt.Errorf("unexpected type passed to std.setInter (arg 1): %s, expected array", bVal.Type().String())
 	}
 
-	var keyF evaluator.Function
+	var keyF evaluator.NativeFunction
 	var funcArgs []evaluator.NamedValue
 	if !args[2].IsNone() {
 		f, err := args[2].Eval(ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
-		if !f.IsFunction() {
+		if !f.IsNativeFunction() {
 			return evaluator.ValueNone, fmt.Errorf("unexpected type passed to std.setInter (arg 1): %s, expected function", f.Type().String())
 		}
-		keyF = f.Function(ctx)
+		keyF = f.NativeFunction(ctx)
 		funcArgs = []evaluator.NamedValue{{}}
 	}
 
@@ -1426,7 +1426,7 @@ func std_setDiff(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.
 		return evaluator.ValueNone, err
 	}
 
-	var keyF evaluator.Function
+	var keyF evaluator.NativeFunction
 	var funcArgs []evaluator.NamedValue
 	if !args[2].IsNone() {
 		f, err := args[2].EvalFunction(ctx)
@@ -1624,7 +1624,7 @@ func minMaxArray(args []evaluator.NamedValue, ctx evaluator.Context, max bool, n
 		return evaluator.ValueNone, err
 	}
 
-	var keyF evaluator.Function
+	var keyF evaluator.NativeFunction
 	var funcArgs []evaluator.NamedValue
 	if !args[1].IsNone() {
 		f, err := args[1].EvalFunction(ctx)

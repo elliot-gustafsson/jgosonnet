@@ -20,6 +20,7 @@ const (
 	ValueTypeObject
 	ValueTypeArray
 	ValueTypeFunction
+	ValueTypeNativeFunction
 	ValueTypeThunk
 )
 
@@ -43,7 +44,7 @@ func (t ValueType) String() string {
 		return "object"
 	case ValueTypeArray:
 		return "array"
-	case ValueTypeFunction:
+	case ValueTypeNativeFunction, ValueTypeFunction:
 		return "function"
 	case ValueTypeThunk:
 		return "thunk"
@@ -52,15 +53,21 @@ func (t ValueType) String() string {
 	}
 }
 
-type ThunkEvalFunc func(Context) (Value, error)
-
 type Thunk struct {
 	NodeId              uint32
 	ScopeId             uint32
 	CapturedSelf        Value
 	CapturedSuperOffset int32
+	CapturedBp          int
 
 	Value Value
+}
+
+type Function struct {
+	ip        uint32
+	scopeBp   int
+	argsCount int
+	metaIp    uint32
 }
 
 func NewThunk(node ast.Node, scopeId uint32, ctx Context) Thunk {
@@ -74,31 +81,31 @@ func NewThunk(node ast.Node, scopeId uint32, ctx Context) Thunk {
 
 type Func = func(args []NamedValue, ctx Context) (Value, error)
 
-type Function struct {
+type NativeFunction struct {
 	argsCount int
 
 	fn Func
 }
 
-func NewFunction(argsCount int, fn Func) Function {
-	return Function{
+func NewNativeFunction(argsCount int, fn Func) NativeFunction {
+	return NativeFunction{
 		argsCount: argsCount,
 		fn:        fn,
 	}
 }
 
-func (t Function) Exec(args []NamedValue, ctx Context) (Value, error) {
+func (t NativeFunction) Exec(args []NamedValue, ctx Context) (Value, error) {
 	if t.fn == nil {
 		return ValueNone, fmt.Errorf("function not instantiated")
 	}
 	return t.fn(args, ctx)
 }
 
-func (t Function) Noop() bool {
+func (t NativeFunction) Noop() bool {
 	return t.fn == nil
 }
 
-func (t Function) Length() int {
+func (t NativeFunction) Length() int {
 	return t.argsCount
 }
 
@@ -136,6 +143,10 @@ func MakeString(v string, ctx Context) Value {
 	return box(ValueTypeString, id)
 }
 
+func MakeStringValue(id uint32) Value {
+	return box(ValueTypeString, id)
+}
+
 func MakeStringConcat(v1, v2 string, ctx Context) Value {
 	id := ctx.State.Registry.Strings.AllocConcat(v1, v2)
 	return box(ValueTypeString, id)
@@ -156,6 +167,14 @@ func MakeBool(v bool) Value {
 	return box(ValueTypeBool, 0)
 }
 
+func MakeFalse() Value {
+	return box(ValueTypeBool, 0)
+}
+
+func MakeTrue() Value {
+	return box(ValueTypeBool, 1)
+}
+
 func MakeObject(v Object, ctx Context) Value {
 	refId := ctx.State.Registry.Objects.Alloc(v)
 	return box(ValueTypeObject, refId)
@@ -173,6 +192,15 @@ func MakeArray(v []Value, ctx Context) Value {
 func MakeArraySized(l int, ctx Context) ([]Value, Value) {
 	arr, refId := ctx.State.Registry.Arrays.Make(l)
 	return arr, box(ValueTypeArray, refId)
+}
+
+func MakeArrayValue(id uint32) Value {
+	return box(ValueTypeArray, id)
+}
+
+func MakeNativeFunction(v NativeFunction, ctx Context) Value {
+	refId := ctx.State.Registry.NativeFunctions.Alloc(v)
+	return box(ValueTypeNativeFunction, refId)
 }
 
 func MakeFunction(v Function, ctx Context) Value {
@@ -220,6 +248,10 @@ func (v Value) Array(ctx Context) []Value {
 
 func (v Value) Object(ctx Context) *Object {
 	return ctx.State.Registry.Objects.GetPtr(v.RefId())
+}
+
+func (v Value) NativeFunction(ctx Context) NativeFunction {
+	return ctx.State.Registry.NativeFunctions.GetValue(v.RefId())
 }
 
 func (v Value) Function(ctx Context) Function {
@@ -351,15 +383,15 @@ func (v Value) EvalObject(ctx Context) (*Object, error) {
 	return x.Object(ctx), nil
 }
 
-func (v Value) EvalFunction(ctx Context) (Function, error) {
+func (v Value) EvalFunction(ctx Context) (NativeFunction, error) {
 	x, err := v.Eval(ctx)
 	if err != nil {
-		return Function{}, err
+		return NativeFunction{}, err
 	}
-	if !x.IsFunction() {
-		return Function{}, TypeErrorSpecific(ValueTypeFunction, x.Type())
+	if !x.IsNativeFunction() {
+		return NativeFunction{}, TypeErrorSpecific(ValueTypeNativeFunction, x.Type())
 	}
-	return x.Function(ctx), nil
+	return x.NativeFunction(ctx), nil
 }
 
 func (v Value) ToString(ctx Context) (string, error) {
@@ -439,6 +471,10 @@ func (v Value) IsObject() bool {
 
 func (v Value) IsFunction() bool {
 	return v.Type() == ValueTypeFunction
+}
+
+func (v Value) IsNativeFunction() bool {
+	return v.Type() == ValueTypeNativeFunction
 }
 
 func (v Value) IsArray() bool {

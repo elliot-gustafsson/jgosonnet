@@ -18,7 +18,7 @@ type Evaluator struct {
 	astImporter *evaluator.AstImporter
 	extVars     map[string]string
 	extCodes    map[string]string
-	nativeFuncs map[string]evaluator.Function
+	nativeFuncs map[string]evaluator.NativeFunction
 }
 
 type NativeFunction struct {
@@ -32,7 +32,7 @@ func NewEvaluator() *Evaluator {
 		astImporter: evaluator.NewAstImporter(),
 		extVars:     make(map[string]string),
 		extCodes:    make(map[string]string),
-		nativeFuncs: make(map[string]evaluator.Function),
+		nativeFuncs: make(map[string]evaluator.NativeFunction),
 	}
 }
 
@@ -280,7 +280,7 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 		Importer:        evaluator.NewImporter(t.jpaths, std, t.astImporter),
 		ExtVars:         t.extVars,
 		ExtCodes:        t.extCodes,
-		NativeFunctions: make(map[string]evaluator.Function, len(t.nativeFuncs)),
+		NativeFunctions: make(map[string]evaluator.NativeFunction, len(t.nativeFuncs)),
 	}
 
 	// TODO: handle native funcs
@@ -298,8 +298,8 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 		return evaluator.ValueNone, evaluator.Context{}, cleanup, err
 	}
 
-	if value.IsFunction() {
-		res, err := value.Function(ctx).Exec(nil, ctx)
+	if value.IsNativeFunction() {
+		res, err := value.NativeFunction(ctx).Exec(nil, ctx)
 		if err != nil {
 			return evaluator.ValueNone, evaluator.Context{}, cleanup, err
 		}

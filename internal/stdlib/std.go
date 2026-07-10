@@ -25,7 +25,7 @@ var constants = map[string]evaluator.Value{
 	"pi": evaluator.MakeNumber(math.Pi),
 }
 
-var functions = map[string]func(evaluator.Context) evaluator.Function{
+var functions = map[string]func(evaluator.Context) evaluator.NativeFunction{
 	// --- General ---
 	"$flatMapArray":    f(builtin_flatMapArray, req("func"), req("arr")),
 	"$objectFlatMerge": f(builtin_objectFlatMerge, req("arr")),
@@ -197,9 +197,9 @@ var functions = map[string]func(evaluator.Context) evaluator.Function{
 	"manifestTomlEx":       f(std_manifestTomlEx, req("value"), req("indent")),
 }
 
-func f(f evaluator.Func, params ...param) func(evaluator.Context) evaluator.Function {
+func f(f evaluator.Func, params ...param) func(evaluator.Context) evaluator.NativeFunction {
 
-	return func(ctx evaluator.Context) evaluator.Function {
+	return func(ctx evaluator.Context) evaluator.NativeFunction {
 
 		argIds := make([]uint32, 0, len(params))
 		optStart := -1
@@ -267,7 +267,7 @@ func f(f evaluator.Func, params ...param) func(evaluator.Context) evaluator.Func
 			return f(orderedArgs, ctx)
 		}
 
-		return evaluator.NewFunction(len(argIds), fn)
+		return evaluator.NewNativeFunction(len(argIds), fn)
 	}
 }
 
@@ -291,7 +291,7 @@ func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
 
 		fVal := f(ctx)
 
-		v := evaluator.MakeFunction(fVal, ctx)
+		v := evaluator.MakeNativeFunction(fVal, ctx)
 		layer.Keys = append(layer.Keys, keyId)
 		layer.Values = append(layer.Values, v)
 		layer.Meta = append(layer.Meta, 0)
@@ -436,7 +436,7 @@ var std_isNumber = liftValueToBool(func(v evaluator.NamedValue) bool { return v.
 var std_isBoolean = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsBool() })
 var std_isObject = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsObject() })
 var std_isArray = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsArray() })
-var std_isFunction = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsFunction() })
+var std_isFunction = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsNativeFunction() })
 var std_isNull = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsNull() })
 
 func std_toString(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -463,8 +463,8 @@ func std_length(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 		res = float64(len(arg.Array(ctx)))
 	case evaluator.ValueTypeObject:
 		res = float64(arg.Object(ctx).Length(ctx))
-	case evaluator.ValueTypeFunction:
-		res = float64(arg.Function(ctx).Length())
+	case evaluator.ValueTypeNativeFunction:
+		res = float64(arg.NativeFunction(ctx).Length())
 	default:
 		return evaluator.ValueNone, evaluator.TypeErrorGeneral(arg.Type())
 	}

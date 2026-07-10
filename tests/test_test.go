@@ -16,8 +16,10 @@ func TestTest(t *testing.T) {
 	registry := evaluator.NewRegistry()
 
 	ctx := evaluator.Context{
-		Interner: interner,
-		Registry: registry,
+		State: &evaluator.ContextState{
+			Interner: interner,
+			Registry: registry,
+		},
 	}
 
 	std, err := stdlib.InitStdLib(ctx)
@@ -32,7 +34,7 @@ func TestTest(t *testing.T) {
 		ExtCodes: make(map[string]string),
 	}
 
-	ctx.Environment = env
+	ctx.State.Environment = env
 
 	// -------------------------------------------------
 
@@ -48,21 +50,33 @@ func TestTest(t *testing.T) {
 	assert.NotNil(t, node)
 
 	globalCtx := &evaluator.GlobalContext{
-		Interner:     ctx.Interner,
+		Interner:     ctx.State.Interner,
 		ProgramCache: &evaluator.ProgramCache{},
 	}
 
 	compiler := evaluator.NewCompiler(globalCtx)
 	program, err := compiler.Compile(node)
-	assert.NoError(t, err)
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+
+	fmt.Println("Instructions:")
+	for _, v := range program.Instructions {
+		fmt.Println(v)
+	}
+	fmt.Println()
 
 	vm := evaluator.NewVM(interner, registry)
 
 	result, err := vm.Run(program)
-	assert.NoError(t, err)
+	if err != nil {
+		t.Fatal(err.Error())
+	}
 
 	res, err := vm.ManifestValue(result)
-	assert.NoError(t, err)
+	if err != nil {
+		t.Fatal(err.Error())
+	}
 
 	b, err := json.MarshalIndent(res, "", "  ")
 	assert.NoError(t, err)

@@ -1,7 +1,6 @@
 package evaluator
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 )
@@ -25,6 +24,14 @@ func (s *Stack) Push(v Value) {
 func (s *Stack) Pop() Value {
 	s.p--
 	return s.s[s.p]
+}
+
+func (s *Stack) Peek() Value {
+	return s.s[s.p-1]
+}
+
+func (s *Stack) Replace(v Value) {
+	s.s[s.p-1] = v
 }
 
 func (s *Stack) Pop2() (v1 Value, v2 Value) {
@@ -59,10 +66,24 @@ type CallFrame struct {
 	scopeId uint32
 	self    Value
 
-	bp int
+	bp      int
+	scopeBp int
 
-	superOffset int
+	superOffset int32
 	thunkId     uint32
+
+	posCount   int
+	namedCount int
+}
+
+type ArgMapper []Value
+
+func (m *ArgMapper) Prepare(size int) {
+	if cap(*m) < size {
+		*m = make([]Value, size)
+	}
+	*m = (*m)[:size]
+	clear(*m)
 }
 
 func NewVM(interner *Interner, registry *Registry) *VM {
@@ -73,8 +94,10 @@ func NewVM(interner *Interner, registry *Registry) *VM {
 		Registry:   registry,
 		callFrames: make([]CallFrame, 1024),
 		ctx: Context{
-			Interner: interner,
-			Registry: registry,
+			State: &ContextState{
+				Interner: interner,
+				Registry: registry,
+			},
 		},
 	}
 }
@@ -90,17 +113,19 @@ func (vm *VM) Run(prog *Program) (Value, error) {
 
 	err := vm.runLoop(0)
 	if err != nil {
-		return Value{}, err
+		return ValueNone, err
 	}
 
 	if vm.Stack.Length() == 1 {
 		return vm.Stack.Pop(), nil
 	}
 
-	return Value{}, fmt.Errorf("execution finished with invalid stack state")
+	return ValueNone, fmt.Errorf("execution finished with invalid stack state")
 }
 
 func (vm *VM) runLoop(targetFp int) error {
+
+	var mapper ArgMapper = make([]Value, 0, 32)
 
 	for {
 		inst := vm.prog.Instructions[vm.state.ip]
@@ -115,18 +140,70 @@ func (vm *VM) runLoop(targetFp int) error {
 			res := vm.Stack.Pop()
 
 			vm.Stack.p = vm.state.bp
-			vm.Stack.Push(res)
 
-			if vm.fp == targetFp {
-				return nil
+			isThunkEval := vm.state.thunkId != 0
+
+			if isThunkEval && !res.IsThunk() {
+				t := vm.ctx.State.Registry.Thunks.GetPtr(vm.state.thunkId)
+				t.Value = res
 			}
 
 			vm.fp--
 			vm.state = vm.callFrames[vm.fp]
 
+			if vm.fp == targetFp {
+				// target hit, push res and exit
+				vm.Stack.Push(res)
+				return nil
+			}
+
+			// replace top stack value with res and continue
+			// happends after forcing thunks
+			vm.Stack.Replace(res)
+
+			if isThunkEval && res.IsThunk() {
+				// keep looping until we get a solid value
+				continue
+			}
+
+		case OpForce:
+
+			val := vm.Stack.Peek()
+
+			// Fast path: not a thunk, do nothing!
+			if !val.IsThunk() {
+				vm.state.ip++
+				continue
+			}
+
+			thunk := val.Thunk(vm.ctx)
+
+			if !thunk.Value.IsNone() {
+				vm.Stack.Replace(thunk.Value)
+				vm.state.ip++
+				continue
+			}
+
+			// 1. Save current state
+			vm.callFrames[vm.fp] = vm.state
+			vm.fp++
+
+			vm.state = CallFrame{
+				ip:          thunk.NodeId,
+				bp:          vm.Stack.p,
+				scopeBp:     thunk.CapturedBp,
+				self:        thunk.CapturedSelf,
+				superOffset: thunk.CapturedSuperOffset,
+				scopeId:     thunk.ScopeId,
+				thunkId:     val.RefId(),
+			}
+
 			continue
 
-		// case OpJump:
+		case OpJump:
+			vm.state.ip += inst.operand
+			// continue
+
 		// case OpJumpIfFalse:
 
 		// Values
@@ -137,11 +214,193 @@ func (vm *VM) runLoop(targetFp int) error {
 		case OpPushString:
 			s := vm.prog.Strings[inst.operand]
 			id := vm.Registry.Strings.Alloc(s)
-			vm.Stack.Push(Value{t: ValueTypeString, refId: id})
+			vm.Stack.Push(MakeStringValue(id))
 
 		case OpPushNumber:
 			n := vm.prog.Numbers[inst.operand]
 			vm.Stack.Push(MakeNumber(n))
+
+		case OpPushFalse:
+			vm.Stack.Push(MakeFalse())
+
+		case OpPushTrue:
+			vm.Stack.Push(MakeTrue())
+
+		// ---------------------------------------------------------
+		// Var resolving
+		// ---------------------------------------------------------
+
+		case OpAllocLocals:
+			count := int(inst.operand)
+			vm.Stack.p += count
+
+		case OpPopLocals:
+			// The body result is currently at the top of the stack.
+			// We need to save it, remove the locals, and put it back.
+			res := vm.Stack.Pop()
+			vm.Stack.p -= int(inst.operand)
+			vm.Stack.Push(res)
+
+		case OpLocalSet:
+			val := vm.Stack.Pop()
+			// slotIndex := vm.state.bp + int(inst.operand)
+			slotIndex := vm.state.scopeBp + int(inst.operand)
+			vm.Stack.s[slotIndex] = val
+
+		case OpLocalGet:
+			// slotIndex := vm.state.bp + int(inst.operand)
+			slotIndex := vm.state.scopeBp + int(inst.operand)
+			val := vm.Stack.s[slotIndex]
+			vm.Stack.Push(val)
+
+		// ---------------------------------------------------------
+		// Make objects
+		// ---------------------------------------------------------
+
+		case OpMakeThunk:
+
+			t := Thunk{
+				NodeId:              vm.state.ip + 1,
+				ScopeId:             vm.state.scopeId,
+				CapturedSelf:        vm.state.self,
+				CapturedSuperOffset: vm.state.superOffset,
+				CapturedBp:          vm.state.scopeBp,
+			}
+			tv := MakeThunk(t, vm.ctx)
+
+			vm.Stack.Push(tv)
+
+			vm.state.ip += inst.operand
+
+		case OpMakeArray:
+			length := int(inst.operand)
+
+			elements, refId := vm.Registry.Arrays.Make(length)
+
+			for i := length - 1; i >= 0; i-- {
+				elements[i] = vm.Stack.Pop()
+			}
+
+			vm.Stack.Push(MakeArrayValue(refId))
+
+		case OpMakeFunction:
+			f := Function{
+				ip:        inst.operand,
+				argsCount: int(inst.operand2),
+				scopeBp:   vm.state.scopeBp,
+				metaIp:    vm.state.ip + 1, // Metadata starts right here!
+			}
+			vm.Stack.Push(MakeFunction(f, vm.ctx))
+
+			// Skip over the inline metadata (2 instructions per parameter)
+			vm.state.ip += uint32(f.argsCount * 2)
+
+		// ---------------------------------------------------------
+		// Functions
+		// ---------------------------------------------------------
+
+		case OpCall:
+			numPos := int(inst.operand)
+			numNamed := int(inst.operand2)
+
+			// MAGIC: Named args only consume 1 stack slot now (the value Thunk)!
+			totalArgSlots := numPos + numNamed
+
+			funcStackIdx := vm.Stack.p - 1 - totalArgSlots
+			val := vm.Stack.s[funcStackIdx]
+
+			if !val.IsFunction() {
+				return TypeErrorSpecific(ValueTypeFunction, val.Type())
+			}
+
+			fn := val.Function(vm.ctx)
+
+			if numPos > fn.argsCount {
+				return MakeRuntimeError(fmt.Errorf("function expected at most %v positional argument(s), but got %v", fn.argsCount, numPos))
+			}
+
+			mapper.Prepare(fn.argsCount)
+
+			// 1. Map Positional
+			argsBase := funcStackIdx + 1
+			for i := 0; i < numPos; i++ {
+				mapper[i] = vm.Stack.s[argsBase+i]
+			}
+
+			// 2. Map Named (Reading NameIDs directly from bytecode!)
+			namedBase := argsBase + numPos
+			for i := 0; i < numNamed; i++ {
+				nameId := vm.prog.Instructions[vm.state.ip+1+uint32(i)].operand
+				argVal := vm.Stack.s[namedBase+i]
+
+				slotIdx := -1
+				for p := 0; p < fn.argsCount; p++ {
+					metaInst := vm.prog.Instructions[fn.metaIp+uint32(p*2)]
+					if metaInst.operand == nameId {
+						slotIdx = p
+						break
+					}
+				}
+
+				if slotIdx == -1 {
+					return MakeRuntimeError(fmt.Errorf("function has no parameter for named arg"))
+				}
+				if !mapper[slotIdx].IsNone() {
+					return MakeRuntimeError(fmt.Errorf("argument bound multiple times"))
+				}
+
+				mapper[slotIdx] = argVal
+			}
+
+			// 3. Map Defaults
+			for i := 0; i < fn.argsCount; i++ {
+				if mapper[i].IsNone() {
+					metaInst1 := vm.prog.Instructions[fn.metaIp+uint32(i*2)]
+					if metaInst1.operand2 != 1 {
+						return MakeRuntimeError(fmt.Errorf("missing required parameter %d", i))
+					}
+
+					metaInst2 := vm.prog.Instructions[fn.metaIp+uint32(i*2)+1]
+					t := Thunk{
+						NodeId:              metaInst2.operand,
+						ScopeId:             vm.state.scopeId,
+						CapturedSelf:        vm.state.self,
+						CapturedSuperOffset: vm.state.superOffset,
+						CapturedBp:          funcStackIdx,
+					}
+					mapper[i] = MakeThunk(t, vm.ctx)
+				}
+			}
+
+			// 4. Commit to VM Stack
+			vm.Stack.p = funcStackIdx + 1
+			for i := 0; i < fn.argsCount; i++ {
+				vm.Stack.Push(mapper[i])
+			}
+
+			// 5. Advance the OLD frame's IP over the inline caller metadata
+			vm.state.ip += uint32(numNamed)
+
+			// 6. Jump into the function body
+			vm.callFrames[vm.fp] = vm.state
+			vm.fp++
+
+			vm.state = CallFrame{
+				ip:          fn.ip,
+				bp:          funcStackIdx + 1,
+				scopeBp:     funcStackIdx + 1,
+				self:        vm.state.self,
+				superOffset: vm.state.superOffset,
+				scopeId:     vm.state.scopeId,
+			}
+
+			continue
+
+			// fmt.Println(finalArgs)
+			// fmt.Println(paramCount)
+			// fmt.Println(posCount)
+			// fmt.Println(namedCount)
+			// fmt.Println(passedArgs)
 
 		// ---------------------------------------------------------
 		// Binary ops
@@ -149,20 +408,22 @@ func (vm *VM) runLoop(targetFp int) error {
 
 		case OpPlus:
 			right, left := vm.Stack.Pop2()
-			// TODO: force left and right
+
+			var res Value
 			if left.IsNumber() && right.IsNumber() {
-				vm.Stack.Push(MakeNumber(left.Number() + right.Number()))
-				continue
-			}
-			res, err := bopPlus(left, right, vm.ctx)
-			if err != nil {
-				return err
+				res = MakeNumber(left.Number() + right.Number())
+			} else {
+				var err error
+				res, err = bopPlus(left, right, vm.ctx)
+				if err != nil {
+					return err
+				}
 			}
 			vm.Stack.Push(res)
 
 		case OpMinus:
 			right, left := vm.Stack.Pop2()
-			// TODO: force left and right
+
 			if !left.IsNumber() || !right.IsNumber() {
 				return typeErrorNotNumber(left, right)
 			}
@@ -170,7 +431,7 @@ func (vm *VM) runLoop(targetFp int) error {
 
 		case OpDiv:
 			right, left := vm.Stack.Pop2()
-			// TODO: force left and right
+
 			if !left.IsNumber() || !right.IsNumber() {
 				return typeErrorNotNumber(left, right)
 			}
@@ -178,7 +439,7 @@ func (vm *VM) runLoop(targetFp int) error {
 
 		case OpMult:
 			right, left := vm.Stack.Pop2()
-			// TODO: force left and right
+
 			if !left.IsNumber() || !right.IsNumber() {
 				return typeErrorNotNumber(left, right)
 			}
@@ -186,7 +447,7 @@ func (vm *VM) runLoop(targetFp int) error {
 
 		case OpBitwiseAnd:
 			right, left := vm.Stack.Pop2()
-			// TODO: force left and right
+
 			if !left.IsNumber() || !right.IsNumber() {
 				return typeErrorNotNumber(left, right)
 			}
@@ -198,7 +459,7 @@ func (vm *VM) runLoop(targetFp int) error {
 
 		case OpBitwiseOr:
 			right, left := vm.Stack.Pop2()
-			// TODO: force left and right
+
 			if !left.IsNumber() || !right.IsNumber() {
 				return typeErrorNotNumber(left, right)
 			}
@@ -210,7 +471,7 @@ func (vm *VM) runLoop(targetFp int) error {
 
 		case OpBitwiseXor:
 			right, left := vm.Stack.Pop2()
-			// TODO: force left and right
+
 			if !left.IsNumber() || !right.IsNumber() {
 				return typeErrorNotNumber(left, right)
 			}
@@ -222,7 +483,7 @@ func (vm *VM) runLoop(targetFp int) error {
 
 		case OpShiftL:
 			right, left := vm.Stack.Pop2()
-			// TODO: force left and right
+
 			if !left.IsNumber() || !right.IsNumber() {
 				return typeErrorNotNumber(left, right)
 			}
@@ -234,7 +495,7 @@ func (vm *VM) runLoop(targetFp int) error {
 
 		case OpShiftR:
 			right, left := vm.Stack.Pop2()
-			// TODO: force left and right
+
 			if !left.IsNumber() || !right.IsNumber() {
 				return typeErrorNotNumber(left, right)
 			}
@@ -243,119 +504,44 @@ func (vm *VM) runLoop(targetFp int) error {
 				return err
 			}
 			vm.Stack.Push(MakeNumber(val))
-
-		case OpMakeThunk:
-
-			t := Thunk{
-				NodeId:              vm.state.ip + 1,
-				ScopeId:             vm.state.scopeId,
-				CapturedSelf:        vm.state.self,
-				CapturedSuperOffset: vm.state.superOffset,
-			}
-			tv := MakeThunk(t, vm.ctx)
-
-			vm.Stack.Push(tv)
-
-			vm.state.ip += inst.operand
-
-		case OpPushScope:
-
-			childScopeId := Scope{
-				ParentId: vm.state.scopeId,
-				Bindings: vm.Registry.NamedValueBufs.Alloc(0, int(inst.operand)),
-			}
-
-			vm.state.scopeId = vm.Registry.Scopes.Alloc(childScopeId)
-
-		case OpPopScope:
-			current := vm.Registry.Scopes.GetPtr(vm.state.scopeId)
-			vm.state.scopeId = current.ParentId
-
-		case OpLocalSet:
-			v := vm.Stack.Pop()
-			nv := NamedValue{inst.operand, v}
-
-			activeScope := vm.Registry.Scopes.GetPtr(vm.state.scopeId)
-			activeScope.Bindings = append(activeScope.Bindings, nv)
-
-		case OpLocalGet:
-			slotIndex := inst.operand
-			depthDiff := inst.operand2
-
-			targetScopeId := vm.state.scopeId
-			for range depthDiff {
-				s := vm.Registry.Scopes.GetPtr(targetScopeId)
-				targetScopeId = s.ParentId
-			}
-
-			s := vm.Registry.Scopes.GetPtr(targetScopeId)
-			val := s.Bindings[slotIndex].Value
-
-			vm.Stack.Push(val)
-
-		case OpMakeObject:
-			// vm.handleMakeObject(int(inst.operand), inst.operand2)
-
-		case OpMakeArray:
-			length := int(inst.operand)
-
-			elements, refId := vm.Registry.Arrays.Make(length)
-
-			for i := length - 1; i >= 0; i-- {
-				elements[i] = vm.Stack.Pop()
-			}
-
-			vm.Stack.Push(Value{t: ValueTypeArray, refId: refId})
-
 		}
 
 		vm.state.ip++
 	}
 }
 
-func (vm *VM) Force(value Value) (Value, error) {
+func (vm *VM) RunForce(value Value) (Value, error) {
 	if !value.IsThunk() {
 		return value, nil
 	}
 
 	thunk := value.Thunk(vm.ctx)
 	if !thunk.Value.IsNone() {
-		return thunk.Value, nil // already evaluated (memoized)
+		return thunk.Value, nil
 	}
-
-	// savedState := vm.state
 
 	targetFp := vm.fp
 
-	if vm.fp >= len(vm.callFrames) {
-		return Value{}, MakeRuntimeError(errors.New("maximum call stack size exceeded"))
-	}
-
 	vm.callFrames[vm.fp] = vm.state
 	vm.fp++
+	vm.Stack.Push(value)
 
 	vm.state = CallFrame{
-		ip: thunk.NodeId, // We stored the IP here!
-
-		bp: vm.Stack.p,
-
-		scopeId:     thunk.ScopeId,
+		ip:          thunk.NodeId,
+		bp:          vm.Stack.p,
+		scopeBp:     thunk.CapturedBp,
 		self:        thunk.CapturedSelf,
 		superOffset: thunk.CapturedSuperOffset,
+		scopeId:     thunk.ScopeId,
+		thunkId:     value.RefId(),
 	}
 
 	err := vm.runLoop(targetFp)
 	if err != nil {
-		return Value{}, err
+		return ValueNone, err
 	}
 
-	result := vm.Stack.Pop()
-
-	thunk = value.Thunk(vm.ctx)
-	thunk.Value = result
-
-	return result, nil
-
+	return vm.Stack.Pop(), nil
 }
 
 func (vm *VM) ManifestValue(value Value) (any, error) {
@@ -390,14 +576,14 @@ func (vm *VM) ManifestValue(value Value) (any, error) {
 			res = append(res, ev)
 		}
 		return res, nil
-	// case ValueTypeFunction:
-	// 	res, err := value.Function(ctx).Exec(nil, ctx)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// 	return ManifestValue(res)
+	case ValueTypeNativeFunction:
+		res, err := value.NativeFunction(vm.ctx).Exec(nil, vm.ctx)
+		if err != nil {
+			return nil, err
+		}
+		return vm.ManifestValue(res)
 	case ValueTypeThunk:
-		v, err := vm.Force(value)
+		v, err := vm.RunForce(value)
 		if err != nil {
 			return nil, err
 		}

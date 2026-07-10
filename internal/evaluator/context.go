@@ -23,11 +23,12 @@ type Context struct {
 }
 
 type Registry struct {
-	Objects   *arena.Arena[Object]
-	Arrays    *arena.SliceArena[Value]
-	Strings   *arena.StringArena
-	Thunks    *arena.Arena[Thunk]
-	Functions *arena.Arena[Function]
+	Objects         *arena.Arena[Object]
+	Arrays          *arena.SliceArena[Value]
+	Strings         *arena.StringArena
+	Thunks          *arena.Arena[Thunk]
+	Functions       *arena.Arena[Function]
+	NativeFunctions *arena.Arena[NativeFunction]
 
 	Scopes *arena.Arena[Scope]
 	Layers *arena.Arena[Layer]
@@ -57,11 +58,12 @@ const bufferArenaBlockSize = 4096
 
 func NewRegistry() *Registry {
 	return &Registry{
-		Objects:   arena.NewArena[Object](),
-		Arrays:    arena.NewSliceArena[Value](sliceArenaChunkSize),
-		Strings:   arena.NewStringArena(stringArenaBlockSize),
-		Thunks:    arena.NewArena[Thunk](),
-		Functions: arena.NewArena[Function](),
+		Objects:         arena.NewArena[Object](),
+		Arrays:          arena.NewSliceArena[Value](sliceArenaChunkSize),
+		Strings:         arena.NewStringArena(stringArenaBlockSize),
+		Thunks:          arena.NewArena[Thunk](),
+		NativeFunctions: arena.NewArena[NativeFunction](),
+		Functions:       arena.NewArena[Function](),
 
 		Scopes: arena.NewArena[Scope](),
 		Layers: arena.NewArena[Layer](),
@@ -85,6 +87,7 @@ func (t *Registry) Reset() {
 	t.Arrays.Reset()
 	t.Strings.Reset()
 	t.Thunks.Reset()
+	t.NativeFunctions.Reset()
 	t.Functions.Reset()
 
 	t.Scopes.Reset()
@@ -180,5 +183,5 @@ type Environment struct {
 	Importer        *Importer
 	ExtVars         map[string]string
 	ExtCodes        map[string]string
-	NativeFunctions map[string]Function
+	NativeFunctions map[string]NativeFunction
 }
