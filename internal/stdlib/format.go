@@ -221,7 +221,7 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 			// if !ok {
 			// 	return "", fmt.Errorf("key '%s' not found", key)
 			// }
-			keyId := ctx.Interner.Intern(key)
+			keyId := ctx.State.Interner.Intern(key)
 			subCtx := ctx
 			subCtx.Self = data
 			val, _, err := dict.GetField(keyId, subCtx)

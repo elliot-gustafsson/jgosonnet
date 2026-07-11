@@ -8,14 +8,18 @@ import (
 	"github.com/google/go-jsonnet/ast"
 )
 
-type Context struct {
+type ContextState struct {
 	Interner    *Interner
 	Registry    *Registry
 	Environment *Environment
+}
+
+type Context struct {
+	State *ContextState
 
 	Self Value // self
 
-	SuperOffset int
+	SuperOffset int32
 }
 
 type Registry struct {
@@ -101,10 +105,10 @@ func (t *Registry) Reset() {
 
 func (c Context) NewScope(parentId uint32, length int) (*Scope, uint32) {
 
-	s, id := c.Registry.Scopes.New()
+	s, id := c.State.Registry.Scopes.New()
 
 	s.ParentId = parentId
-	s.Bindings = c.Registry.NamedValueBufs.Alloc(length, length)
+	s.Bindings = c.State.Registry.NamedValueBufs.Alloc(length, length)
 
 	return s, id
 }
@@ -113,7 +117,7 @@ func (c Context) GetScopeBind(scopeId, key uint32) (Value, bool) {
 	currId := scopeId
 
 	for {
-		scope := c.Registry.Scopes.GetPtr(currId)
+		scope := c.State.Registry.Scopes.GetPtr(currId)
 
 		for i := len(scope.Bindings) - 1; i >= 0; i-- {
 			if scope.Bindings[i].Key == key {

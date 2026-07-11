@@ -202,7 +202,7 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, indentLevel in
 				writeYamlIndent(buf, indentLevel)
 			}
 
-			keyStr := ctx.Interner.Get(p.KeyId)
+			keyStr := ctx.State.Interner.Get(p.KeyId)
 			writeYamlString(buf, keyStr, config.QuoteKeys, config.Modern, config.Modern)
 
 			buf.WriteByte(':')

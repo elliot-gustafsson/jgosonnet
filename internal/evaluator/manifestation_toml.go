@@ -57,7 +57,7 @@ func renderTomlTable(b *strings.Builder, obj *Object, ctx Context, sindent strin
 			b.WriteByte('\n')
 		}
 
-		fieldName := ctx.Interner.Get(plan.KeyId)
+		fieldName := ctx.State.Interner.Get(plan.KeyId)
 
 		b.WriteString(cindent)
 		writeTomlKey(b, fieldName)
@@ -82,7 +82,7 @@ func renderTomlTable(b *strings.Builder, obj *Object, ctx Context, sindent strin
 			b.WriteString("\n\n")
 		}
 
-		fieldName := ctx.Interner.Get(val.Key)
+		fieldName := ctx.State.Interner.Get(val.Key)
 
 		childPath := tomlAddToPath(path, fieldName)
 
@@ -199,7 +199,7 @@ func writeTomlValue(b *strings.Builder, value Value, ctx Context, cindent, sinde
 				b.WriteString(", ")
 			}
 
-			fieldName := ctx.Interner.Get(plan.KeyId)
+			fieldName := ctx.State.Interner.Get(plan.KeyId)
 			writeTomlKey(b, fieldName)
 			b.WriteString(" = ")
 

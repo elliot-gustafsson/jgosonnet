@@ -361,8 +361,10 @@ func TestFormat(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := evaluator.Context{
-				Interner: evaluator.NewInterner(),
-				Registry: evaluator.NewRegistry(),
+				State: &evaluator.ContextState{
+					Interner: evaluator.NewInterner(),
+					Registry: evaluator.NewRegistry(),
+				},
 			}
 			val := toValue(tt.args, ctx)
 			got, err := formatString(tt.format, val, ctx)
@@ -409,7 +411,7 @@ func toValue(v any, ctx evaluator.Context) evaluator.Value {
 			Meta: make([]uint8, 0, len(val)),
 		}
 		for k, item := range val {
-			keyId := ctx.Interner.Intern(k)
+			keyId := ctx.State.Interner.Intern(k)
 			layer.Keys = append(layer.Keys, keyId)
 			layer.Values = append(layer.Values, toValue(item, ctx))
 			layer.Meta = append(layer.Meta, evaluator.DefaultFieldMeta)

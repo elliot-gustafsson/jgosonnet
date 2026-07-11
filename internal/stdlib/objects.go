@@ -78,7 +78,7 @@ func std_get(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 		inclHidden = v
 	}
 
-	keyId := ctx.Interner.Intern(field)
+	keyId := ctx.State.Interner.Intern(field)
 
 	childCtx := ctx
 	childCtx.Self = objVal
@@ -149,7 +149,7 @@ var std_objectKeysValuesAll = liftObjectToValueErr(func(v evaluator.Value, ctx e
 })
 
 var std_objectHas = liftObjectStringToValueErr(func(v evaluator.Value, s string, ctx evaluator.Context) (evaluator.Value, error) {
-	keyId := ctx.Interner.Intern(s)
+	keyId := ctx.State.Interner.Intern(s)
 	subCtx := ctx
 	subCtx.Self = v
 	value, _, err := v.Object(ctx).GetField(keyId, subCtx)
@@ -160,7 +160,7 @@ var std_objectHas = liftObjectStringToValueErr(func(v evaluator.Value, s string,
 })
 
 var std_objectHasAll = liftObjectStringToValueErr(func(v evaluator.Value, s string, ctx evaluator.Context) (evaluator.Value, error) {
-	keyId := ctx.Interner.Intern(s)
+	keyId := ctx.State.Interner.Intern(s)
 	subCtx := ctx
 	subCtx.Self = v
 	value, _, err := v.Object(ctx).GetField(keyId, subCtx)
@@ -189,7 +189,7 @@ func std_objectHasEx(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 		return evaluator.ValueNone, err
 	}
 
-	keyId := ctx.Interner.Intern(fname)
+	keyId := ctx.State.Interner.Intern(fname)
 
 	subCtx := ctx
 	subCtx.Self = objVal
@@ -242,12 +242,12 @@ func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 		v := vals[i]
 		idx := i * 2
 
-		keyString := ctx.Interner.Get(k)
+		keyString := ctx.State.Interner.Get(k)
 
 		allArgs[idx] = evaluator.NamedValue{Value: evaluator.MakeString(keyString, ctx)}
 		allArgs[idx+1] = evaluator.NamedValue{Value: v}
 
-		n, _ := ctx.Registry.GoCallbackNodes.New()
+		n, _ := ctx.State.Registry.GoCallbackNodes.New()
 		n.Func = mapFunc
 		n.Args = allArgs[idx : idx+2]
 
@@ -278,17 +278,17 @@ func std_objectRemoveKey(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 		return evaluator.ValueNone, err
 	}
 
-	keyId := ctx.Interner.Intern(key)
+	keyId := ctx.State.Interner.Intern(key)
 
 	existingLayers := obj.GetLayers(ctx)
 
-	tombstoneLayer, _ := ctx.Registry.Layers.New()
+	tombstoneLayer, _ := ctx.State.Registry.Layers.New()
 	tombstoneLayer.Keys = []uint32{keyId}
 	tombstoneLayer.Values = []evaluator.Value{evaluator.MakeTombstoneValue(len(existingLayers))}
 	tombstoneLayer.Meta = []uint8{evaluator.FlagTombstone | evaluator.DefaultFieldMeta}
 
 	newLen := len(existingLayers) + 1
-	newLayers := ctx.Registry.LayerBufs.Alloc(newLen, newLen)
+	newLayers := ctx.State.Registry.LayerBufs.Alloc(newLen, newLen)
 	copy(newLayers, existingLayers)
 	newLayers[newLen-1] = tombstoneLayer
 

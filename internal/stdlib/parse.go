@@ -133,7 +133,7 @@ func rawDataToValue(x any, ctx evaluator.Context) (evaluator.Value, error) {
 
 		index := 0
 		for keyName, value := range data {
-			keyId := ctx.Interner.Intern(keyName)
+			keyId := ctx.State.Interner.Intern(keyName)
 
 			v, err := rawDataToValue(value, ctx)
 			if err != nil {

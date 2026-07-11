@@ -53,7 +53,7 @@ func (l *Layer) findField(key uint32) (layerId int) {
 }
 
 func NewObject(layers []*Layer, ctx Context) uint32 {
-	o, id := ctx.Registry.Objects.New()
+	o, id := ctx.State.Registry.Objects.New()
 	o.Layers = layers
 	return id
 }
@@ -237,7 +237,7 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 func (t *Object) getScope(layerIndex int, layer *Layer, ctx Context) (uint32, error) {
 
 	if t.Scopes == nil {
-		t.Scopes = ctx.Registry.Uint32Bufs.Alloc(len(t.GetLayers(ctx)), len(t.GetLayers(ctx)))
+		t.Scopes = ctx.State.Registry.Uint32Bufs.Alloc(len(t.GetLayers(ctx)), len(t.GetLayers(ctx)))
 	}
 
 	scopeId := t.Scopes[layerIndex]
@@ -309,11 +309,11 @@ func (t *Object) appendLayers(dest []*Layer, ctx Context) []*Layer {
 	}
 
 	// copy lefts layer ids
-	l := ctx.Registry.Objects.GetValue(t.LeftId)
+	l := ctx.State.Registry.Objects.GetValue(t.LeftId)
 	dest = l.appendLayers(dest, ctx)
 
 	// copy rights layer ids
-	r := ctx.Registry.Objects.GetValue(t.RightId)
+	r := ctx.State.Registry.Objects.GetValue(t.RightId)
 	return r.appendLayers(dest, ctx)
 }
 
@@ -322,7 +322,7 @@ func (t *Object) GetLayers(ctx Context) []*Layer {
 		return t.Layers
 	}
 
-	layers := ctx.Registry.LayerBufs.Alloc(0, 8)
+	layers := ctx.State.Registry.LayerBufs.Alloc(0, 8)
 	layers = t.appendLayers(layers, ctx)
 
 	t.Layers = layers
@@ -333,7 +333,7 @@ func (t *Object) GetLayers(ctx Context) []*Layer {
 }
 
 func MergeObjects(leftId, rightId uint32, ctx Context) uint32 {
-	o, id := ctx.Registry.Objects.New()
+	o, id := ctx.State.Registry.Objects.New()
 	o.LeftId = leftId
 	o.RightId = rightId
 	return id
@@ -373,16 +373,16 @@ func CompileObjectPlanEx(obj *Object, ctx Context, naturalSort bool) []FieldPlan
 
 	if naturalSort {
 		slices.SortFunc(plans, func(a, b FieldPlan) int {
-			aName := ctx.Interner.Get(a.KeyId)
-			bName := ctx.Interner.Get(b.KeyId)
+			aName := ctx.State.Interner.Get(a.KeyId)
+			bName := ctx.State.Interner.Get(b.KeyId)
 			return naturalStringSort(aName, bName)
 		})
 		return plans
 	}
 
 	slices.SortFunc(plans, func(a, b FieldPlan) int {
-		aName := ctx.Interner.Get(a.KeyId)
-		bName := ctx.Interner.Get(b.KeyId)
+		aName := ctx.State.Interner.Get(a.KeyId)
+		bName := ctx.State.Interner.Get(b.KeyId)
 		return strings.Compare(aName, bName)
 
 	})
@@ -398,7 +398,7 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 		maxKeys += len(layers[i].Keys)
 	}
 
-	plans := ctx.Registry.FieldPlanBufs.Alloc(0, maxKeys)
+	plans := ctx.State.Registry.FieldPlanBufs.Alloc(0, maxKeys)
 
 	var planIdxMap map[uint32]int
 	useMap := maxKeys > MaxPlanLinearKeys
@@ -431,7 +431,7 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 				plans = append(plans, FieldPlan{
 					KeyId:            keyID,
 					Visibility:       uint8(ast.ObjectFieldInherit),
-					Layers:           ctx.Registry.LayerRefBufs.Alloc(0, 4),
+					Layers:           ctx.State.Registry.LayerRefBufs.Alloc(0, 4),
 					ShadowUntilLayer: math.MaxUint16,
 				})
 				pIdx = len(plans) - 1
@@ -568,7 +568,7 @@ func manifestObject(obj *Object, ctx Context) (map[string]any, error) {
 			return nil, err
 		}
 
-		name := ctx.Interner.Get(keyId)
+		name := ctx.State.Interner.Get(keyId)
 
 		rawVal, err := ManifestValue(value, ctx)
 		if err != nil {
@@ -609,7 +609,7 @@ func ManifestObjectRoot(obj *Object, ctx Context) (map[string]Value, error) {
 			return nil, err
 		}
 
-		name := ctx.Interner.Get(keyId)
+		name := ctx.State.Interner.Get(keyId)
 		res[name] = value
 	}
 
@@ -631,7 +631,7 @@ func getValue(obj *Object, layerId, fieldId int, ctx Context) (Value, error) {
 		n := l.Nodes[fieldId]
 
 		evalCtx := ctx
-		evalCtx.SuperOffset = len(layers) - 1 - layerId
+		evalCtx.SuperOffset = int32(len(layers) - 1 - layerId)
 
 		scopeId, err := obj.getScope(layerId, l, evalCtx)
 		if err != nil {
@@ -663,7 +663,7 @@ func runAssertions(obj *Object, ctx Context) error {
 		layer := layers[i]
 
 		evalCtx := ctx
-		evalCtx.SuperOffset = len(layers) - 1 - i
+		evalCtx.SuperOffset = int32(len(layers) - 1 - i)
 
 		scopeId, err := obj.getScope(i, layer, evalCtx)
 		if err != nil {
@@ -692,7 +692,7 @@ func GetObjectFields(obj *Object, ctx Context, inclhidden bool) []Value {
 	res := make([]Value, 0, len(plans))
 	for _, fp := range plans {
 		if inclhidden || !fp.IsHidden() {
-			res = append(res, MakeString(ctx.Interner.Get(fp.KeyId), ctx))
+			res = append(res, MakeString(ctx.State.Interner.Get(fp.KeyId), ctx))
 		}
 	}
 
@@ -740,11 +740,11 @@ func GetObjectKeysValues(obj *Object, ctx Context, inclHidden bool) ([]Value, er
 		objId := NewObject([]*Layer{layer}, ctx)
 
 		layer.Keys = []uint32{
-			ctx.Interner.Intern("key"),
-			ctx.Interner.Intern("value"),
+			ctx.State.Interner.Intern("key"),
+			ctx.State.Interner.Intern("value"),
 		}
 		layer.Values = []Value{
-			MakeString(ctx.Interner.Get(plan.KeyId), ctx),
+			MakeString(ctx.State.Interner.Get(plan.KeyId), ctx),
 			val,
 		}
 

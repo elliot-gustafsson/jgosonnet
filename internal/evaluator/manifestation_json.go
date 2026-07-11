@@ -188,7 +188,7 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, indentLevel int,
 
 			writeIndent(b, nextIndentLevel, config.IndentStep)
 
-			writeJsonString(b, subCtx.Interner.Get(p.KeyId))
+			writeJsonString(b, subCtx.State.Interner.Get(p.KeyId))
 			b.WriteString(config.KeyValSep)
 
 			fieldValue, err := p.GetValue(obj, subCtx)

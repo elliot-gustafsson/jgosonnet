@@ -264,8 +264,10 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 	}
 
 	ctx := evaluator.Context{
-		Interner: engine.Interner,
-		Registry: engine.Registry,
+		State: &evaluator.ContextState{
+			Interner: engine.Interner,
+			Registry: engine.Registry,
+		},
 	}
 
 	std, err := stdlib.InitStdLib(ctx)
@@ -287,7 +289,7 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 	// 	env.NativeFunctions[k] = evaluator.Function{}
 	// }
 
-	ctx.Environment = env
+	ctx.State.Environment = env
 
 	scopeId := evaluator.CreateFileScope(file, std, ctx)
 

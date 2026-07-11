@@ -73,7 +73,7 @@ func ManifestValue(value Value, ctx Context) (any, error) {
 }
 
 func CreateFileScope(filename string, baseStd Value, ctx Context) uint32 {
-	keyId := ctx.Interner.Intern("thisFile")
+	keyId := ctx.State.Interner.Intern("thisFile")
 
 	layer := &Layer{
 		Keys:   []uint32{keyId},
@@ -88,10 +88,10 @@ func CreateFileScope(filename string, baseStd Value, ctx Context) uint32 {
 	fileStd := MakeObjectValue(mergedObjId)
 
 	s, scopeId := ctx.NewScope(2, 2)
-	// s := ctx.Registry.Scopes.GetPtr(scopeId)
+	// s := ctx.State.Registry.Scopes.GetPtr(scopeId)
 
-	s.Bindings[0] = NamedValue{Key: ctx.Interner.Intern("$std"), Value: fileStd}
-	s.Bindings[1] = NamedValue{Key: ctx.Interner.Intern("std"), Value: fileStd}
+	s.Bindings[0] = NamedValue{Key: ctx.State.Interner.Intern("$std"), Value: fileStd}
+	s.Bindings[1] = NamedValue{Key: ctx.State.Interner.Intern("std"), Value: fileStd}
 
 	return scopeId
 }
@@ -163,7 +163,7 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 			return ValueNone, TypeErrorSpecific(ValueTypeFunction, val.Type())
 		}
 
-		args := ctx.Registry.NamedValueBufs.Alloc(0, len(node.Arguments.Positional)+len(node.Arguments.Named))
+		args := ctx.State.Registry.NamedValueBufs.Alloc(0, len(node.Arguments.Positional)+len(node.Arguments.Named))
 		for _, a := range node.Arguments.Positional {
 			// v, err := EvaluateNodeStrict(a.Expr, scopeId, ctx)
 			v, err := evaluateNodeLazy(a.Expr, scopeId, ctx)
@@ -179,7 +179,7 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 			if err != nil {
 				return ValueNone, err
 			}
-			nameKeyId := ctx.Interner.Intern(string(a.Name))
+			nameKeyId := ctx.State.Interner.Intern(string(a.Name))
 			args = append(args, NamedValue{nameKeyId, v})
 		}
 
@@ -193,7 +193,7 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 	case *ast.Var:
 		name := string(node.Id)
 
-		keyId := ctx.Interner.Intern(name)
+		keyId := ctx.State.Interner.Intern(name)
 
 		val, found := ctx.GetScopeBind(scopeId, keyId)
 		if !found {
@@ -331,30 +331,30 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 	fieldCount := len(node.Fields)
 	localsCount := len(node.Locals)
 
-	layer, _ := ctx.Registry.Layers.New()
+	layer, _ := ctx.State.Registry.Layers.New()
 
 	layer.ParentScopeId = scopeId
 
 	if fieldCount > 0 {
-		layer.Keys = ctx.Registry.Uint32Bufs.Alloc(0, fieldCount)
-		layer.Nodes = ctx.Registry.NodesBufs.Alloc(0, fieldCount)
-		layer.Meta = ctx.Registry.Uint8Bufs.Alloc(0, fieldCount)
+		layer.Keys = ctx.State.Registry.Uint32Bufs.Alloc(0, fieldCount)
+		layer.Nodes = ctx.State.Registry.NodesBufs.Alloc(0, fieldCount)
+		layer.Meta = ctx.State.Registry.Uint8Bufs.Alloc(0, fieldCount)
 	}
 
 	if localsCount > 0 {
-		layer.LocalKeys = ctx.Registry.Uint32Bufs.Alloc(0, localsCount)
-		layer.LocalNodes = ctx.Registry.NodesBufs.Alloc(0, localsCount)
+		layer.LocalKeys = ctx.State.Registry.Uint32Bufs.Alloc(0, localsCount)
+		layer.LocalNodes = ctx.State.Registry.NodesBufs.Alloc(0, localsCount)
 	}
 
 	if len(node.Asserts) > 0 {
-		layer.Asserts = ctx.Registry.NodesBufs.Alloc(len(node.Asserts), len(node.Asserts))
+		layer.Asserts = ctx.State.Registry.NodesBufs.Alloc(len(node.Asserts), len(node.Asserts))
 		copy(layer.Asserts, node.Asserts)
 	}
 
 	for _, v := range node.Locals {
 
 		name := string(v.Variable)
-		keyId := ctx.Interner.Intern(name)
+		keyId := ctx.State.Interner.Intern(name)
 
 		layer.LocalKeys = append(layer.LocalKeys, keyId)
 		layer.LocalNodes = append(layer.LocalNodes, v.Body)
@@ -385,7 +385,7 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 
 		n := name.String(ctx)
 
-		keyId := ctx.Interner.Intern(n)
+		keyId := ctx.State.Interner.Intern(n)
 
 		layer.Keys = append(layer.Keys, keyId)
 		layer.Nodes = append(layer.Nodes, v.Body)
@@ -398,7 +398,7 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 
 	}
 
-	layers := ctx.Registry.LayerBufs.Alloc(1, 1)
+	layers := ctx.State.Registry.LayerBufs.Alloc(1, 1)
 	layers[0] = layer
 	objId := NewObject(layers, ctx)
 
@@ -411,7 +411,7 @@ func handleLocal(node *ast.Local, scopeId uint32, ctx Context) (Value, error) {
 
 	for i, v := range node.Binds {
 		vname := string(v.Variable)
-		keyId := ctx.Interner.Intern(vname)
+		keyId := ctx.State.Interner.Intern(vname)
 		t, err := evaluateNodeLazy(v.Body, childScopeId, ctx)
 		if err != nil {
 			return ValueNone, err
@@ -494,9 +494,9 @@ func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, err
 
 	paramCount := len(node.Parameters)
 
-	paramKeyIds := ctx.Registry.Uint32Bufs.Alloc(paramCount, paramCount)
+	paramKeyIds := ctx.State.Registry.Uint32Bufs.Alloc(paramCount, paramCount)
 	for i, p := range node.Parameters {
-		paramKeyIds[i] = ctx.Interner.Intern(string(p.Name))
+		paramKeyIds[i] = ctx.State.Interner.Intern(string(p.Name))
 	}
 
 	var fn Func = func(args []NamedValue, _ Context) (Value, error) {
@@ -591,7 +591,7 @@ func handleIndex(node *ast.Index, scopeId uint32, ctx Context) (Value, error) {
 		// TODO: can we optimize this? Since the index is a string we can take the id directly. If DataString is implemented that wont work...
 		name := index.String(ctx)
 
-		keyId := ctx.Interner.Intern(name)
+		keyId := ctx.State.Interner.Intern(name)
 
 		obj := target.Object(ctx)
 
@@ -638,13 +638,13 @@ func handleSuperIndex(node *ast.SuperIndex, scopeId uint32, ctx Context) (Value,
 
 	name := index.String(ctx)
 
-	keyId := ctx.Interner.Intern(name)
+	keyId := ctx.State.Interner.Intern(name)
 
 	obj := ctx.Self.Object(ctx)
 
 	targetOffset := ctx.SuperOffset + 1
 
-	val, _, err := obj.GetFieldWithOffset(keyId, ctx, targetOffset)
+	val, _, err := obj.GetFieldWithOffset(keyId, ctx, int(targetOffset))
 	if err != nil {
 		return ValueNone, err
 	}
@@ -677,7 +677,7 @@ func handleImport(node *ast.Import, scopeId uint32, ctx Context) (Value, error) 
 	var importedNode ast.Node
 	var finalPath string
 
-	importer := ctx.Environment.Importer
+	importer := ctx.State.Environment.Importer
 
 	dirs := []string{""}
 	if !filepath.IsAbs(file) {

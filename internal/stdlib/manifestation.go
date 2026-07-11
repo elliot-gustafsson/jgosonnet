@@ -213,7 +213,7 @@ func std_manifestIni(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 	var b strings.Builder
 	b.Grow(512)
 
-	mainKeyId := ctx.Interner.Intern("main")
+	mainKeyId := ctx.State.Interner.Intern("main")
 	mainVal, visible, err := iniObj.GetField(mainKeyId, ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
@@ -231,7 +231,7 @@ func std_manifestIni(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 		}
 	}
 
-	sectionsKeyId := ctx.Interner.Intern("sections")
+	sectionsKeyId := ctx.State.Interner.Intern("sections")
 	sectionsVal, _, err := iniObj.GetField(sectionsKeyId, ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
@@ -263,7 +263,7 @@ func std_manifestIni(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 			return evaluator.ValueNone, err
 		}
 
-		keyStr := ctx.Interner.Get(plan.KeyId)
+		keyStr := ctx.State.Interner.Get(plan.KeyId)
 		if !val.IsObject() {
 			return evaluator.ValueNone, fmt.Errorf("expected object for ini section field '%s', got %s", keyStr, val.Type().String())
 		}
@@ -300,7 +300,7 @@ func printIniSection(b *strings.Builder, obj *evaluator.Object, ctx evaluator.Co
 			return err
 		}
 
-		keyStr := ctx.Interner.Get(plan.KeyId)
+		keyStr := ctx.State.Interner.Get(plan.KeyId)
 
 		if val.IsArray() {
 			for _, v := range val.Array(ctx) {
@@ -366,7 +366,7 @@ func std_manifestPythonVars(args []evaluator.NamedValue, ctx evaluator.Context) 
 			continue
 		}
 
-		name := ctx.Interner.Get(keyId)
+		name := ctx.State.Interner.Get(keyId)
 		b.WriteString(name)
 		b.WriteString(" = ")
 
@@ -451,7 +451,7 @@ func auxManifestXmlJsonml(v evaluator.Value, ctx evaluator.Context, b *strings.B
 			if fp.IsHidden() {
 				continue
 			}
-			keyStr := ctx.Interner.Get(fp.KeyId)
+			keyStr := ctx.State.Interner.Get(fp.KeyId)
 			fieldValue, err := fp.GetValue(attrs, ctx)
 			if err != nil {
 				return err

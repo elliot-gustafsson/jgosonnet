@@ -205,7 +205,7 @@ func f(f evaluator.Func, params ...param) func(evaluator.Context) evaluator.Func
 		optStart := -1
 
 		for i, p := range params {
-			id := ctx.Interner.Intern(p.Name)
+			id := ctx.State.Interner.Intern(p.Name)
 			argIds = append(argIds, id)
 
 			if p.Optional && optStart == -1 {
@@ -253,7 +253,7 @@ func f(f evaluator.Func, params ...param) func(evaluator.Context) evaluator.Func
 					}
 				}
 				if !found {
-					argName := ctx.Interner.Get(na.Key)
+					argName := ctx.State.Interner.Get(na.Key)
 					return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("function has no parameter %s", argName))
 				}
 			}
@@ -287,7 +287,7 @@ func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
 
 	index := 0
 	for name, f := range functions {
-		keyId := ctx.Interner.Intern(name)
+		keyId := ctx.State.Interner.Intern(name)
 
 		fVal := f(ctx)
 
@@ -301,7 +301,7 @@ func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
 	}
 
 	for name, v := range constants {
-		keyId := ctx.Interner.Intern(name)
+		keyId := ctx.State.Interner.Intern(name)
 
 		layer.Keys = append(layer.Keys, keyId)
 		layer.Values = append(layer.Values, v)
@@ -333,18 +333,18 @@ func std_extVar(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 		return evaluator.ValueNone, err
 	}
 
-	s, ok := ctx.Environment.ExtVars[name]
+	s, ok := ctx.State.Environment.ExtVars[name]
 	if ok {
 		return evaluator.MakeString(s, ctx), nil
 	}
 
-	s, ok = ctx.Environment.ExtCodes[name]
+	s, ok = ctx.State.Environment.ExtCodes[name]
 	if ok {
 		name := "<extvar:" + name + ">"
 
-		importer := ctx.Environment.Importer
+		importer := ctx.State.Environment.Importer
 
-		val := ctx.Environment.Importer.Get(name)
+		val := ctx.State.Environment.Importer.Get(name)
 		if !val.IsNone() {
 			return val, nil
 		}
@@ -379,7 +379,7 @@ func std_trace(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 		return evaluator.ValueNone, err
 	}
 
-	_, err = fmt.Fprint(ctx.Environment.TraceOut, "TRACE: "+str+"\n")
+	_, err = fmt.Fprint(ctx.State.Environment.TraceOut, "TRACE: "+str+"\n")
 	if err != nil {
 		return evaluator.ValueNone, err
 	}

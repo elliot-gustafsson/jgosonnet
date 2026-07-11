@@ -58,14 +58,14 @@ type Thunk struct {
 	NodeId              uint32
 	ScopeId             uint32
 	CapturedSelf        Value
-	CapturedSuperOffset int
+	CapturedSuperOffset int32
 
 	Value Value
 }
 
 func NewThunk(node ast.Node, scopeId uint32, ctx Context) Thunk {
 	return Thunk{
-		NodeId:              ctx.Registry.Nodes.Alloc(node),
+		NodeId:              ctx.State.Registry.Nodes.Alloc(node),
 		ScopeId:             scopeId,
 		CapturedSelf:        ctx.Self,
 		CapturedSuperOffset: ctx.SuperOffset,
@@ -132,12 +132,12 @@ func MakeNull() Value {
 }
 
 func MakeString(v string, ctx Context) Value {
-	id := ctx.Registry.Strings.Alloc(v)
+	id := ctx.State.Registry.Strings.Alloc(v)
 	return box(ValueTypeString, id)
 }
 
 func MakeStringConcat(v1, v2 string, ctx Context) Value {
-	id := ctx.Registry.Strings.AllocConcat(v1, v2)
+	id := ctx.State.Registry.Strings.AllocConcat(v1, v2)
 	return box(ValueTypeString, id)
 }
 
@@ -157,7 +157,7 @@ func MakeBool(v bool) Value {
 }
 
 func MakeObject(v Object, ctx Context) Value {
-	refId := ctx.Registry.Objects.Alloc(v)
+	refId := ctx.State.Registry.Objects.Alloc(v)
 	return box(ValueTypeObject, refId)
 }
 
@@ -166,22 +166,22 @@ func MakeObjectValue(id uint32) Value {
 }
 
 func MakeArray(v []Value, ctx Context) Value {
-	refId := ctx.Registry.Arrays.Alloc(v)
+	refId := ctx.State.Registry.Arrays.Alloc(v)
 	return box(ValueTypeArray, refId)
 }
 
 func MakeArraySized(l int, ctx Context) ([]Value, Value) {
-	arr, refId := ctx.Registry.Arrays.Make(l)
+	arr, refId := ctx.State.Registry.Arrays.Make(l)
 	return arr, box(ValueTypeArray, refId)
 }
 
 func MakeFunction(v Function, ctx Context) Value {
-	refId := ctx.Registry.Functions.Alloc(v)
+	refId := ctx.State.Registry.Functions.Alloc(v)
 	return box(ValueTypeFunction, refId)
 }
 
 func MakeThunk(v Thunk, ctx Context) Value {
-	refId := ctx.Registry.Thunks.Alloc(v)
+	refId := ctx.State.Registry.Thunks.Alloc(v)
 	return box(ValueTypeThunk, refId)
 }
 
@@ -202,7 +202,7 @@ func (v Value) RefId() uint32 {
 }
 
 func (v Value) String(ctx Context) string {
-	return ctx.Registry.Strings.Get(v.RefId())
+	return ctx.State.Registry.Strings.Get(v.RefId())
 }
 
 func (v Value) Number() float64 {
@@ -215,19 +215,19 @@ func (v Value) Bool() bool {
 }
 
 func (v Value) Array(ctx Context) []Value {
-	return ctx.Registry.Arrays.Get(v.RefId())
+	return ctx.State.Registry.Arrays.Get(v.RefId())
 }
 
 func (v Value) Object(ctx Context) *Object {
-	return ctx.Registry.Objects.GetPtr(v.RefId())
+	return ctx.State.Registry.Objects.GetPtr(v.RefId())
 }
 
 func (v Value) Function(ctx Context) Function {
-	return ctx.Registry.Functions.GetValue(v.RefId())
+	return ctx.State.Registry.Functions.GetValue(v.RefId())
 }
 
 func (v Value) Thunk(ctx Context) *Thunk {
-	return ctx.Registry.Thunks.GetPtr(v.RefId())
+	return ctx.State.Registry.Thunks.GetPtr(v.RefId())
 }
 
 func (v Value) Eval(ctx Context) (Value, error) {
@@ -243,7 +243,7 @@ func (v Value) Eval(ctx Context) (Value, error) {
 	evalCtx.Self = thunk.CapturedSelf
 	evalCtx.SuperOffset = thunk.CapturedSuperOffset
 
-	node := ctx.Registry.Nodes.GetValue(thunk.NodeId)
+	node := ctx.State.Registry.Nodes.GetValue(thunk.NodeId)
 
 	evaledVal, err := EvaluateNode(node, thunk.ScopeId, evalCtx)
 	if err != nil {
