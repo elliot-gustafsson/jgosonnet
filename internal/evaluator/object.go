@@ -64,44 +64,58 @@ const (
 	AssertStatusChecked   uint8 = 2
 )
 
+const FieldCacheInlineCount = 4
+
 type FieldCache struct {
-	inlineKeys  [4]uint32
-	inlineVals  [4]CachedValue
-	fieldCache  map[uint32]CachedValue
-	inlineCount uint8
+	inlineKeys    [FieldCacheInlineCount]uint32
+	inlineVals    [FieldCacheInlineCount]Value
+	fieldCache    map[uint32]CachedValue
+	inlineCount   uint8
+	inlineVisible uint8
 }
 
-func (c *FieldCache) Get(key uint32) (CachedValue, bool) {
-	for i := uint8(0); i < c.inlineCount; i++ {
+func (c *FieldCache) Get(key uint32) (v Value, visible bool, ok bool) {
+	for i := range c.inlineCount {
 		if c.inlineKeys[i] == key {
-			return c.inlineVals[i], true
+			// extract visibility from the bitmask
+			visible := (c.inlineVisible & (1 << i)) != 0
+			return c.inlineVals[i], visible, true
 		}
 	}
 	if c.fieldCache != nil {
-		if v, ok := c.fieldCache[key]; ok {
-			return v, true
+		if entry, ok := c.fieldCache[key]; ok {
+			return entry.Value, entry.Visible, true
 		}
 	}
-	return CachedValue{}, false
+	return ValueNone, false, false
 }
 
-func (c *FieldCache) Set(key uint32, val CachedValue) {
-	for i := uint8(0); i < c.inlineCount; i++ {
+func (c *FieldCache) Set(key uint32, val Value, visible bool) {
+	for i := range c.inlineCount {
 		if c.inlineKeys[i] == key {
 			c.inlineVals[i] = val
+			if visible {
+				c.inlineVisible |= (1 << i) // Set bit
+			} else {
+				c.inlineVisible &= ^(1 << i) // Clear bit
+			}
 			return
 		}
 	}
-	if c.inlineCount < 4 {
+	if c.inlineCount < FieldCacheInlineCount {
 		c.inlineKeys[c.inlineCount] = key
 		c.inlineVals[c.inlineCount] = val
+		if visible {
+			c.inlineVisible |= (1 << c.inlineCount)
+		}
 		c.inlineCount++
 		return
 	}
+
 	if c.fieldCache == nil {
 		c.fieldCache = make(map[uint32]CachedValue)
 	}
-	c.fieldCache[key] = val
+	c.fieldCache[key] = CachedValue{val, visible}
 }
 
 type Object struct {
@@ -133,9 +147,9 @@ func (t *Object) GetFieldWithOffset(key uint32, ctx Context, offset int) (Value,
 func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visible bool, err error) {
 
 	if offset == 0 {
-		cached, ok := t.Cache.Get(key)
+		value, visible, ok := t.Cache.Get(key)
 		if ok {
-			return cached.Value, cached.Visible, nil
+			return value, visible, nil
 		}
 	}
 
@@ -228,7 +242,7 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 	visible = currentVisibility != ast.ObjectFieldHidden
 
 	if offset == 0 {
-		t.Cache.Set(key, CachedValue{Value: res, Visible: visible})
+		t.Cache.Set(key, res, visible)
 	}
 
 	return res, visible, nil
@@ -236,6 +250,16 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 
 func (t *Object) getScope(layerIndex int, layer *Layer, ctx Context) (uint32, error) {
 
+	// no locals no need to create another scope
+	if len(layer.LocalKeys) == 0 {
+		return layer.ParentScopeId, nil
+	}
+
+	return t.createLayerScope(layerIndex, layer, ctx)
+}
+
+//go:noinline
+func (t *Object) createLayerScope(layerIndex int, layer *Layer, ctx Context) (uint32, error) {
 	if t.Scopes == nil {
 		t.Scopes = ctx.State.Registry.Uint32Bufs.Alloc(len(t.GetLayers(ctx)), len(t.GetLayers(ctx)))
 	}
@@ -243,12 +267,6 @@ func (t *Object) getScope(layerIndex int, layer *Layer, ctx Context) (uint32, er
 	scopeId := t.Scopes[layerIndex]
 	if scopeId != 0 {
 		return scopeId, nil
-	}
-
-	// no locals no need to create another scope
-	if len(layer.LocalKeys) == 0 {
-		t.Scopes[layerIndex] = layer.ParentScopeId
-		return layer.ParentScopeId, nil
 	}
 
 	s, scopeId := ctx.NewScope(layer.ParentScopeId, len(layer.LocalKeys))
@@ -492,9 +510,9 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 }
 
 func (t *FieldPlan) GetValue(obj *Object, ctx Context) (Value, error) {
-	cached, ok := obj.Cache.Get(t.KeyId)
+	value, _, ok := obj.Cache.Get(t.KeyId)
 	if ok {
-		return cached.Value, nil
+		return value, nil
 	}
 
 	layersCount := len(t.Layers)
@@ -538,7 +556,7 @@ func (t *FieldPlan) GetValue(obj *Object, ctx Context) (Value, error) {
 		value = res
 	}
 
-	obj.Cache.Set(t.KeyId, CachedValue{value, !t.IsHidden()})
+	obj.Cache.Set(t.KeyId, value, !t.IsHidden())
 
 	return value, nil
 }

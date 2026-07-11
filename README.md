@@ -8,6 +8,12 @@ This implementation is built to be a faster version of `go-jsonnet`, designed to
 ### Lexing and Parsing
 For the frontend, `jgosonnet` utilizes the upstream `github.com/google/go-jsonnet` implementation to handle lexing and parsing. The source code is parsed by `go-jsonnet` into an Abstract Syntax Tree (AST). Reusing the upstream parser ensures strict syntactic compatibility, while allowing this project to focus purely on the execution engine and memory model for speed.
 
+### Values and NaN-Boxing
+Values uses inverted NaN-boxing to reduce memory footprint. Every value in the evaluator (numbers, booleans, strings, objects, arrays, thunks) is packed into a single 64-bit unsigned integer (`uint64`).
+
+* **Numbers** are stored natively as standard IEEE 754 float64 bit-patterns.
+* **Non-numbers** leverage the vast unused bit-space of NaN (Not-a-Number) values. A specific NaN pattern is used as a tag in the upper 16 bits to denote the primitive type (e.g., String, Object, Array). The lower 32 bits store an index (`refId`) pointing to the actual data inside the Arena.
+
 ### String Interning
 Object keys and string values are passed through a central String Interner during evaluation. By translating strings into 32-bit reference IDs (`refId`), the evaluator avoids repetitive string allocations. String equality checks, which happen frequently during object resolution and sorting, are reduced to simple integer comparisons.
 

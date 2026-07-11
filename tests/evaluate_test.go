@@ -407,7 +407,7 @@ func TestEvaluatorSerial(t *testing.T) {
 
 }
 
-func TestEvaluatorLoop(t *testing.T) {
+func BenchmarkEvaluatorLoop(b *testing.B) {
 	runtime.GOMAXPROCS(1)
 
 	// originalGC := debug.SetGCPercent(-1)
@@ -416,10 +416,11 @@ func TestEvaluatorLoop(t *testing.T) {
 	slog.SetLogLoggerLevel(slog.LevelDebug)
 
 	cwd, err := os.Getwd()
-	assert.NoError(t, err)
+	if err != nil {
+		b.Fatal(err.Error())
+	}
 
 	infraDir := filepath.Join(filepath.Dir(filepath.Dir(cwd)), "infra", "jsonnet", "proact")
-	assert.NotEmpty(t, infraDir)
 
 	interpreter := jgosonnet.NewEvaluator()
 	interpreter.JPaths([]string{filepath.Join(infraDir, "vendor")})
@@ -428,25 +429,29 @@ func TestEvaluatorLoop(t *testing.T) {
 	// file := "../benchmarks/resources/realistic_benchmark2.jsonnet"
 
 	_, err = interpreter.Evaluate(file)
-	assert.NoError(t, err)
 	if err != nil {
-		return
+		b.Fatal(err.Error())
 	}
 
 	f, err := os.Create("cpu.prof")
-	assert.NoError(t, err)
+	if err != nil {
+		b.Fatal(err.Error())
+	}
 	defer f.Close()
 	err = pprof.StartCPUProfile(f)
-	assert.NoError(t, err)
+	if err != nil {
+		b.Fatal(err.Error())
+	}
 	defer pprof.StopCPUProfile()
+
+	b.ResetTimer()
 
 	jgosonnetStart := time.Now()
 
 	for range 10 {
 		_, err := interpreter.EvaluateYaml(file)
-		assert.NoError(t, err)
 		if err != nil {
-			return
+			b.Fatal(err.Error())
 		}
 	}
 

@@ -234,7 +234,13 @@ func (v Value) Eval(ctx Context) (Value, error) {
 	if !v.IsThunk() {
 		return v, nil
 	}
+	return v.evalThunk(ctx)
+}
+
+//go:noinline
+func (v Value) evalThunk(ctx Context) (Value, error) {
 	thunk := v.Thunk(ctx)
+
 	if !thunk.Value.IsNone() {
 		return thunk.Value, nil
 	}
