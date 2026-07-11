@@ -16,37 +16,37 @@ func handleBinaryOp(op ast.BinaryOp, left, right Value, ctx Context) (Value, err
 	case ast.BopManifestEqual:
 		eq, err := left.Equal(right, ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 		return MakeBool(eq), nil
 	case ast.BopManifestUnequal:
 		eq, err := left.Equal(right, ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 		return MakeBool(!eq), nil
 	case ast.BopGreater:
 		x, err := left.Compare(right, ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 		return MakeBool(x > 0), nil
 	case ast.BopGreaterEq:
 		x, err := left.Compare(right, ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 		return MakeBool(x >= 0), nil
 	case ast.BopLess:
 		x, err := left.Compare(right, ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 		return MakeBool(x < 0), nil
 	case ast.BopLessEq:
 		x, err := left.Compare(right, ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 		return MakeBool(x <= 0), nil
 	}
@@ -54,12 +54,12 @@ func handleBinaryOp(op ast.BinaryOp, left, right Value, ctx Context) (Value, err
 	if left.IsNumber() && right.IsNumber() {
 		res, err := handleNumberOp(left.Number(), right.Number(), op)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 		return MakeNumber(res), nil
 	}
 
-	return Value{}, fmt.Errorf("unhandled binary operation %s %s %s", left.Type().String(), op.String(), right.Type().String())
+	return ValueNone, fmt.Errorf("unhandled binary operation %s %s %s", left.Type().String(), op.String(), right.Type().String())
 }
 
 func bopPlus(left, right Value, ctx Context) (Value, error) {
@@ -68,7 +68,7 @@ func bopPlus(left, right Value, ctx Context) (Value, error) {
 	if left.IsString() {
 		rs, err := right.ToString(ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 		ls := left.String(ctx)
 		return MakeStringConcat(ls, rs, ctx), nil
@@ -77,14 +77,14 @@ func bopPlus(left, right Value, ctx Context) (Value, error) {
 	if right.IsString() {
 		ls, err := left.ToString(ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 		rs := right.String(ctx)
 		return MakeStringConcat(ls, rs, ctx), nil
 	}
 
 	if left.Type() != right.Type() {
-		return Value{}, TypeErrorSpecific(left.Type(), right.Type())
+		return ValueNone, TypeErrorSpecific(left.Type(), right.Type())
 	}
 
 	switch left.Type() {
@@ -113,7 +113,7 @@ func bopPlus(left, right Value, ctx Context) (Value, error) {
 		id := MergeObjects(left.RefId(), right.RefId(), ctx)
 		return MakeObjectValue(id), nil
 	default:
-		return Value{}, fmt.Errorf("bop plus: unexpected type %s", left.Type().String())
+		return ValueNone, fmt.Errorf("bop plus: unexpected type %s", left.Type().String())
 	}
 }
 

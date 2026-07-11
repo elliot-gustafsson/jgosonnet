@@ -141,7 +141,7 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 
 	err = runAssertions(t, ctx)
 	if err != nil {
-		return Value{}, false, err
+		return ValueNone, false, err
 	}
 
 	currentVisibility := ast.ObjectFieldInherit
@@ -167,7 +167,7 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 
 		val, err := getValue(t, layerOffset, fieldIndex, ctx)
 		if err != nil {
-			return Value{}, false, err
+			return ValueNone, false, err
 		}
 
 		if visibility != ast.ObjectFieldInherit {
@@ -185,7 +185,7 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 		} else {
 			v, err := bopPlus(val, res, ctx)
 			if err != nil {
-				return Value{}, false, err
+				return ValueNone, false, err
 			}
 			res = v
 		}
@@ -197,7 +197,7 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 	}
 
 	if res.IsNone() {
-		return Value{}, false, nil
+		return ValueNone, false, nil
 	}
 
 	if currentVisibility == ast.ObjectFieldInherit {
@@ -500,7 +500,7 @@ func (t *FieldPlan) GetValue(obj *Object, ctx Context) (Value, error) {
 	layersCount := len(t.Layers)
 
 	if layersCount == 0 {
-		return Value{}, fmt.Errorf("no layers passed to plan.getValue")
+		return ValueNone, fmt.Errorf("no layers passed to plan.getValue")
 	}
 
 	// lastIdx := len(t.Layers) - 1
@@ -509,7 +509,7 @@ func (t *FieldPlan) GetValue(obj *Object, ctx Context) (Value, error) {
 
 	value, err := getValue(obj, int(layerRef.LayerIdx), int(layerRef.FieldIdx), ctx)
 	if err != nil {
-		return Value{}, err
+		return ValueNone, err
 	}
 
 	for i := 1; i < layersCount; i++ {
@@ -518,22 +518,22 @@ func (t *FieldPlan) GetValue(obj *Object, ctx Context) (Value, error) {
 
 		innerVal, err := getValue(obj, int(overlayRef.LayerIdx), int(overlayRef.FieldIdx), ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 
 		innerVal, err = innerVal.Eval(ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 
 		res, err := bopPlus(innerVal, value, ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 
 		res, err = res.Eval(ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 		value = res
 	}
@@ -635,12 +635,12 @@ func getValue(obj *Object, layerId, fieldId int, ctx Context) (Value, error) {
 
 		scopeId, err := obj.getScope(layerId, l, evalCtx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 
 		val, err = EvaluateNode(n, scopeId, evalCtx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 	}
 
@@ -785,7 +785,7 @@ func GetObjectKeysValuesArray(obj *Object, ctx Context, inclHidden bool) ([]uint
 func (t *Object) Prune(ctx Context) (Value, error) {
 	err := runAssertions(t, ctx)
 	if err != nil {
-		return Value{}, err
+		return ValueNone, err
 	}
 
 	plans := CompileObjectPlan(t, ctx)
@@ -810,18 +810,18 @@ func (t *Object) Prune(ctx Context) (Value, error) {
 
 		val, err := plan.GetValue(t, ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 
 		val, err = val.Eval(ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 
 		}
 
 		prunedVal, err := val.Prune(ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 
 		if prunedVal.IsEmpty(ctx) {

@@ -244,7 +244,7 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 
 	node, err := t.astImporter.ResolveImport(file)
 	if err != nil {
-		return evaluator.Value{}, evaluator.Context{}, func() {}, err
+		return evaluator.ValueNone, evaluator.Context{}, func() {}, err
 	}
 
 	// f, err := os.Create("cpu.prof")
@@ -270,7 +270,7 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 
 	std, err := stdlib.InitStdLib(ctx)
 	if err != nil {
-		return evaluator.Value{}, evaluator.Context{}, cleanup, err
+		return evaluator.ValueNone, evaluator.Context{}, cleanup, err
 	}
 
 	env := &evaluator.Environment{
@@ -293,13 +293,13 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 
 	value, err := evaluator.EvaluateNode(node, scopeId, ctx)
 	if err != nil {
-		return evaluator.Value{}, evaluator.Context{}, cleanup, err
+		return evaluator.ValueNone, evaluator.Context{}, cleanup, err
 	}
 
 	if value.IsFunction() {
 		res, err := value.Function(ctx).Exec(nil, ctx)
 		if err != nil {
-			return evaluator.Value{}, evaluator.Context{}, cleanup, err
+			return evaluator.ValueNone, evaluator.Context{}, cleanup, err
 		}
 		return res, ctx, cleanup, nil
 	}

@@ -22,16 +22,16 @@ func std_format(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 
 	format, err := args[0].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	arg, err := args[1].Eval(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	str, err := formatString(format, arg, ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	return evaluator.MakeString(str, ctx), nil
 }

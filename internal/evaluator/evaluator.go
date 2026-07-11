@@ -14,12 +14,12 @@ import (
 func EvaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 	val, err := evaluateNode(n, scopeId, ctx)
 	if err != nil {
-		return Value{}, WrapError(err, n)
+		return ValueNone, WrapError(err, n)
 	}
 	if val.IsThunk() {
 		val, err = val.Eval(ctx)
 		if err != nil {
-			return Value{}, WrapError(err, n)
+			return ValueNone, WrapError(err, n)
 		}
 	}
 	return val, nil
@@ -107,12 +107,12 @@ func evaluateNodeLazy(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 	case *ast.LiteralNumber:
 		num, err := strconv.ParseFloat(node.OriginalString, 64)
 		if err != nil {
-			return Value{}, fmt.Errorf("failed to parse float val (%s), err: %w", node.OriginalString, err)
+			return ValueNone, fmt.Errorf("failed to parse float val (%s), err: %w", node.OriginalString, err)
 		}
 		return MakeNumber(num), nil
 	case *ast.Self:
 		// if ctx.Self.IsNone() {
-		// 	return Value{}, errors.New("self not set")
+		// 	return ValueNone, errors.New("self not set")
 		// }
 		return ctx.Self, nil
 	case *ast.Local:
@@ -125,7 +125,7 @@ func evaluateNodeLazy(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 	switch node := n.(type) {
 	default:
-		return Value{}, fmt.Errorf("unhandled node type: %T", node)
+		return ValueNone, fmt.Errorf("unhandled node type: %T", node)
 	case *ast.LiteralString:
 		return MakeString(node.Value, ctx), nil
 	case *ast.LiteralNull:
@@ -135,7 +135,7 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 	case *ast.LiteralNumber:
 		num, err := strconv.ParseFloat(node.OriginalString, 64)
 		if err != nil {
-			return Value{}, fmt.Errorf("(%T) failed to parse float val (%s), err: %w", node, node.OriginalString, err)
+			return ValueNone, fmt.Errorf("(%T) failed to parse float val (%s), err: %w", node, node.OriginalString, err)
 		}
 		return MakeNumber(num), nil
 	case *ast.DesugaredObject:
@@ -145,7 +145,7 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 		for i := range node.Elements {
 			ev, err := evaluateNodeLazy(node.Elements[i].Expr, scopeId, ctx)
 			if err != nil {
-				return Value{}, err
+				return ValueNone, err
 			}
 			arr[i] = ev
 		}
@@ -156,11 +156,11 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 
 		val, err := EvaluateNode(node.Target, scopeId, ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 
 		if !val.IsFunction() {
-			return Value{}, TypeErrorSpecific(ValueTypeFunction, val.Type())
+			return ValueNone, TypeErrorSpecific(ValueTypeFunction, val.Type())
 		}
 
 		args := ctx.Registry.NamedValueBufs.Alloc(0, len(node.Arguments.Positional)+len(node.Arguments.Named))
@@ -168,7 +168,7 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 			// v, err := EvaluateNodeStrict(a.Expr, scopeId, ctx)
 			v, err := evaluateNodeLazy(a.Expr, scopeId, ctx)
 			if err != nil {
-				return Value{}, err
+				return ValueNone, err
 			}
 			args = append(args, NamedValue{Value: v})
 		}
@@ -177,7 +177,7 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 			// v, err := EvaluateNodeStrict(a.Arg, scopeId, ctx)
 			v, err := evaluateNodeLazy(a.Arg, scopeId, ctx)
 			if err != nil {
-				return Value{}, err
+				return ValueNone, err
 			}
 			nameKeyId := ctx.Interner.Intern(string(a.Name))
 			args = append(args, NamedValue{nameKeyId, v})
@@ -185,7 +185,7 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 
 		res, err := val.Function(ctx).Exec(args, ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 		return res, nil
 	case *ast.Index:
@@ -197,7 +197,7 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 
 		val, found := ctx.GetScopeBind(scopeId, keyId)
 		if !found {
-			return Value{}, MakeRuntimeError(fmt.Errorf("variable not found in scope, name: %s", name))
+			return ValueNone, MakeRuntimeError(fmt.Errorf("variable not found in scope, name: %s", name))
 		}
 
 		return val, nil
@@ -206,23 +206,23 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 	case *ast.Conditional:
 		cond, err := EvaluateNode(node.Cond, scopeId, ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 		if !cond.IsBool() {
-			return Value{}, TypeErrorSpecific(ValueTypeBool, cond.Type())
+			return ValueNone, TypeErrorSpecific(ValueTypeBool, cond.Type())
 		}
 
 		if cond.Bool() {
 			bt, err := EvaluateNode(node.BranchTrue, scopeId, ctx)
 			if err != nil {
-				return Value{}, err
+				return ValueNone, err
 			}
 			return bt, nil
 		}
 
 		bf, err := EvaluateNode(node.BranchFalse, scopeId, ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 		return bf, nil
 	case *ast.Binary:
@@ -230,26 +230,26 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 	case *ast.Unary:
 		unary, err := EvaluateNode(node.Expr, scopeId, ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 
 		switch node.Op {
 		default:
-			return Value{}, fmt.Errorf("unhandler unary type: %s", node.Op.String())
+			return ValueNone, fmt.Errorf("unhandler unary type: %s", node.Op.String())
 		case ast.UopNot:
 			if !unary.IsBool() {
-				return Value{}, fmt.Errorf("unexpected unary type %s for op %s, expected boolean", unary.Type().String(), node.Op.String())
+				return ValueNone, fmt.Errorf("unexpected unary type %s for op %s, expected boolean", unary.Type().String(), node.Op.String())
 			}
 			return MakeBool(!unary.Bool()), nil
 		case ast.UopMinus:
 			if !unary.IsNumber() {
-				return Value{}, fmt.Errorf("unexpected unary type %s for op %s, expected number", unary.Type().String(), node.Op.String())
+				return ValueNone, fmt.Errorf("unexpected unary type %s for op %s, expected number", unary.Type().String(), node.Op.String())
 			}
 			res := -unary.Number()
 			return MakeNumber(res), nil
 		case ast.UopBitwiseNot:
 			if !unary.IsNumber() {
-				return Value{}, fmt.Errorf("unexpected unary type %s for op %s, expected number", unary.Type().String(), node.Op.String())
+				return ValueNone, fmt.Errorf("unexpected unary type %s for op %s, expected number", unary.Type().String(), node.Op.String())
 			}
 			val32 := int64(unary.Number())
 			notVal32 := ^val32
@@ -279,9 +279,9 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 		fileData, err := os.ReadFile(fp)
 		if err != nil {
 			if os.IsNotExist(err) {
-				return Value{}, err
+				return ValueNone, err
 			}
-			return Value{}, fmt.Errorf("failed importing file: %s, err: %w", fp, err)
+			return ValueNone, fmt.Errorf("failed importing file: %s, err: %w", fp, err)
 		}
 
 		res := MakeString(string(fileData), ctx)
@@ -291,7 +291,7 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 		return res, nil
 	case *ast.Self:
 		// if ctx.Self.IsNone() {
-		// 	return Value{}, errors.New("self not set")
+		// 	return ValueNone, errors.New("self not set")
 		// }
 		return ctx.Self, nil
 	case *ast.SuperIndex:
@@ -299,16 +299,16 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 	case *ast.Error:
 		msg, err := EvaluateNode(node.Expr, scopeId, ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 		if !msg.IsString() {
-			return Value{}, TypeErrorSpecific(ValueTypeString, msg.Type())
+			return ValueNone, TypeErrorSpecific(ValueTypeString, msg.Type())
 		}
-		return Value{}, MakeRuntimeError(errors.New(msg.String(ctx)))
+		return ValueNone, MakeRuntimeError(errors.New(msg.String(ctx)))
 	case *GoCallbackNode:
 		res, err := node.Func.Exec(node.Args, ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 		return res, nil
 	}
@@ -371,7 +371,7 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 	for _, v := range node.Fields {
 		name, err := EvaluateNode(v.Name, scopeId, ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 
 		if name.IsNull() {
@@ -380,7 +380,7 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 		}
 
 		if !name.IsString() {
-			return Value{}, fmt.Errorf("unexpected field name type %s, expected string", name.Type().String())
+			return ValueNone, fmt.Errorf("unexpected field name type %s, expected string", name.Type().String())
 		}
 
 		n := name.String(ctx)
@@ -414,7 +414,7 @@ func handleLocal(node *ast.Local, scopeId uint32, ctx Context) (Value, error) {
 		keyId := ctx.Interner.Intern(vname)
 		t, err := evaluateNodeLazy(v.Body, childScopeId, ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 
 		s.Bindings[i] = NamedValue{keyId, t}
@@ -422,7 +422,7 @@ func handleLocal(node *ast.Local, scopeId uint32, ctx Context) (Value, error) {
 
 	val, err := EvaluateNode(node.Body, childScopeId, ctx)
 	if err != nil {
-		return Value{}, err
+		return ValueNone, err
 	}
 	return val, nil
 }
@@ -430,14 +430,14 @@ func handleLocal(node *ast.Local, scopeId uint32, ctx Context) (Value, error) {
 func handleBinary(node *ast.Binary, scopeId uint32, ctx Context) (Value, error) {
 	left, err := EvaluateNode(node.Left, scopeId, ctx)
 	if err != nil {
-		return Value{}, err
+		return ValueNone, err
 	}
 
 	// Check if fast exit is possible
 	switch node.Op {
 	case ast.BopAnd:
 		if !left.IsBool() {
-			return Value{}, fmt.Errorf("unexpected type %s for && op, expected boolean", left.Type().String())
+			return ValueNone, fmt.Errorf("unexpected type %s for && op, expected boolean", left.Type().String())
 		}
 
 		if !left.Bool() {
@@ -446,18 +446,18 @@ func handleBinary(node *ast.Binary, scopeId uint32, ctx Context) (Value, error) 
 
 		right, err := EvaluateNode(node.Right, scopeId, ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 
 		if !right.IsBool() {
-			return Value{}, fmt.Errorf("unexpected type %s for && op, expected boolean", right.Type().String())
+			return ValueNone, fmt.Errorf("unexpected type %s for && op, expected boolean", right.Type().String())
 		}
 		res := left.Bool() && right.Bool()
 		return MakeBool(res), nil
 
 	case ast.BopOr:
 		if !left.IsBool() {
-			return Value{}, fmt.Errorf("unexpected type %s for || op, expected boolean", left.Type().String())
+			return ValueNone, fmt.Errorf("unexpected type %s for || op, expected boolean", left.Type().String())
 		}
 
 		if left.Bool() {
@@ -466,23 +466,23 @@ func handleBinary(node *ast.Binary, scopeId uint32, ctx Context) (Value, error) 
 
 		right, err := EvaluateNode(node.Right, scopeId, ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 
 		if !right.IsBool() {
-			return Value{}, fmt.Errorf("unexpected type %s for || op, expected boolean", right.Type().String())
+			return ValueNone, fmt.Errorf("unexpected type %s for || op, expected boolean", right.Type().String())
 		}
 		res := left.Bool() || right.Bool()
 		return MakeBool(res), nil
 	default:
 		right, err := EvaluateNode(node.Right, scopeId, ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 
 		res, err := handleBinaryOp(node.Op, left, right, ctx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 
 		return res, nil
@@ -501,7 +501,7 @@ func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, err
 
 	var fn Func = func(args []NamedValue, _ Context) (Value, error) {
 		if len(args) > paramCount {
-			return Value{}, fmt.Errorf("unexpected amount of args passed to function")
+			return ValueNone, fmt.Errorf("unexpected amount of args passed to function")
 		}
 
 		if paramCount == 0 {
@@ -537,12 +537,12 @@ func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, err
 			// No arg was passed, fallback to default arg
 			defArgNode := node.Parameters[i].DefaultArg
 			if defArgNode == nil {
-				return Value{}, fmt.Errorf("arg (%d) with no default arg had no value passed", i)
+				return ValueNone, fmt.Errorf("arg (%d) with no default arg had no value passed", i)
 			}
 
 			da, err := evaluateNodeLazy(defArgNode, childScopeId, ctx)
 			if err != nil {
-				return Value{}, err
+				return ValueNone, err
 			}
 
 			s.Bindings[i] = NamedValue{keyId, da}
@@ -562,30 +562,30 @@ func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, err
 func handleIndex(node *ast.Index, scopeId uint32, ctx Context) (Value, error) {
 	index, err := EvaluateNode(node.Index, scopeId, ctx)
 	if err != nil {
-		return Value{}, err
+		return ValueNone, err
 	}
 
 	target, err := EvaluateNode(node.Target, scopeId, ctx)
 	if err != nil {
-		return Value{}, err
+		return ValueNone, err
 	}
 
 	switch target.Type() {
 	default:
-		return Value{}, fmt.Errorf("value not indexable: %s", target.Type().String())
+		return ValueNone, fmt.Errorf("value not indexable: %s", target.Type().String())
 	case ValueTypeString:
 		if !index.IsNumber() {
-			return Value{}, MakeRuntimeError(fmt.Errorf("unexpected index type for indexing string, expected number, got %s", index.Type().String()))
+			return ValueNone, MakeRuntimeError(fmt.Errorf("unexpected index type for indexing string, expected number, got %s", index.Type().String()))
 		}
 		i := int(index.Number())
 		if len(target.String(ctx)) <= i {
-			return Value{}, MakeRuntimeError(fmt.Errorf("index (%d) out of bounds, string length %d", i, len(target.Array(ctx))))
+			return ValueNone, MakeRuntimeError(fmt.Errorf("index (%d) out of bounds, string length %d", i, len(target.Array(ctx))))
 		}
 		s := target.String(ctx)
 		return MakeString(string(s[i]), ctx), nil
 	case ValueTypeObject:
 		if !index.IsString() {
-			return Value{}, MakeRuntimeError(fmt.Errorf("unexpected index type for indexing object, expected string, got %s", index.Type().String()))
+			return ValueNone, MakeRuntimeError(fmt.Errorf("unexpected index type for indexing object, expected string, got %s", index.Type().String()))
 		}
 
 		// TODO: can we optimize this? Since the index is a string we can take the id directly. If DataString is implemented that wont work...
@@ -601,25 +601,25 @@ func handleIndex(node *ast.Index, scopeId uint32, ctx Context) (Value, error) {
 
 		val, _, err := obj.GetField(keyId, subCtx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 		if val.IsNone() {
-			return Value{}, MakeRuntimeError(fmt.Errorf("Field does not exist: %s", name))
+			return ValueNone, MakeRuntimeError(fmt.Errorf("Field does not exist: %s", name))
 		}
 		val, err = val.Eval(subCtx)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 		return val, nil
 	case ValueTypeArray:
 		if !index.IsNumber() {
-			return Value{}, TypeErrorSpecific(ValueTypeNumber, index.Type())
+			return ValueNone, TypeErrorSpecific(ValueTypeNumber, index.Type())
 		}
 		i := int(index.Number())
 
 		arr := target.Array(ctx)
 		if i < 0 || len(arr) <= i {
-			return Value{}, MakeRuntimeError(fmt.Errorf("Index %d out of bounds, not within [0, %d)", i, len(arr)))
+			return ValueNone, MakeRuntimeError(fmt.Errorf("Index %d out of bounds, not within [0, %d)", i, len(arr)))
 		}
 		return target.Array(ctx)[i], nil
 	}
@@ -629,11 +629,11 @@ func handleIndex(node *ast.Index, scopeId uint32, ctx Context) (Value, error) {
 func handleSuperIndex(node *ast.SuperIndex, scopeId uint32, ctx Context) (Value, error) {
 	index, err := EvaluateNode(node.Index, scopeId, ctx)
 	if err != nil {
-		return Value{}, err
+		return ValueNone, err
 	}
 
 	if ctx.Self.IsNone() {
-		return Value{}, errors.New("ctx.Self not set")
+		return ValueNone, errors.New("ctx.Self not set")
 	}
 
 	name := index.String(ctx)
@@ -646,16 +646,16 @@ func handleSuperIndex(node *ast.SuperIndex, scopeId uint32, ctx Context) (Value,
 
 	val, _, err := obj.GetFieldWithOffset(keyId, ctx, targetOffset)
 	if err != nil {
-		return Value{}, err
+		return ValueNone, err
 	}
 
 	if val.IsNone() {
-		return Value{}, MakeRuntimeError(fmt.Errorf("Field does not exist: %s", name))
+		return ValueNone, MakeRuntimeError(fmt.Errorf("Field does not exist: %s", name))
 	}
 
 	val, err = val.Eval(ctx)
 	if err != nil {
-		return Value{}, err
+		return ValueNone, err
 	}
 
 	return val, nil
@@ -664,10 +664,10 @@ func handleSuperIndex(node *ast.SuperIndex, scopeId uint32, ctx Context) (Value,
 func handleImport(node *ast.Import, scopeId uint32, ctx Context) (Value, error) {
 	fileVal, err := EvaluateNode(node.File, scopeId, ctx)
 	if err != nil {
-		return Value{}, err
+		return ValueNone, err
 	}
 	if !fileVal.IsString() {
-		return Value{}, fmt.Errorf("(%T) unexpected file data type '%s'", node, fileVal.Type().String())
+		return ValueNone, fmt.Errorf("(%T) unexpected file data type '%s'", node, fileVal.Type().String())
 	}
 
 	file := fileVal.String(ctx)
@@ -689,7 +689,7 @@ func handleImport(node *ast.Import, scopeId uint32, ctx Context) (Value, error) 
 	for _, dir := range dirs {
 		fp, err := filepath.Abs(filepath.Join(dir, file))
 		if err != nil {
-			return Value{}, MakeRuntimeError(err)
+			return ValueNone, MakeRuntimeError(err)
 		}
 
 		v := importer.Get(fp)
@@ -706,7 +706,7 @@ func handleImport(node *ast.Import, scopeId uint32, ctx Context) (Value, error) 
 		}
 
 		if innerErr != nil {
-			return Value{}, innerErr
+			return ValueNone, innerErr
 		}
 
 		importedNode = in
@@ -716,17 +716,17 @@ func handleImport(node *ast.Import, scopeId uint32, ctx Context) (Value, error) 
 	}
 
 	if importedNode == nil {
-		return Value{}, errors.Join(errors.New("error resolving import"), rangeErr)
+		return ValueNone, errors.Join(errors.New("error resolving import"), rangeErr)
 	}
 
 	importScope := CreateFileScope(file, importer.BaseStd, ctx)
 
 	importCtx := ctx
-	importCtx.Self = Value{}
+	importCtx.Self = ValueNone
 
 	v, err := evaluateNodeLazy(importedNode, importScope, importCtx)
 	if err != nil {
-		return Value{}, err
+		return ValueNone, err
 	}
 
 	importer.Set(finalPath, v)

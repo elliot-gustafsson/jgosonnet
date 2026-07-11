@@ -3,6 +3,7 @@ package evaluator
 import (
 	"cmp"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/google/go-jsonnet/ast"
@@ -88,7 +89,7 @@ func NewFunction(argsCount int, fn Func) Function {
 
 func (t Function) Exec(args []NamedValue, ctx Context) (Value, error) {
 	if t.fn == nil {
-		return Value{}, fmt.Errorf("function not instantiated")
+		return ValueNone, fmt.Errorf("function not instantiated")
 	}
 	return t.fn(args, ctx)
 }
@@ -101,14 +102,17 @@ func (t Function) Length() int {
 	return t.argsCount
 }
 
-type Value struct {
-	t ValueType
+type Value uint64
 
-	// Reference to id in arena for string, object, array, function, thunk
-	refId uint32
+const (
+	nanTag uint64 = 0xFFF8000000000000
 
-	// Also holds 1.0 and 0.0 for bool
-	num float64
+	ValueNone Value = 0
+)
+
+func box(t ValueType, refId uint32) Value {
+	// pack the yype into bits 32-47, and the refId into bits 0-31
+	return Value((uint64(t) << 32) | uint64(refId))
 }
 
 type NamedValue struct {
@@ -124,111 +128,106 @@ type CachedValue struct {
 }
 
 func MakeNull() Value {
-	return Value{t: ValueTypeNull}
+	return box(ValueTypeNull, 0)
 }
 
 func MakeString(v string, ctx Context) Value {
 	id := ctx.Registry.Strings.Alloc(v)
-	return Value{t: ValueTypeString, refId: id}
+	return box(ValueTypeString, id)
 }
 
 func MakeStringConcat(v1, v2 string, ctx Context) Value {
 	id := ctx.Registry.Strings.AllocConcat(v1, v2)
-	return Value{t: ValueTypeString, refId: id}
+	return box(ValueTypeString, id)
 }
 
 func MakeNumber(v float64) Value {
-	return Value{t: ValueTypeNumber, num: v}
+	bits := math.Float64bits(v)
+	if math.IsNaN(v) {
+		bits = 0x7FF8000000000000
+	}
+	return Value(bits ^ nanTag)
 }
 
 func MakeBool(v bool) Value {
 	if v {
-		return Value{t: ValueTypeBool, num: 1}
+		return box(ValueTypeBool, 1)
 	}
-	return Value{t: ValueTypeBool, num: 0}
-
+	return box(ValueTypeBool, 0)
 }
 
 func MakeObject(v Object, ctx Context) Value {
 	refId := ctx.Registry.Objects.Alloc(v)
-	return Value{t: ValueTypeObject, refId: refId}
+	return box(ValueTypeObject, refId)
 }
 
 func MakeObjectValue(id uint32) Value {
-	return Value{t: ValueTypeObject, refId: id}
+	return box(ValueTypeObject, id)
 }
 
 func MakeArray(v []Value, ctx Context) Value {
 	refId := ctx.Registry.Arrays.Alloc(v)
-	return Value{t: ValueTypeArray, refId: refId}
+	return box(ValueTypeArray, refId)
 }
 
 func MakeArraySized(l int, ctx Context) ([]Value, Value) {
 	arr, refId := ctx.Registry.Arrays.Make(l)
-	return arr, Value{t: ValueTypeArray, refId: refId}
+	return arr, box(ValueTypeArray, refId)
 }
 
 func MakeFunction(v Function, ctx Context) Value {
 	refId := ctx.Registry.Functions.Alloc(v)
-	return Value{t: ValueTypeFunction, refId: refId}
+	return box(ValueTypeFunction, refId)
 }
 
 func MakeThunk(v Thunk, ctx Context) Value {
 	refId := ctx.Registry.Thunks.Alloc(v)
-	return Value{t: ValueTypeThunk, refId: refId}
+	return box(ValueTypeThunk, refId)
 }
 
 func MakeTombstoneValue(scope int) Value {
-	return Value{refId: uint32(scope)}
+	return box(ValueTypeNone, uint32(scope))
 }
 
 func (v Value) Type() ValueType {
-	return v.t
+	if v.IsNumber() {
+		return ValueTypeNumber
+	}
+	// Shift down 32 bits and mask out the ID to get the Type
+	return ValueType(uint64(v) >> 32)
 }
 
 func (v Value) RefId() uint32 {
-	// if v.t == ValueTypeString {
-	// 	x := v.refId & dataStringFlag
-	// 	if x != 0 {
-	// 		return v.refId &^ dataStringFlag
-	// 	}
-	// 	return v.refId
-	// }
-	return v.refId
+	return uint32(v)
 }
 
 func (v Value) String(ctx Context) string {
-	// x := v.refId & dataStringFlag
-	// if x != 0 {
-	// 	realId := v.refId &^ dataStringFlag
-	// 	return ctx.Registry.Strings.Get(realId)
-	// }
-	// return ctx.Interner.Get(v.refId)
-	return ctx.Registry.Strings.Get(v.refId)
+	return ctx.Registry.Strings.Get(v.RefId())
 }
 
 func (v Value) Number() float64 {
-	return v.num
+	return math.Float64frombits(uint64(v) ^ nanTag)
 }
 
 func (v Value) Bool() bool {
-	return v.num == 1
+	// Because MakeBool stored 1 or 0 in the RefId slot
+	return uint32(v) == 1
 }
 
 func (v Value) Array(ctx Context) []Value {
-	return ctx.Registry.Arrays.Get(v.refId)
+	return ctx.Registry.Arrays.Get(v.RefId())
 }
 
 func (v Value) Object(ctx Context) *Object {
-	return ctx.Registry.Objects.GetPtr(v.refId)
+	return ctx.Registry.Objects.GetPtr(v.RefId())
 }
 
 func (v Value) Function(ctx Context) Function {
-	return ctx.Registry.Functions.GetValue(v.refId)
+	return ctx.Registry.Functions.GetValue(v.RefId())
 }
 
 func (v Value) Thunk(ctx Context) *Thunk {
-	return ctx.Registry.Thunks.GetPtr(v.refId)
+	return ctx.Registry.Thunks.GetPtr(v.RefId())
 }
 
 func (v Value) Eval(ctx Context) (Value, error) {
@@ -248,7 +247,7 @@ func (v Value) Eval(ctx Context) (Value, error) {
 
 	evaledVal, err := EvaluateNode(node, thunk.ScopeId, evalCtx)
 	if err != nil {
-		return Value{}, err
+		return ValueNone, err
 	}
 
 	thunk = v.Thunk(ctx)
@@ -359,9 +358,9 @@ func (v Value) EvalFunction(ctx Context) (Function, error) {
 
 func (v Value) ToString(ctx Context) (string, error) {
 
-	switch v.t {
+	switch v.Type() {
 	default:
-		return "", fmt.Errorf("unhandled type %s, string conversion not available", v.t.String())
+		return "", fmt.Errorf("unhandled type %s, string conversion not available", v.Type().String())
 	case ValueTypeNull:
 		return "null", nil
 	case ValueTypeString:
@@ -401,43 +400,43 @@ func (v Value) ToString(ctx Context) (string, error) {
 }
 
 func (v Value) IsNone() bool {
-	return v.t == ValueTypeNone
+	return v == 0
 }
 
 func (v Value) IsLiteral() bool {
-	return v.t.IsLiteral()
+	return v.Type().IsLiteral()
 }
 
 func (v Value) IsNull() bool {
-	return v.t == ValueTypeNull
+	return v.Type() == ValueTypeNull
 }
 
 func (v Value) IsString() bool {
-	return v.t == ValueTypeString
+	return v.Type() == ValueTypeString
 }
 
 func (v Value) IsNumber() bool {
-	return v.t == ValueTypeNumber
+	return uint64(v) >= 0x0001000000000000
 }
 
 func (v Value) IsBool() bool {
-	return v.t == ValueTypeBool
+	return v.Type() == ValueTypeBool
 }
 
 func (v Value) IsThunk() bool {
-	return v.t == ValueTypeThunk
+	return v.Type() == ValueTypeThunk
 }
 
 func (v Value) IsObject() bool {
-	return v.t == ValueTypeObject
+	return v.Type() == ValueTypeObject
 }
 
 func (v Value) IsFunction() bool {
-	return v.t == ValueTypeFunction
+	return v.Type() == ValueTypeFunction
 }
 
 func (v Value) IsArray() bool {
-	return v.t == ValueTypeArray
+	return v.Type() == ValueTypeArray
 }
 
 func (v Value) IsEmpty(ctx Context) bool {
@@ -456,7 +455,7 @@ func (v Value) IsEmpty(ctx Context) bool {
 func (v Value) Prune(ctx Context) (Value, error) {
 	switch v.Type() {
 	default:
-		return Value{}, fmt.Errorf("unhandled type (%s) in Value.Prune()", v.Type())
+		return ValueNone, fmt.Errorf("unhandled type (%s) in Value.Prune()", v.Type())
 	case ValueTypeNull, ValueTypeString, ValueTypeNumber, ValueTypeBool:
 		return v, nil
 	case ValueTypeObject:
@@ -467,11 +466,11 @@ func (v Value) Prune(ctx Context) (Value, error) {
 		for _, v := range arr {
 			v, err := v.Eval(ctx)
 			if err != nil {
-				return Value{}, err
+				return ValueNone, err
 			}
 			out, err := v.Prune(ctx)
 			if err != nil {
-				return Value{}, err
+				return ValueNone, err
 			}
 			if out.IsEmpty(ctx) {
 				continue

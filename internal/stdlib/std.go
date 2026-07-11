@@ -222,7 +222,7 @@ func f(f evaluator.Func, params ...param) func(evaluator.Context) evaluator.Func
 			// TODO: Argument x already provided
 
 			if len(args) > len(argIds) {
-				return evaluator.Value{}, evaluator.MakeRuntimeError(fmt.Errorf("function expected %d positional argument(s), but got %d", len(argIds), len(args)))
+				return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("function expected %d positional argument(s), but got %d", len(argIds), len(args)))
 			}
 
 			var onNamedArgs bool
@@ -234,7 +234,7 @@ func f(f evaluator.Func, params ...param) func(evaluator.Context) evaluator.Func
 				if na.Key == 0 {
 					// Positional Argument
 					if onNamedArgs {
-						return evaluator.Value{}, fmt.Errorf("Positional argument after a named argument is not allowed")
+						return evaluator.ValueNone, fmt.Errorf("Positional argument after a named argument is not allowed")
 					}
 					na.Key = argIds[posIdx]
 					orderedArgs[posIdx] = na
@@ -254,13 +254,13 @@ func f(f evaluator.Func, params ...param) func(evaluator.Context) evaluator.Func
 				}
 				if !found {
 					argName := ctx.Interner.Get(na.Key)
-					return evaluator.Value{}, evaluator.MakeRuntimeError(fmt.Errorf("function has no parameter %s", argName))
+					return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("function has no parameter %s", argName))
 				}
 			}
 
 			for i := 0; i < optStart; i++ {
 				if orderedArgs[i].Value.IsNone() {
-					return evaluator.Value{}, evaluator.MakeRuntimeError(fmt.Errorf("Missing argument: %s", params[i].Name))
+					return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("Missing argument: %s", params[i].Name))
 				}
 			}
 
@@ -320,7 +320,7 @@ func liftValueToBool(f func(evaluator.NamedValue) bool) evaluator.Func {
 	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 		a, err := args[0].Eval(ctx)
 		if err != nil {
-			return evaluator.Value{}, err
+			return evaluator.ValueNone, err
 		}
 		res := f(evaluator.NamedValue{Value: a})
 		return evaluator.MakeBool(res), nil
@@ -330,7 +330,7 @@ func liftValueToBool(f func(evaluator.NamedValue) bool) evaluator.Func {
 func std_extVar(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	name, err := args[0].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	s, ok := ctx.Environment.ExtVars[name]
@@ -351,18 +351,18 @@ func std_extVar(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 
 		n, err := importer.ResolveSnippet(name, s)
 		if err != nil {
-			return evaluator.Value{}, err
+			return evaluator.ValueNone, err
 		}
 
 		importCtx := ctx
-		importCtx.Self = evaluator.Value{}
+		importCtx.Self = evaluator.ValueNone
 		importCtx.SuperOffset = 0
 
 		scopeId := evaluator.CreateFileScope(name, importer.BaseStd, importCtx)
 
 		val, err = evaluator.EvaluateNode(n, scopeId, ctx)
 		if err != nil {
-			return evaluator.Value{}, err
+			return evaluator.ValueNone, err
 		}
 
 		importer.Set(name, val)
@@ -370,18 +370,18 @@ func std_extVar(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 		return val, nil
 	}
 
-	return evaluator.Value{}, fmt.Errorf("undefined external variable: %s", name)
+	return evaluator.ValueNone, fmt.Errorf("undefined external variable: %s", name)
 }
 
 func std_trace(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	str, err := args[0].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	_, err = fmt.Fprint(ctx.Environment.TraceOut, "TRACE: "+str+"\n")
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	return args[1].Value, nil
 }
@@ -390,7 +390,7 @@ func std_type(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 
 	v, err := args[0].Eval(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	return evaluator.MakeString(v.Type().String(), ctx), nil
@@ -398,21 +398,21 @@ func std_type(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 
 func std_assertEqual(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	if len(args) != 2 {
-		return evaluator.Value{}, fmt.Errorf("unexpected amount of arguments passed to std.assertEqual: %d, expected 2", len(args))
+		return evaluator.ValueNone, fmt.Errorf("unexpected amount of arguments passed to std.assertEqual: %d, expected 2", len(args))
 	}
 
 	a, err := args[0].Eval(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	b, err := args[1].Eval(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	eq, err := a.Equal(b, ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	if eq {
@@ -421,11 +421,11 @@ func std_assertEqual(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 
 	aStr, err := a.ToString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	bStr, err := b.ToString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	return evaluator.MakeBool(false), fmt.Errorf("assertion failed %s != %s", aStr, bStr)
@@ -442,7 +442,7 @@ var std_isNull = liftValueToBool(func(v evaluator.NamedValue) bool { return v.Is
 func std_toString(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	s, err := args[0].ToString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	return evaluator.MakeString(s, ctx), nil
 }
@@ -451,7 +451,7 @@ func std_length(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 
 	arg, err := args[0].Eval(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	var res float64
@@ -466,7 +466,7 @@ func std_length(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 	case evaluator.ValueTypeFunction:
 		res = float64(arg.Function(ctx).Length())
 	default:
-		return evaluator.Value{}, evaluator.TypeErrorGeneral(arg.Type())
+		return evaluator.ValueNone, evaluator.TypeErrorGeneral(arg.Type())
 	}
 
 	return evaluator.MakeNumber(res), nil
@@ -476,11 +476,11 @@ func std_mod(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 
 	a, err := args[0].Eval(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	b, err := args[1].Eval(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	if a.IsNumber() && b.IsNumber() {
 		return std_modulo(args, ctx)
@@ -490,18 +490,18 @@ func std_mod(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 		x := []evaluator.NamedValue{{Value: a}, {Value: b}}
 		return std_format(x, ctx)
 	}
-	return evaluator.Value{}, evaluator.MakeRuntimeError(fmt.Errorf("Operator %% cannot be used on types %s and %s.", a.Type().String(), b.Type().String()))
+	return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("Operator %% cannot be used on types %s and %s.", a.Type().String(), b.Type().String()))
 }
 
 func std_prune(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	arg, err := args[0].Eval(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	res, err := arg.Prune(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	return res, nil
 }

@@ -9,14 +9,14 @@ func liftObjectToValueErr(f func(evaluator.Value, evaluator.Context) (evaluator.
 
 		a, err := args[0].Eval(ctx)
 		if err != nil {
-			return evaluator.Value{}, err
+			return evaluator.ValueNone, err
 		}
 		if !a.IsObject() {
-			return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, a.Type())
+			return evaluator.ValueNone, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, a.Type())
 		}
 		res, err := f(a, ctx)
 		if err != nil {
-			return evaluator.Value{}, err
+			return evaluator.ValueNone, err
 		}
 		return res, nil
 	}
@@ -27,18 +27,18 @@ func liftObjectStringToValueErr(f func(evaluator.Value, string, evaluator.Contex
 
 		a, err := args[0].Eval(ctx)
 		if err != nil {
-			return evaluator.Value{}, err
+			return evaluator.ValueNone, err
 		}
 		if !a.IsObject() {
-			return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, a.Type())
+			return evaluator.ValueNone, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, a.Type())
 		}
 		b, err := args[1].EvalString(ctx)
 		if err != nil {
-			return evaluator.Value{}, err
+			return evaluator.ValueNone, err
 		}
 		res, err := f(a, b, ctx)
 		if err != nil {
-			return evaluator.Value{}, err
+			return evaluator.ValueNone, err
 		}
 		return res, nil
 	}
@@ -49,22 +49,22 @@ func std_get(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 
 	objVal, err := args[0].Eval(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	if !objVal.IsObject() {
-		return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, objVal.Type())
+		return evaluator.ValueNone, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, objVal.Type())
 	}
 
 	field, err := args[1].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	defaultVal := evaluator.MakeNull()
 	if !args[2].IsNone() {
 		v, err := args[2].Eval(ctx)
 		if err != nil {
-			return evaluator.Value{}, err
+			return evaluator.ValueNone, err
 		}
 		defaultVal = v
 	}
@@ -73,7 +73,7 @@ func std_get(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 	if !args[3].IsNone() {
 		v, err := args[3].EvalBool(ctx)
 		if err != nil {
-			return evaluator.Value{}, err
+			return evaluator.ValueNone, err
 		}
 		inclHidden = v
 	}
@@ -85,7 +85,7 @@ func std_get(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 
 	val, visible, err := objVal.Object(ctx).GetField(keyId, childCtx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	if val.IsNone() || !visible && !inclHidden {
 		return defaultVal, nil
@@ -106,11 +106,11 @@ var std_objectFieldsAll = liftObjectToValueErr(func(v evaluator.Value, ctx evalu
 func std_objectFieldsEx(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	obj, err := args[0].EvalObject(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	inclHidden, err := args[1].EvalBool(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	res := evaluator.GetObjectFields(obj, ctx, inclHidden)
 	return evaluator.MakeArray(res, ctx), nil
@@ -119,7 +119,7 @@ func std_objectFieldsEx(args []evaluator.NamedValue, ctx evaluator.Context) (eva
 var std_objectValues = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
 	res, err := evaluator.GetObjectValues(v.Object(ctx), ctx, false)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	return evaluator.MakeArray(res, ctx), nil
 })
@@ -127,7 +127,7 @@ var std_objectValues = liftObjectToValueErr(func(v evaluator.Value, ctx evaluato
 var std_objectValuesAll = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
 	res, err := evaluator.GetObjectValues(v.Object(ctx), ctx, true)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	return evaluator.MakeArray(res, ctx), nil
 })
@@ -135,7 +135,7 @@ var std_objectValuesAll = liftObjectToValueErr(func(v evaluator.Value, ctx evalu
 var std_objectKeysValues = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
 	res, err := evaluator.GetObjectKeysValues(v.Object(ctx), ctx, false)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	return evaluator.MakeArray(res, ctx), nil
 })
@@ -143,7 +143,7 @@ var std_objectKeysValues = liftObjectToValueErr(func(v evaluator.Value, ctx eval
 var std_objectKeysValuesAll = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
 	res, err := evaluator.GetObjectKeysValues(v.Object(ctx), ctx, true)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	return evaluator.MakeArray(res, ctx), nil
 })
@@ -154,7 +154,7 @@ var std_objectHas = liftObjectStringToValueErr(func(v evaluator.Value, s string,
 	subCtx.Self = v
 	value, _, err := v.Object(ctx).GetField(keyId, subCtx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	return evaluator.MakeBool(!value.IsNone()), nil
 })
@@ -165,7 +165,7 @@ var std_objectHasAll = liftObjectStringToValueErr(func(v evaluator.Value, s stri
 	subCtx.Self = v
 	value, _, err := v.Object(ctx).GetField(keyId, subCtx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	return evaluator.MakeBool(!value.IsNone()), nil
 })
@@ -173,20 +173,20 @@ var std_objectHasAll = liftObjectStringToValueErr(func(v evaluator.Value, s stri
 func std_objectHasEx(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	objVal, err := args[0].Eval(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	if !objVal.IsObject() {
-		return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, objVal.Type())
+		return evaluator.ValueNone, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, objVal.Type())
 	}
 
 	fname, err := args[1].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	hidden, err := args[2].EvalBool(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	keyId := ctx.Interner.Intern(fname)
@@ -196,7 +196,7 @@ func std_objectHasEx(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 
 	value, visible, err := objVal.Object(ctx).GetField(keyId, subCtx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	if value.IsNone() || (!visible && !hidden) {
 		return evaluator.MakeBool(false), nil
@@ -209,17 +209,17 @@ func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 
 	mapFunc, err := args[0].EvalFunction(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	obj, err := args[1].EvalObject(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	keys, vals, err := evaluator.GetObjectKeysValuesArray(obj, ctx, false)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	fieldCount := len(keys)
@@ -266,16 +266,16 @@ func std_objectRemoveKey(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 
 	objVal, err := args[0].Eval(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	if !objVal.IsObject() {
-		return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, objVal.Type())
+		return evaluator.ValueNone, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, objVal.Type())
 	}
 	obj := objVal.Object(ctx)
 
 	key, err := args[1].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	keyId := ctx.Interner.Intern(key)
@@ -300,7 +300,7 @@ func std_mergePatch(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 
 	patchVal, err := args[1].Eval(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	if !patchVal.IsObject() {
@@ -310,7 +310,7 @@ func std_mergePatch(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 
 	targetVal, err := args[0].Eval(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	var objVal evaluator.Value
@@ -347,7 +347,7 @@ func std_mergePatch(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 
 		val, err := plan.GetValue(obj, subCtx)
 		if err != nil {
-			return evaluator.Value{}, err
+			return evaluator.ValueNone, err
 		}
 
 		if val.IsNull() {

@@ -131,7 +131,7 @@ func (c Context) GetScopeBind(scopeId, key uint32) (Value, bool) {
 
 		currId = scope.ParentId
 	}
-	return Value{}, false
+	return ValueNone, false
 }
 
 type ExtVar interface {
@@ -164,7 +164,7 @@ func (t *ExtCode) Eval(scopeId uint32, ctx Context) (Value, error) {
 	if t.n == nil {
 		n, err := jsonnet.SnippetToAST(t.Key, t.Val)
 		if err != nil {
-			return Value{}, err
+			return ValueNone, err
 		}
 		t.n = n
 	}

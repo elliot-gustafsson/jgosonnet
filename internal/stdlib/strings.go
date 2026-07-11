@@ -21,7 +21,7 @@ func liftString(f func(string) string) evaluator.Func {
 	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 		a, err := args[0].EvalString(ctx)
 		if err != nil {
-			return evaluator.Value{}, err
+			return evaluator.ValueNone, err
 		}
 		res := f(a)
 		return evaluator.MakeString(res, ctx), nil
@@ -32,11 +32,11 @@ func liftStringErr(f func(string) (string, error)) evaluator.Func {
 	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 		a, err := args[0].EvalString(ctx)
 		if err != nil {
-			return evaluator.Value{}, err
+			return evaluator.ValueNone, err
 		}
 		res, err := f(a)
 		if err != nil {
-			return evaluator.Value{}, err
+			return evaluator.ValueNone, err
 		}
 		return evaluator.MakeString(res, ctx), nil
 	}
@@ -46,11 +46,11 @@ func liftString2(f func(string, string) string) evaluator.Func {
 	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 		a, err := args[0].EvalString(ctx)
 		if err != nil {
-			return evaluator.Value{}, err
+			return evaluator.ValueNone, err
 		}
 		b, err := args[1].EvalString(ctx)
 		if err != nil {
-			return evaluator.Value{}, err
+			return evaluator.ValueNone, err
 		}
 		res := f(a, b)
 		return evaluator.MakeString(res, ctx), nil
@@ -86,7 +86,7 @@ var std_sha3 = liftString(func(s string) string {
 func std_base64(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	inputVal, err := args[0].Eval(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	var toEncode []byte
@@ -98,24 +98,24 @@ func std_base64(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 		for _, v := range arr {
 			v, err := v.Eval(ctx)
 			if err != nil {
-				return evaluator.Value{}, err
+				return evaluator.ValueNone, err
 			}
 
 			numInt := int(v.Number())
 			if !v.IsNumber() || float64(numInt) != v.Number() {
 				err := fmt.Errorf("base64 encountered a non-integer value in the array, got %s", v.Type())
-				return evaluator.Value{}, evaluator.MakeRuntimeError(err)
+				return evaluator.ValueNone, evaluator.MakeRuntimeError(err)
 			}
 
 			if numInt < 0 || 255 < numInt {
 				err := fmt.Errorf("base64 encountered invalid codepoint value in the array (must be 0 <= X <= 255), got %d", numInt)
-				return evaluator.Value{}, evaluator.MakeRuntimeError(err)
+				return evaluator.ValueNone, evaluator.MakeRuntimeError(err)
 			}
 			toEncode = append(toEncode, byte(numInt))
 		}
 	} else {
 		err := fmt.Errorf("base64 can only base64 encode strings / arrays of single bytes, got %s", inputVal.Type())
-		return evaluator.Value{}, evaluator.MakeRuntimeError(err)
+		return evaluator.ValueNone, evaluator.MakeRuntimeError(err)
 	}
 
 	res := base64.StdEncoding.EncodeToString(toEncode)
@@ -133,11 +133,11 @@ var std_base64Decode = liftStringErr(func(s string) (string, error) {
 func std_base64DecodeBytes(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	arg, err := args[0].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	out, err := base64.StdEncoding.DecodeString(arg)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	res, arrVal := evaluator.MakeArraySized(len(out), ctx)
 	for i, v := range out {
@@ -152,7 +152,7 @@ var std_asciiUpper = liftString(strings.ToUpper)
 func std_isEmpty(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	arg, err := args[0].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	return evaluator.MakeBool(len(arg) == 0), nil
 }
@@ -161,11 +161,11 @@ func std_codepoint(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 
 	arg, err := args[0].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	if len(arg) != 1 {
-		return evaluator.Value{}, evaluator.MakeRuntimeError(fmt.Errorf("codepoint takes a string of length 1, got length %d", len(arg)))
+		return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("codepoint takes a string of length 1, got length %d", len(arg)))
 	}
 
 	return evaluator.MakeNumber(float64(arg[0])), nil
@@ -175,13 +175,13 @@ func std_char(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 
 	num, err := args[0].EvalNumber(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	if num > codepointMax {
-		return evaluator.Value{}, evaluator.MakeRuntimeError(fmt.Errorf("invalid unicode codepoint, got %v", num))
+		return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("invalid unicode codepoint, got %v", num))
 	} else if num < 0 {
-		return evaluator.Value{}, evaluator.MakeRuntimeError(fmt.Errorf("codepoints must be >= 0, got %v", num))
+		return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("codepoints must be >= 0, got %v", num))
 	}
 
 	return evaluator.MakeString(string(rune(num)), ctx), nil
@@ -191,7 +191,7 @@ func std_stringChars(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 
 	arg, err := args[0].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	res := make([]evaluator.Value, 0, len(arg))
@@ -206,12 +206,12 @@ func std_startsWith(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 
 	full, err := args[0].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	prefix, err := args[1].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	res := strings.HasPrefix(full, prefix)
@@ -223,12 +223,12 @@ func std_endsWith(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator
 
 	full, err := args[0].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	prefix, err := args[1].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	res := strings.HasSuffix(full, prefix)
@@ -240,36 +240,36 @@ func std_substr(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 
 	fullVal, err := args[0].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	full := []rune(fullVal)
 
 	fromFloat, err := args[1].EvalNumber(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	from := int(fromFloat)
 	if float64(from) != fromFloat {
-		return evaluator.Value{}, evaluator.MakeRuntimeError(fmt.Errorf("substr second parameter should be an integer, got %f", fromFloat))
+		return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("substr second parameter should be an integer, got %f", fromFloat))
 	}
 
 	if from < 0 {
-		return evaluator.Value{}, evaluator.MakeRuntimeError(fmt.Errorf("substr second parameter should be greater than zero, got %d", from))
+		return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("substr second parameter should be greater than zero, got %d", from))
 	}
 
 	lenFloat, err := args[2].EvalNumber(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	length := int(lenFloat)
 	if float64(length) != lenFloat {
-		return evaluator.Value{}, evaluator.MakeRuntimeError(fmt.Errorf("substr third parameter should be an integer, got %f", lenFloat))
+		return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("substr third parameter should be an integer, got %f", lenFloat))
 	}
 
 	if length < 0 {
-		return evaluator.Value{}, evaluator.MakeRuntimeError(fmt.Errorf("substr third parameter should be greater than zero, got %d", length))
+		return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("substr third parameter should be greater than zero, got %d", length))
 	}
 
 	if from > len(full) {
@@ -291,12 +291,12 @@ func std_findSubstr(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 
 	substr, err := args[0].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	full, err := args[1].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	res := []evaluator.Value{}
@@ -322,17 +322,17 @@ func std_strReplace(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 
 	full, err := args[0].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	from, err := args[1].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	to, err := args[2].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	res := strings.ReplaceAll(full, from, to)
@@ -344,12 +344,12 @@ func std_split(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 
 	full, err := args[0].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	split, err := args[1].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	parts := strings.Split(full, split)
@@ -365,17 +365,17 @@ func std_splitLimit(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 
 	full, err := args[0].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	split, err := args[1].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	maxSplits, err := args[2].EvalInteger(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	var arr []string
@@ -397,17 +397,17 @@ func std_splitLimitR(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 
 	full, err := args[0].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	split, err := args[1].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	maxSplits, err := args[2].EvalInteger(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	if maxSplits < 0 {
@@ -444,12 +444,12 @@ func liftCastString(f func(string) string) evaluator.Func {
 	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 		val, err := args[0].Eval(ctx)
 		if err != nil {
-			return evaluator.Value{}, err
+			return evaluator.ValueNone, err
 		}
 
 		strval, err := val.ToString(ctx)
 		if err != nil {
-			return evaluator.Value{}, err
+			return evaluator.ValueNone, err
 		}
 		res := f(strval)
 		return evaluator.MakeString(res, ctx), nil
@@ -511,19 +511,19 @@ func std_escapeStringJson(args []evaluator.NamedValue, ctx evaluator.Context) (e
 
 	val, err := args[0].Eval(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	strval, err := val.ToString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	var b strings.Builder
 
 	err = evaluator.ManifestJson(&b, evaluator.MakeString(strval, ctx), ctx, evaluator.JsonConfigMinified)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	return evaluator.MakeString(b.String(), ctx), nil
@@ -532,11 +532,11 @@ func std_escapeStringJson(args []evaluator.NamedValue, ctx evaluator.Context) (e
 func std_equalsIgnoreCase(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	a, err := args[0].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	b, err := args[1].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	return evaluator.MakeBool(strings.EqualFold(a, b)), nil
 }

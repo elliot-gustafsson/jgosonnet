@@ -10,7 +10,7 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 
 	inputArr, err := args[0].EvalArray(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	layers := make([]*evaluator.Layer, 0, len(inputArr))
@@ -18,7 +18,7 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 
 		obj, err := v.EvalObject(ctx)
 		if err != nil {
-			return evaluator.Value{}, err
+			return evaluator.ValueNone, err
 		}
 
 		for _, l := range obj.GetLayers(ctx) {
@@ -35,12 +35,12 @@ func builtin_flatMapArray(args []evaluator.NamedValue, ctx evaluator.Context) (e
 
 	mapperFunc, err := args[0].EvalFunction(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	inputArr, err := args[1].EvalArray(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	mapperFuncInput := []evaluator.NamedValue{{}}
@@ -51,10 +51,10 @@ func builtin_flatMapArray(args []evaluator.NamedValue, ctx evaluator.Context) (e
 		mapperFuncInput[0] = evaluator.NamedValue{Value: v}
 		out, err := mapperFunc.Exec(mapperFuncInput, ctx)
 		if err != nil {
-			return evaluator.Value{}, err
+			return evaluator.ValueNone, err
 		}
 		if !out.IsArray() {
-			return evaluator.Value{}, fmt.Errorf("unexpected response type of builtin_flatMapArray map func call: %s, expected array", out.Type().String())
+			return evaluator.ValueNone, fmt.Errorf("unexpected response type of builtin_flatMapArray map func call: %s, expected array", out.Type().String())
 		}
 		arr := out.Array(ctx)
 		subArrays[i] = arr

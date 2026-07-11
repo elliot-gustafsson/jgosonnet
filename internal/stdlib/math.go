@@ -10,7 +10,7 @@ func liftNumeric(f func(float64) float64) evaluator.Func {
 	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 		a, err := args[0].EvalNumber(ctx)
 		if err != nil {
-			return evaluator.Value{}, err
+			return evaluator.ValueNone, err
 		}
 		res := f(a)
 		return evaluator.MakeNumber(res), nil
@@ -21,11 +21,11 @@ func liftNumeric2(f func(float64, float64) float64) evaluator.Func {
 	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 		a, err := args[0].EvalNumber(ctx)
 		if err != nil {
-			return evaluator.Value{}, err
+			return evaluator.ValueNone, err
 		}
 		b, err := args[1].EvalNumber(ctx)
 		if err != nil {
-			return evaluator.Value{}, err
+			return evaluator.ValueNone, err
 		}
 		res := f(a, b)
 		return evaluator.MakeNumber(res), nil
@@ -36,7 +36,7 @@ func liftNumericToBoolean(f func(float64) bool) evaluator.Func {
 	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 		a, err := args[0].EvalNumber(ctx)
 		if err != nil {
-			return evaluator.Value{}, err
+			return evaluator.ValueNone, err
 		}
 		res := f(a)
 		return evaluator.MakeBool(res), nil
@@ -114,24 +114,24 @@ func std_clamp(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 
 	x, err := args[0].Eval(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	if !x.IsNumber() {
-		return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeNumber, x.Type())
+		return evaluator.ValueNone, evaluator.TypeErrorSpecific(evaluator.ValueTypeNumber, x.Type())
 	}
 	minVal, err := args[1].Eval(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	if !minVal.IsNumber() {
-		return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeNumber, minVal.Type())
+		return evaluator.ValueNone, evaluator.TypeErrorSpecific(evaluator.ValueTypeNumber, minVal.Type())
 	}
 	maxVal, err := args[2].Eval(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 	if !maxVal.IsNumber() {
-		return evaluator.Value{}, evaluator.TypeErrorSpecific(evaluator.ValueTypeNumber, maxVal.Type())
+		return evaluator.ValueNone, evaluator.TypeErrorSpecific(evaluator.ValueTypeNumber, maxVal.Type())
 	}
 
 	if x.Number() <= minVal.Number() {

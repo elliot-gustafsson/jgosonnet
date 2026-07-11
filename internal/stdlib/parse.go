@@ -18,7 +18,7 @@ func liftStringToValueErr(f func(string) (evaluator.Value, error)) evaluator.Fun
 
 		a, err := args[0].EvalString(ctx)
 		if err != nil {
-			return evaluator.Value{}, err
+			return evaluator.ValueNone, err
 		}
 		return f(a)
 	}
@@ -27,7 +27,7 @@ func liftStringToValueErr(f func(string) (evaluator.Value, error)) evaluator.Fun
 var std_parseInt = liftStringToValueErr(func(s string) (evaluator.Value, error) {
 	num, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
-		return evaluator.Value{}, fmt.Errorf("error: %s is not a base 10 integer", s)
+		return evaluator.ValueNone, fmt.Errorf("error: %s is not a base 10 integer", s)
 	}
 	return evaluator.MakeNumber(float64(num)), nil
 })
@@ -35,7 +35,7 @@ var std_parseInt = liftStringToValueErr(func(s string) (evaluator.Value, error) 
 var std_parseOctal = liftStringToValueErr(func(s string) (evaluator.Value, error) {
 	num, err := strconv.ParseInt(s, 8, 64)
 	if err != nil {
-		return evaluator.Value{}, fmt.Errorf("error: %s is not a base 8 integer", s)
+		return evaluator.ValueNone, fmt.Errorf("error: %s is not a base 8 integer", s)
 	}
 	return evaluator.MakeNumber(float64(num)), nil
 })
@@ -43,7 +43,7 @@ var std_parseOctal = liftStringToValueErr(func(s string) (evaluator.Value, error
 var std_parseHex = liftStringToValueErr(func(s string) (evaluator.Value, error) {
 	num, err := strconv.ParseInt(s, 16, 64)
 	if err != nil {
-		return evaluator.Value{}, fmt.Errorf("error: %s is not a base 16 integer", s)
+		return evaluator.ValueNone, fmt.Errorf("error: %s is not a base 16 integer", s)
 	}
 	return evaluator.MakeNumber(float64(num)), nil
 })
@@ -52,13 +52,13 @@ func std_parseJson(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 
 	jsonString, err := args[0].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	var data any
 	err = json.Unmarshal([]byte(jsonString), &data)
 	if err != nil {
-		return evaluator.Value{}, fmt.Errorf("failed to parse json, err: %w", err)
+		return evaluator.ValueNone, fmt.Errorf("failed to parse json, err: %w", err)
 	}
 	return rawDataToValue(data, ctx)
 }
@@ -67,7 +67,7 @@ func std_parseYaml(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 
 	yamlString, err := args[0].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	dec := yaml.NewDecoder(bytes.NewReader([]byte(yamlString)))
@@ -80,7 +80,7 @@ func std_parseYaml(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 		if err == io.EOF {
 			break
 		} else if err != nil {
-			return evaluator.Value{}, fmt.Errorf("failed to parse yaml, err: %w", err)
+			return evaluator.ValueNone, fmt.Errorf("failed to parse yaml, err: %w", err)
 		}
 
 		documents = append(documents, data)
@@ -112,7 +112,7 @@ func rawDataToValue(x any, ctx evaluator.Context) (evaluator.Value, error) {
 		for i, rv := range data {
 			v, err := rawDataToValue(rv, ctx)
 			if err != nil {
-				return evaluator.Value{}, err
+				return evaluator.ValueNone, err
 			}
 			res[i] = v
 		}
@@ -137,7 +137,7 @@ func rawDataToValue(x any, ctx evaluator.Context) (evaluator.Value, error) {
 
 			v, err := rawDataToValue(value, ctx)
 			if err != nil {
-				return evaluator.Value{}, err
+				return evaluator.ValueNone, err
 			}
 
 			layer.Keys = append(layer.Keys, keyId)
@@ -150,7 +150,7 @@ func rawDataToValue(x any, ctx evaluator.Context) (evaluator.Value, error) {
 
 		return evaluator.MakeObjectValue(objId), nil
 	default:
-		return evaluator.Value{}, fmt.Errorf("unahandled type %T when converting data to value", x)
+		return evaluator.ValueNone, fmt.Errorf("unahandled type %T when converting data to value", x)
 	}
 
 }
@@ -159,7 +159,7 @@ func std_encodeUTF8(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 
 	str, err := args[0].EvalString(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	strBytes := []byte(str)
@@ -175,21 +175,21 @@ func std_decodeUTF8(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 
 	arr, err := args[0].EvalArray(ctx)
 	if err != nil {
-		return evaluator.Value{}, err
+		return evaluator.ValueNone, err
 	}
 
 	var b strings.Builder
 	for _, v := range arr {
 		v, err := v.Eval(ctx)
 		if err != nil {
-			return evaluator.Value{}, err
+			return evaluator.ValueNone, err
 		}
 		if !v.IsNumber() {
-			return evaluator.Value{}, fmt.Errorf("unexpected type in std.encodeUTF8 (arg 0) array: %s, expected number", v.Type().String())
+			return evaluator.ValueNone, fmt.Errorf("unexpected type in std.encodeUTF8 (arg 0) array: %s, expected number", v.Type().String())
 		}
 		num := v.Number()
 		if num < 0 || num > 255 {
-			return evaluator.Value{}, fmt.Errorf("Bytes must be integers in range [0, 255], got %.0f", v.Number())
+			return evaluator.ValueNone, fmt.Errorf("Bytes must be integers in range [0, 255], got %.0f", v.Number())
 		}
 		b.WriteByte(byte(num))
 	}
