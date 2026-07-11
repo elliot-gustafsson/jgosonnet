@@ -1,7 +1,7 @@
 # jgosonnet
 
 A high-performance evaluator for [Jsonnet](https://jsonnet.org/).
-This implementation is built to be a faster version of `go-jsonnet`, designed to efficiently handle exceptionally large files or highly complex, deeply nested configurations.
+This implementation is built to be a faster version of `go-jsonnet`, designed to efficiently handle exceptionally large files or highly complex, deeply nested configurations. See [Benchmarks](docs/benchmarks.md).
 
 ## Architecture
 
