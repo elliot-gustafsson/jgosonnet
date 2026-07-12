@@ -396,11 +396,62 @@ func (vm *VM) runLoop(targetFp int) error {
 
 			continue
 
-			// fmt.Println(finalArgs)
-			// fmt.Println(paramCount)
-			// fmt.Println(posCount)
-			// fmt.Println(namedCount)
-			// fmt.Println(passedArgs)
+		// fmt.Println(finalArgs)
+		// fmt.Println(paramCount)
+		// fmt.Println(posCount)
+		// fmt.Println(namedCount)
+		// fmt.Println(passedArgs)
+
+		case OpIndex:
+			index, target := vm.Stack.Pop2()
+
+			if target.IsArray() {
+				if !index.IsNumber() {
+					return TypeErrorSpecific(ValueTypeNumber, index.Type())
+				}
+				i := int(index.Number())
+				arr := target.Array(vm.ctx)
+				if i < 0 || i >= len(arr) {
+					return MakeRuntimeError(fmt.Errorf("Index %d out of bounds, not within [0, %d)", i, len(arr)))
+				}
+				vm.Stack.Push(arr[i])
+				break
+			}
+
+			if target.IsString() {
+				if !index.IsNumber() {
+					return MakeRuntimeError(fmt.Errorf("unexpected index type for indexing string, expected number, got %s", index.Type().String()))
+				}
+				i := int(index.Number())
+				str := target.String(vm.ctx)
+				if i < 0 || i >= len(str) {
+					return MakeRuntimeError(fmt.Errorf("index (%d) out of bounds, string length %d", i, len(str)))
+				}
+				vm.Stack.Push(MakeStringValue(vm.Registry.Strings.Alloc(string(str[i]))))
+				break
+			}
+
+			if target.IsObject() {
+				if !index.IsString() {
+					return MakeRuntimeError(fmt.Errorf("unexpected index type for indexing object, expected string, got %s", index.Type().String()))
+				}
+				name := index.String(vm.ctx)
+				keyId := vm.Interner.Intern(name)
+				obj := target.Object(vm.ctx)
+				subCtx := vm.ctx
+				subCtx.Self = target
+				val, _, err := obj.GetField(keyId, subCtx)
+				if err != nil {
+					return err
+				}
+				if val.IsNone() {
+					return MakeRuntimeError(fmt.Errorf("Field does not exist: %s", name))
+				}
+				vm.Stack.Push(val)
+				break
+			}
+
+			return MakeRuntimeError(fmt.Errorf("value not indexable: %s", target.Type().String()))
 
 		// ---------------------------------------------------------
 		// Binary ops

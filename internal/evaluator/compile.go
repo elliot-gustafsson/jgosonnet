@@ -40,6 +40,7 @@ const (
 	OpLess
 	OpLessEq
 
+	OpIndex
 	OpCall
 	OpParamMeta
 
@@ -257,11 +258,14 @@ func (c *Compiler) visit(n ast.Node) error {
 			if err != nil {
 				return err
 			}
-			slotIndex := uint32(localsIdx + i)
+			slotIndex := uint32(localsIdx+i) - uint32(c.currentFrame().LocalBase)
 			c.emit(OpLocalSet, slotIndex)
 		}
 
-		c.visit(node.Body)
+		err := c.visit(node.Body)
+		if err != nil {
+			return err
+		}
 
 		c.Locals = c.Locals[:localsIdx]
 
@@ -362,7 +366,10 @@ func (c *Compiler) visit(n ast.Node) error {
 		}
 
 		bodyIp := uint32(len(c.Instructions))
-		c.visit(node.Body)
+		err := c.visit(node.Body)
+		if err != nil {
+			return err
+		}
 		c.emit(OpReturn, 0)
 
 		// Scope cleanup
@@ -379,6 +386,20 @@ func (c *Compiler) visit(n ast.Node) error {
 			c.emit2(OpParamMeta, meta.nameId, meta.hasDefault)
 			c.emit(OpParamMeta, meta.defaultIp)
 		}
+
+	case *ast.Index:
+		if err := c.visit(node.Target); err != nil {
+			return err
+		}
+		c.emit(OpForce, 0)
+
+		if err := c.visit(node.Index); err != nil {
+			return err
+		}
+		c.emit(OpForce, 0)
+
+		c.emit(OpIndex, 0)
+		c.emit(OpForce, 0)
 
 	case *ast.Apply:
 		if err := c.visit(node.Target); err != nil {
