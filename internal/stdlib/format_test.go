@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
+	"github.com/elliot-gustafsson/jgosonnet/internal/interner"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -362,7 +363,7 @@ func TestFormat(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := evaluator.Context{
 				State: &evaluator.ContextState{
-					Interner: evaluator.NewInterner(),
+					Interner: interner.NewInterner(),
 					Registry: evaluator.NewRegistry(),
 				},
 			}

@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"math"
 	"strings"
-
-	"github.com/google/go-jsonnet/ast"
 )
 
 type ValueType uint8
@@ -55,17 +53,20 @@ func (t ValueType) String() string {
 type ThunkEvalFunc func(Context) (Value, error)
 
 type Thunk struct {
+	AstId               uint32
+	TreeId              uint32
 	NodeId              uint32
 	ScopeId             uint32
 	CapturedSelf        Value
-	CapturedSuperOffset int32
+	CapturedSuperOffset uint32
 
 	Value Value
 }
 
-func NewThunk(node ast.Node, scopeId uint32, ctx Context) Thunk {
+func NewThunk(nodeId, scopeId uint32, ctx Context) Thunk {
 	return Thunk{
-		NodeId:              ctx.State.Registry.Nodes.Alloc(node),
+		AstId:               ctx.AstId,
+		NodeId:              nodeId,
 		ScopeId:             scopeId,
 		CapturedSelf:        ctx.Self,
 		CapturedSuperOffset: ctx.SuperOffset,
@@ -107,7 +108,8 @@ type Value uint64
 const (
 	nanTag uint64 = 0xFFF8000000000000
 
-	ValueNone Value = 0
+	ValueNone       Value  = 0
+	StringConstFlag uint32 = 1 << 31
 )
 
 func box(t ValueType, refId uint32) Value {
@@ -136,6 +138,10 @@ func MakeString(v string, ctx Context) Value {
 	return box(ValueTypeString, id)
 }
 
+func MakeStringValue(id uint32) Value {
+	return box(ValueTypeString, id)
+}
+
 func MakeStringConcat(v1, v2 string, ctx Context) Value {
 	id := ctx.State.Registry.Strings.AllocConcat(v1, v2)
 	return box(ValueTypeString, id)
@@ -154,6 +160,14 @@ func MakeBool(v bool) Value {
 		return box(ValueTypeBool, 1)
 	}
 	return box(ValueTypeBool, 0)
+}
+
+func MakeFalse() Value {
+	return box(ValueTypeBool, 0)
+}
+
+func MakeTrue() Value {
+	return box(ValueTypeBool, 1)
 }
 
 func MakeObject(v Object, ctx Context) Value {
@@ -203,7 +217,11 @@ func (v Value) RefId() uint32 {
 }
 
 func (v Value) String(ctx Context) string {
-	return ctx.State.Registry.Strings.Get(v.RefId())
+	refId := v.RefId()
+	if (refId & StringConstFlag) != 0 {
+		return ctx.State.Interner.Get(refId &^ StringConstFlag)
+	}
+	return ctx.State.Registry.Strings.Get(refId)
 }
 
 func (v Value) Number() float64 {
@@ -250,16 +268,31 @@ func (v Value) evalThunk(ctx Context) (Value, error) {
 	evalCtx.Self = thunk.CapturedSelf
 	evalCtx.SuperOffset = thunk.CapturedSuperOffset
 
-	node := ctx.State.Registry.Nodes.GetValue(thunk.NodeId)
+	tree := ctx.State.Registry.ASTs[thunk.AstId]
 
-	evaledVal, err := EvaluateNode(node, thunk.ScopeId, evalCtx)
+	evaledVal, err := EvaluateNode(tree, thunk.NodeId, thunk.ScopeId, evalCtx)
 	if err != nil {
 		return ValueNone, err
 	}
 
-	thunk = v.Thunk(ctx)
+	// thunk = v.Thunk(ctx)
 	thunk.Value = evaledVal
 	return evaledVal, nil
+}
+
+// AsStringConst returns the raw Interner ID if the value is an interned string literal.
+// It returns 0 if it is a dynamically generated string or not a string at all.
+func (v Value) AsStringConst() uint32 {
+	if v.Type() != ValueTypeString {
+		return 0
+	}
+
+	refId := v.RefId()
+	if (refId & StringConstFlag) != 0 {
+		return refId &^ StringConstFlag
+	}
+
+	return 0
 }
 
 type RuntimeError struct {

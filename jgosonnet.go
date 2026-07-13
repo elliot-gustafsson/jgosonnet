@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
+	"github.com/elliot-gustafsson/jgosonnet/internal/interner"
 	"github.com/elliot-gustafsson/jgosonnet/internal/stdlib"
 )
 
@@ -15,6 +16,7 @@ type Evaluator struct {
 	jpaths   []string
 	traceOut io.Writer
 
+	interner    *interner.Interner
 	astImporter *evaluator.AstImporter
 	extVars     map[string]string
 	extCodes    map[string]string
@@ -27,9 +29,11 @@ type NativeFunction struct {
 }
 
 func NewEvaluator() *Evaluator {
+	interner := interner.NewInterner()
 	return &Evaluator{
 		traceOut:    os.Stderr,
-		astImporter: evaluator.NewAstImporter(),
+		interner:    interner,
+		astImporter: evaluator.NewAstImporter(interner),
 		extVars:     make(map[string]string),
 		extCodes:    make(map[string]string),
 		nativeFuncs: make(map[string]evaluator.Function),
@@ -228,21 +232,19 @@ func (t *Evaluator) EvaluateYamlMulti(file string) (map[string]string, error) {
 
 type EvaluationEngine struct {
 	Registry *evaluator.Registry
-	Interner *evaluator.Interner
 }
 
 var enginePool = sync.Pool{
 	New: func() any {
 		return &EvaluationEngine{
 			Registry: evaluator.NewRegistry(),
-			Interner: evaluator.NewInterner(),
 		}
 	},
 }
 
 func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, func(), error) {
 
-	node, err := t.astImporter.ResolveImport(file)
+	tree, err := t.astImporter.ResolveImport(file)
 	if err != nil {
 		return evaluator.ValueNone, evaluator.Context{}, func() {}, err
 	}
@@ -256,7 +258,6 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 	engine := enginePool.Get().(*EvaluationEngine)
 	cleanup := func() {
 		engine.Registry.Reset()
-		engine.Interner.Reset()
 		enginePool.Put(engine)
 
 		// pprof.StopCPUProfile()
@@ -265,7 +266,6 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 
 	ctx := evaluator.Context{
 		State: &evaluator.ContextState{
-			Interner: engine.Interner,
 			Registry: engine.Registry,
 		},
 	}
@@ -275,13 +275,17 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 		return evaluator.ValueNone, evaluator.Context{}, cleanup, err
 	}
 
+	baseScopeId := evaluator.CreateFileScope(file, std, ctx)
+
 	env := &evaluator.Environment{
+		BaseScopeId:     baseScopeId,
 		TraceOut:        t.traceOut,
 		Importer:        evaluator.NewImporter(t.jpaths, std, t.astImporter),
 		ExtVars:         t.extVars,
 		ExtCodes:        t.extCodes,
 		NativeFunctions: make(map[string]evaluator.Function, len(t.nativeFuncs)),
 	}
+	ctx.State.Environment = env
 
 	// TODO: handle native funcs
 	// for k, v := range t.nativeFuncs {
@@ -289,11 +293,7 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 	// 	env.NativeFunctions[k] = evaluator.Function{}
 	// }
 
-	ctx.State.Environment = env
-
-	scopeId := evaluator.CreateFileScope(file, std, ctx)
-
-	value, err := evaluator.EvaluateNode(node, scopeId, ctx)
+	value, err := evaluator.EvaluateNode(tree, tree.RootId, baseScopeId, ctx)
 	if err != nil {
 		return evaluator.ValueNone, evaluator.Context{}, cleanup, err
 	}

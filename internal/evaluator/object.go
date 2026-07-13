@@ -649,7 +649,7 @@ func getValue(obj *Object, layerId, fieldId int, ctx Context) (Value, error) {
 		n := l.Nodes[fieldId]
 
 		evalCtx := ctx
-		evalCtx.SuperOffset = int32(len(layers) - 1 - layerId)
+		evalCtx.SuperOffset = uint32(len(layers) - 1 - layerId)
 
 		scopeId, err := obj.getScope(layerId, l, evalCtx)
 		if err != nil {
@@ -681,7 +681,7 @@ func runAssertions(obj *Object, ctx Context) error {
 		layer := layers[i]
 
 		evalCtx := ctx
-		evalCtx.SuperOffset = int32(len(layers) - 1 - i)
+		evalCtx.SuperOffset = uint32(len(layers) - 1 - i)
 
 		scopeId, err := obj.getScope(i, layer, evalCtx)
 		if err != nil {

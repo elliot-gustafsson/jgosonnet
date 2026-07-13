@@ -4,12 +4,12 @@ import (
 	"io"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
-	"github.com/google/go-jsonnet"
-	"github.com/google/go-jsonnet/ast"
+	"github.com/elliot-gustafsson/jgosonnet/internal/ast"
+	"github.com/elliot-gustafsson/jgosonnet/internal/interner"
 )
 
 type ContextState struct {
-	Interner    *Interner
+	Interner    *interner.Interner
 	Registry    *Registry
 	Environment *Environment
 }
@@ -19,10 +19,14 @@ type Context struct {
 
 	Self Value // self
 
-	SuperOffset int32
+	AstId uint32
+
+	SuperOffset uint32
 }
 
 type Registry struct {
+	ASTs []*ast.AST
+
 	Objects   *arena.Arena[Object]
 	Arrays    *arena.SliceArena[Value]
 	Strings   *arena.StringArena
@@ -32,14 +36,14 @@ type Registry struct {
 	Scopes *arena.Arena[Scope]
 	Layers *arena.Arena[Layer]
 
-	Nodes           *arena.Arena[ast.Node]
+	// Nodes           *arena.Arena[ast.Node]
 	GoCallbackNodes *arena.Arena[GoCallbackNode]
 
 	Uint8Bufs      *arena.BufferArena[uint8]
 	Uint32Bufs     *arena.BufferArena[uint32]
 	LayerBufs      *arena.BufferArena[*Layer]
 	NamedValueBufs *arena.BufferArena[NamedValue]
-	NodesBufs      *arena.BufferArena[ast.Node]
+	// NodesBufs      *arena.BufferArena[ast.Node]
 
 	LayerRefBufs  *arena.BufferArena[LayerRef]
 	FieldPlanBufs *arena.BufferArena[FieldPlan]
@@ -57,6 +61,8 @@ const bufferArenaBlockSize = 4096
 
 func NewRegistry() *Registry {
 	return &Registry{
+		ASTs: make([]*ast.AST, 32),
+
 		Objects:   arena.NewArena[Object](),
 		Arrays:    arena.NewSliceArena[Value](sliceArenaChunkSize),
 		Strings:   arena.NewStringArena(stringArenaBlockSize),
@@ -66,14 +72,14 @@ func NewRegistry() *Registry {
 		Scopes: arena.NewArena[Scope](),
 		Layers: arena.NewArena[Layer](),
 
-		Nodes:           arena.NewArena[ast.Node](),
+		// Nodes:           arena.NewArena[ast.Node](),
 		GoCallbackNodes: arena.NewArena[GoCallbackNode](),
 
 		Uint8Bufs:      arena.NewBufferArena[uint8](bufferArenaBlockSize),
 		Uint32Bufs:     arena.NewBufferArena[uint32](bufferArenaBlockSize),
 		LayerBufs:      arena.NewBufferArena[*Layer](bufferArenaBlockSize),
 		NamedValueBufs: arena.NewBufferArena[NamedValue](bufferArenaBlockSize),
-		NodesBufs:      arena.NewBufferArena[ast.Node](bufferArenaBlockSize),
+		// NodesBufs:      arena.NewBufferArena[ast.Node](bufferArenaBlockSize),
 
 		LayerRefBufs:  arena.NewBufferArena[LayerRef](bufferArenaBlockSize),
 		FieldPlanBufs: arena.NewBufferArena[FieldPlan](bufferArenaBlockSize),
@@ -81,6 +87,8 @@ func NewRegistry() *Registry {
 }
 
 func (t *Registry) Reset() {
+	t.ASTs = t.ASTs[:0]
+
 	t.Objects.Reset()
 	t.Arrays.Reset()
 	t.Strings.Reset()
@@ -90,14 +98,14 @@ func (t *Registry) Reset() {
 	t.Scopes.Reset()
 	t.Layers.Reset()
 
-	t.Nodes.Reset()
+	// t.Nodes.Reset()
 	t.GoCallbackNodes.Reset()
 
 	t.Uint8Bufs.Reset()
 	t.Uint32Bufs.Reset()
 	t.LayerBufs.Reset()
 	t.NamedValueBufs.Reset()
-	t.NodesBufs.Reset()
+	// t.NodesBufs.Reset()
 
 	t.LayerRefBufs.Reset()
 	t.FieldPlanBufs.Reset()
@@ -138,44 +146,8 @@ func (c Context) GetScopeBind(scopeId, key uint32) (Value, bool) {
 	return ValueNone, false
 }
 
-type ExtVar interface {
-	Eval(scopeId uint32, ctx Context) (Value, error)
-}
-
-type ExtString struct {
-	Key, Val string
-	v        Value
-}
-
-func (t *ExtString) Eval(scopeId uint32, ctx Context) (Value, error) {
-	if !t.v.IsNone() {
-		return t.v, nil
-	}
-	return MakeString(t.Val, ctx), nil
-}
-
-type ExtCode struct {
-	Key, Val string
-	n        ast.Node
-	v        Value
-}
-
-func (t *ExtCode) Eval(scopeId uint32, ctx Context) (Value, error) {
-	if !t.v.IsNone() {
-		return t.v, nil
-	}
-
-	if t.n == nil {
-		n, err := jsonnet.SnippetToAST(t.Key, t.Val)
-		if err != nil {
-			return ValueNone, err
-		}
-		t.n = n
-	}
-	return EvaluateNode(t.n, scopeId, ctx)
-}
-
 type Environment struct {
+	BaseScopeId     uint32
 	TraceOut        io.Writer
 	Importer        *Importer
 	ExtVars         map[string]string

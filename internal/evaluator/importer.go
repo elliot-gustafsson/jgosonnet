@@ -5,8 +5,9 @@ import (
 	"os"
 	"sync"
 
+	"github.com/elliot-gustafsson/jgosonnet/internal/ast"
+	"github.com/elliot-gustafsson/jgosonnet/internal/interner"
 	"github.com/google/go-jsonnet"
-	"github.com/google/go-jsonnet/ast"
 )
 
 type Importer struct {
@@ -18,8 +19,14 @@ type Importer struct {
 }
 
 type AstImporter struct {
-	cacheMu  sync.Mutex
-	astCache map[string]ast.Node
+	cache    sync.Map // map[string]*cacheEntry
+	interner *interner.Interner
+}
+
+type cacheEntry struct {
+	once sync.Once
+	tree *ast.AST
+	err  error
 }
 
 func NewImporter(jPaths []string, baseStd Value, astImporter *AstImporter) *Importer {
@@ -32,10 +39,9 @@ func NewImporter(jPaths []string, baseStd Value, astImporter *AstImporter) *Impo
 	}
 }
 
-func NewAstImporter() *AstImporter {
+func NewAstImporter(interner *interner.Interner) *AstImporter {
 	return &AstImporter{
-		// TODO: maybe use slices?
-		astCache: make(map[string]ast.Node, 32),
+		interner: interner,
 	}
 }
 
@@ -47,62 +53,60 @@ func (i *Importer) Get(path string) Value {
 	return i.cache[path]
 }
 
-func (i *Importer) ResolveSnippet(name, data string) (ast.Node, error) {
+func (i *Importer) ResolveSnippet(name, data string) (*ast.AST, error) {
 	return i.astImporter.ResolveSnippet(name, data)
 }
 
-func (i *Importer) ResolveImport(filePath string) (ast.Node, error) {
+func (i *Importer) ResolveImport(filePath string) (*ast.AST, error) {
 	return i.astImporter.ResolveImport(filePath)
 }
 
-func (t *AstImporter) ResolveSnippet(name, data string) (ast.Node, error) {
+func (t *AstImporter) ResolveSnippet(name, data string) (*ast.AST, error) {
 
-	t.cacheMu.Lock()
-	importedNode, exist := t.astCache[name]
-	t.cacheMu.Unlock()
+	actual, _ := t.cache.LoadOrStore(name, &cacheEntry{})
+	entry := actual.(*cacheEntry)
 
-	if exist {
-		return importedNode, nil
-	}
+	entry.once.Do(func() {
+		node, err := jsonnet.SnippetToAST(name, data)
+		if err != nil {
+			entry.err = fmt.Errorf("failed to resolve snippet %s, err: %w", name, err)
+			return
+		}
 
-	importedNode, err := jsonnet.SnippetToAST(name, string(data))
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve snippet %s, err: %w", name, err)
-	}
+		builder := ast.NewAstBuilder(t.interner)
 
-	t.cacheMu.Lock()
-	t.astCache[name] = importedNode
-	t.cacheMu.Unlock()
+		entry.tree, entry.err = builder.Parse(node)
+	})
 
-	return importedNode, nil
+	return entry.tree, entry.err
 }
 
-func (t *AstImporter) ResolveImport(filePath string) (ast.Node, error) {
+func (t *AstImporter) ResolveImport(filePath string) (*ast.AST, error) {
 
-	t.cacheMu.Lock()
-	importedNode, exist := t.astCache[filePath]
-	t.cacheMu.Unlock()
+	actual, _ := t.cache.LoadOrStore(filePath, &cacheEntry{})
+	entry := actual.(*cacheEntry)
 
-	if exist {
-		return importedNode, nil
-	}
-
-	fileData, err := os.ReadFile(filePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, err
+	entry.once.Do(func() {
+		fileData, err := os.ReadFile(filePath)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				entry.err = fmt.Errorf("failed importing file: %s, err: %w", filePath, err)
+			} else {
+				entry.err = err
+			}
+			return
 		}
-		return nil, fmt.Errorf("failed importing file: %s, err: %w", filePath, err)
-	}
 
-	importedNode, err = jsonnet.SnippetToAST(filePath, string(fileData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve import %s, err: %w", filePath, err)
-	}
+		node, err := jsonnet.SnippetToAST(filePath, string(fileData))
+		if err != nil {
+			entry.err = fmt.Errorf("failed to resolve import %s, err: %w", filePath, err)
+			return
+		}
 
-	t.cacheMu.Lock()
-	t.astCache[filePath] = importedNode
-	t.cacheMu.Unlock()
+		builder := ast.NewAstBuilder(t.interner)
 
-	return importedNode, nil
+		entry.tree, entry.err = builder.Parse(node)
+	})
+
+	return entry.tree, entry.err
 }
