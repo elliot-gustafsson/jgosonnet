@@ -18,6 +18,7 @@ const (
 	ValueTypeObject
 	ValueTypeArray
 	ValueTypeFunction
+	ValueTypeNativeFunction
 	ValueTypeThunk
 	ValueTypeCallbackThunk
 )
@@ -71,36 +72,6 @@ func NewThunk(nodeId, scopeId uint32, ctx Context) Thunk {
 		CapturedSelf:        ctx.Self,
 		CapturedSuperOffset: ctx.SuperOffset,
 	}
-}
-
-type Func = func(args []NamedValue, ctx Context) (Value, error)
-
-type Function struct {
-	argsCount int
-
-	fn Func
-}
-
-func NewFunction(argsCount int, fn Func) Function {
-	return Function{
-		argsCount: argsCount,
-		fn:        fn,
-	}
-}
-
-func (t Function) Exec(args []NamedValue, ctx Context) (Value, error) {
-	if t.fn == nil {
-		return ValueNone, fmt.Errorf("function not instantiated")
-	}
-	return t.fn(args, ctx)
-}
-
-func (t Function) Noop() bool {
-	return t.fn == nil
-}
-
-func (t Function) Length() int {
-	return t.argsCount
 }
 
 type CallbackThunk struct {
@@ -197,6 +168,11 @@ func MakeArraySized(l int, ctx Context) ([]Value, Value) {
 }
 
 func MakeFunction(v Function, ctx Context) Value {
+	refId := ctx.State.Registry.Functions.Alloc(v)
+	return box(ValueTypeFunction, refId)
+}
+
+func MakeNativeFunction(v Function, ctx Context) Value {
 	refId := ctx.State.Registry.Functions.Alloc(v)
 	return box(ValueTypeFunction, refId)
 }
@@ -511,7 +487,8 @@ func (v Value) IsObject() bool {
 }
 
 func (v Value) IsFunction() bool {
-	return uint64(v)>>32 == uint64(ValueTypeFunction)
+	tag := uint64(v) >> 32
+	return tag == uint64(ValueTypeFunction) || tag == uint64(ValueTypeNativeFunction)
 }
 
 func (v Value) IsArray() bool {

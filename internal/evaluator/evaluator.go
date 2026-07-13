@@ -203,7 +203,12 @@ func evaluateNode(tree *ast.AST, nodeId, scopeId uint32, ctx Context) (Value, er
 		}
 		return val, nil
 	case ast.NodeTypeFunction:
-		return handleFunction(tree, node, scopeId, ctx)
+		f := Function{
+			AstId:   ctx.AstId,
+			NodeId:  nodeId,
+			ScopeId: scopeId,
+		}
+		return MakeFunction(f, ctx), nil
 	case ast.NodeTypeConditional:
 		cond, err := EvaluateNode(tree, node.A, scopeId, ctx)
 		if err != nil {
@@ -806,70 +811,70 @@ func handleLocal(tree *ast.AST, node ast.Node, scopeId uint32, ctx Context) (Val
 	return val, nil
 }
 
-func handleFunction(tree *ast.AST, node ast.Node, scopeId uint32, ctx Context) (Value, error) {
+// func handleFunction(tree *ast.AST, node ast.Node, scopeId uint32, ctx Context) (Value, error) {
 
-	paramCount := int(node.C)
-	params := tree.SideTable[node.B : node.B+node.C*2]
+// 	paramCount := int(node.C)
+// 	params := tree.SideTable[node.B : node.B+node.C*2]
 
-	var fn Func = func(args []NamedValue, _ Context) (Value, error) {
-		if len(args) > paramCount {
-			return ValueNone, fmt.Errorf("unexpected amount of args passed to function")
-		}
+// 	var fn Func = func(args []NamedValue, _ Context) (Value, error) {
+// 		if len(args) > paramCount {
+// 			return ValueNone, fmt.Errorf("unexpected amount of args passed to function")
+// 		}
 
-		if paramCount == 0 {
-			return EvaluateNode(tree, node.A, scopeId, ctx)
-		}
+// 		if paramCount == 0 {
+// 			return EvaluateNode(tree, node.A, scopeId, ctx)
+// 		}
 
-		s, childScopeId := ctx.NewScope(scopeId, paramCount)
+// 		s, childScopeId := ctx.NewScope(scopeId, paramCount)
 
-		posIndex := 0
-		for i := range paramCount {
-			keyId := params[i*2]
+// 		posIndex := 0
+// 		for i := range paramCount {
+// 			keyId := params[i*2]
 
-			var bindVal NamedValue
+// 			var bindVal NamedValue
 
-			if posIndex < len(args) && args[posIndex].Key == 0 {
-				bindVal = args[posIndex]
-				bindVal.Key = keyId
-				posIndex++
-			} else {
-				for _, a := range args {
-					if a.Key == keyId {
-						bindVal = a
-						break
-					}
-				}
-			}
+// 			if posIndex < len(args) && args[posIndex].Key == 0 {
+// 				bindVal = args[posIndex]
+// 				bindVal.Key = keyId
+// 				posIndex++
+// 			} else {
+// 				for _, a := range args {
+// 					if a.Key == keyId {
+// 						bindVal = a
+// 						break
+// 					}
+// 				}
+// 			}
 
-			if !bindVal.IsNone() {
-				s.Bindings[i] = bindVal
-				continue
-			}
+// 			if !bindVal.IsNone() {
+// 				s.Bindings[i] = bindVal
+// 				continue
+// 			}
 
-			// No arg was passed, fallback to default arg
-			defArgNodeId := params[i*2+1]
-			if defArgNodeId == 0 {
-				return ValueNone, fmt.Errorf("arg (%d) with no default arg had no value passed", i)
-			}
+// 			// No arg was passed, fallback to default arg
+// 			defArgNodeId := params[i*2+1]
+// 			if defArgNodeId == 0 {
+// 				return ValueNone, fmt.Errorf("arg (%d) with no default arg had no value passed", i)
+// 			}
 
-			da, err := evaluateNodeLazy(tree, defArgNodeId, childScopeId, ctx)
-			if err != nil {
-				return ValueNone, err
-			}
+// 			da, err := evaluateNodeLazy(tree, defArgNodeId, childScopeId, ctx)
+// 			if err != nil {
+// 				return ValueNone, err
+// 			}
 
-			s.Bindings[i] = NamedValue{keyId, da}
-		}
+// 			s.Bindings[i] = NamedValue{keyId, da}
+// 		}
 
-		return EvaluateNode(tree, node.A, childScopeId, ctx)
-	}
+// 		return EvaluateNode(tree, node.A, childScopeId, ctx)
+// 	}
 
-	f := Function{
-		argsCount: paramCount,
-		fn:        fn,
-	}
+// 	f := Function{
+// 		argsCount: paramCount,
+// 		fn:        fn,
+// 	}
 
-	return MakeFunction(f, ctx), nil
-}
+// 	return MakeFunction(f, ctx), nil
+// }
 
 func handleIndex(tree *ast.AST, node ast.Node, scopeId uint32, ctx Context) (Value, error) {
 	index, err := EvaluateNode(tree, node.A, scopeId, ctx)

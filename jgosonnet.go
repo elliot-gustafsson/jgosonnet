@@ -9,7 +9,6 @@ import (
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 	"github.com/elliot-gustafsson/jgosonnet/internal/interner"
-	"github.com/elliot-gustafsson/jgosonnet/internal/stdlib"
 )
 
 type Evaluator struct {
@@ -271,10 +270,13 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 		},
 	}
 
-	std, err := stdlib.InitStdLib(ctx)
-	if err != nil {
-		return evaluator.ValueNone, evaluator.Context{}, cleanup, err
-	}
+	objId := evaluator.NewObject([]*evaluator.Layer{layer}, ctx)
+	std := evaluator.MakeObjectValue(objId)
+
+	// std, err := stdlib.InitStdLib(ctx)
+	// if err != nil {
+	// 	return evaluator.ValueNone, evaluator.Context{}, cleanup, err
+	// }
 
 	baseScopeId := evaluator.CreateFileScope(file, std, ctx)
 
