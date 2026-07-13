@@ -29,7 +29,6 @@ const (
 	NodeTypeIndex
 	NodeTypeVar
 	NodeTypeFunction
-	NodeTypeCallbackFunction
 	NodeTypeConditional
 	NodeTypeImport
 	NodeTypeImportStr
@@ -60,6 +59,14 @@ const (
 	NodeTypeUnaryNot
 	NodeTypeUnaryMinus
 	NodeTypeUnaryBitwiseNot
+)
+
+type FieldVisibility uint8
+
+const (
+	FieldVisibilityHidden FieldVisibility = iota
+	FieldVisibilityInherit
+	FieldVisibilityVisible
 )
 
 const (
@@ -189,24 +196,6 @@ func (b *AstBuilder) visit(n ast.Node) (uint32, error) {
 			offset++
 		}
 
-		for i := range node.Fields {
-			keyId, err := b.visit(node.Fields[i].Name)
-			if err != nil {
-				return 0, err
-			}
-			bodyId, err := b.visit(node.Fields[i].Body)
-			if err != nil {
-				return 0, err
-			}
-
-			meta := createFieldMeta(node.Fields[i].Hide, node.Fields[i].PlusSuper)
-
-			b.SideTable[offset+0] = keyId
-			b.SideTable[offset+1] = bodyId
-			b.SideTable[offset+2] = meta
-			offset += 3
-		}
-
 		for i := range node.Locals {
 			nameId := b.Interner.Intern(string(node.Locals[i].Variable))
 			bodyId, err := b.visit(node.Locals[i].Body)
@@ -226,6 +215,24 @@ func (b *AstBuilder) visit(n ast.Node) (uint32, error) {
 			}
 			b.SideTable[offset] = assertId
 			offset++
+		}
+
+		for i := range node.Fields {
+			keyId, err := b.visit(node.Fields[i].Name)
+			if err != nil {
+				return 0, err
+			}
+			bodyId, err := b.visit(node.Fields[i].Body)
+			if err != nil {
+				return 0, err
+			}
+
+			meta := createFieldMeta(node.Fields[i].Hide, node.Fields[i].PlusSuper)
+
+			b.SideTable[offset+0] = keyId
+			b.SideTable[offset+1] = bodyId
+			b.SideTable[offset+2] = meta
+			offset += 3
 		}
 
 		return b.emit(Node{Type: NodeTypeObject, A: uint32(startIdx), B: uint32(numFields), Flags: flags}), nil
@@ -259,7 +266,7 @@ func (b *AstBuilder) visit(n ast.Node) (uint32, error) {
 
 		b.SideTable = slices.Grow(b.SideTable, slots)[:startIdx+slots]
 
-		offset := startIdx + 1
+		offset := startIdx
 		for i := range node.Binds {
 
 			keyId := b.Interner.Intern(string(node.Binds[i].Variable))
@@ -300,7 +307,7 @@ func (b *AstBuilder) visit(n ast.Node) (uint32, error) {
 
 		b.SideTable = slices.Grow(b.SideTable, paramSlots)[:startIdx+paramSlots]
 
-		offset := startIdx + 1
+		offset := startIdx
 		for i := range node.Arguments.Positional {
 			// TODO: think abt maybe not wasting space here, most args are probably positional
 			b.SideTable[offset] = 0
@@ -314,10 +321,7 @@ func (b *AstBuilder) visit(n ast.Node) (uint32, error) {
 			offset += 2
 		}
 
-		offset = offset + (posArgs * 2)
 		for i := range node.Arguments.Named {
-
-			offset := offset + (i * 2)
 
 			paramKeyId := b.Interner.Intern(string(node.Arguments.Named[i].Name))
 			b.SideTable[offset] = paramKeyId
@@ -328,6 +332,7 @@ func (b *AstBuilder) visit(n ast.Node) (uint32, error) {
 			}
 			b.SideTable[offset+1] = id
 
+			offset += 2
 		}
 
 		funcId, err := b.visit(node.Target)
@@ -364,7 +369,7 @@ func (b *AstBuilder) visit(n ast.Node) (uint32, error) {
 
 		b.SideTable = slices.Grow(b.SideTable, paramSlots)[:startIdx+paramSlots]
 
-		offset := startIdx + 1
+		offset := startIdx
 		for i := range paramCount {
 
 			paramKeyId := b.Interner.Intern(string(node.Parameters[i].Name))
@@ -388,7 +393,7 @@ func (b *AstBuilder) visit(n ast.Node) (uint32, error) {
 			return 0, err
 		}
 
-		return b.emit(Node{Type: NodeTypeFunction, A: body, B: uint32(startIdx), C: uint32(paramSlots)}), nil
+		return b.emit(Node{Type: NodeTypeFunction, A: body, B: uint32(startIdx), C: uint32(paramCount)}), nil
 
 	case *ast.Conditional:
 
@@ -477,7 +482,7 @@ func (b *AstBuilder) visit(n ast.Node) (uint32, error) {
 					// note: false here is correct since we flip the bool
 					return b.emit(Node{Type: NodeTypeFalse}), nil
 				}
-				return b.emit(Node{Type: NodeTypeFalse}), nil
+				return b.emit(Node{Type: NodeTypeTrue}), nil
 			}
 
 			id, err := b.visit(node.Expr)
@@ -493,7 +498,7 @@ func (b *AstBuilder) visit(n ast.Node) (uint32, error) {
 				if err != nil {
 					return 0, fmt.Errorf("failed to parse float val (%s), err: %w", n.OriginalString, err)
 				}
-				bits := math.Float64bits(num)
+				bits := math.Float64bits(-num)
 
 				res := Node{
 					Type: NodeTypeNumber,
@@ -516,7 +521,7 @@ func (b *AstBuilder) visit(n ast.Node) (uint32, error) {
 				if err != nil {
 					return 0, fmt.Errorf("failed to parse float val (%s), err: %w", n.OriginalString, err)
 				}
-				bits := math.Float64bits(num)
+				bits := math.Float64bits(float64(^int64(num)))
 
 				res := Node{
 					Type: NodeTypeNumber,
@@ -530,7 +535,7 @@ func (b *AstBuilder) visit(n ast.Node) (uint32, error) {
 			if err != nil {
 				return 0, err
 			}
-			return b.emit(Node{Type: NodeTypeUnaryMinus, A: id}), nil
+			return b.emit(Node{Type: NodeTypeUnaryBitwiseNot, A: id}), nil
 		}
 
 	case *ast.Import:

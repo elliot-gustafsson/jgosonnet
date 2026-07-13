@@ -28,6 +28,7 @@ type Interner struct {
 
 func NewInterner() *Interner {
 	i := &Interner{
+		mu:    sync.Mutex{},
 		table: make([]entry, defaultInternerSize),
 		mask:  defaultInternerMask,
 	}

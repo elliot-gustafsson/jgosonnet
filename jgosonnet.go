@@ -267,6 +267,7 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 	ctx := evaluator.Context{
 		State: &evaluator.ContextState{
 			Registry: engine.Registry,
+			Interner: t.interner,
 		},
 	}
 
@@ -292,6 +293,9 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 	// 	vars
 	// 	env.NativeFunctions[k] = evaluator.Function{}
 	// }
+
+	ctx.AstId = uint32(len(ctx.State.Registry.ASTs))
+	ctx.State.Registry.ASTs = append(ctx.State.Registry.ASTs, tree)
 
 	value, err := evaluator.EvaluateNode(tree, tree.RootId, baseScopeId, ctx)
 	if err != nil {

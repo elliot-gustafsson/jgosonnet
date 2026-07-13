@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
-	"github.com/google/go-jsonnet/ast"
 	"gopkg.in/yaml.v3"
 )
 
@@ -122,9 +121,9 @@ func rawDataToValue(x any, ctx evaluator.Context) (evaluator.Value, error) {
 		fieldCount := len(data)
 
 		layer := &evaluator.Layer{
-			Keys:  make([]uint32, 0, fieldCount),
-			Nodes: make(ast.Nodes, 0, fieldCount),
-			Meta:  make([]uint8, 0, fieldCount),
+			Keys:   make([]uint32, 0, fieldCount),
+			Values: make([]evaluator.Value, 0, fieldCount),
+			Meta:   make([]uint8, 0, fieldCount),
 
 			Index: make(map[uint32]int, fieldCount),
 		}

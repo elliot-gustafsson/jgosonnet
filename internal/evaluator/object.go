@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/google/go-jsonnet/ast"
+	"github.com/elliot-gustafsson/jgosonnet/internal/ast"
 )
 
 const (
@@ -20,18 +20,19 @@ const (
 
 type Layer struct {
 	Keys   []uint32
-	Nodes  ast.Nodes
+	Nodes  []uint32
 	Values []Value
 	Meta   []uint8
 
 	Index map[uint32]int
 
 	LocalKeys  []uint32
-	LocalNodes ast.Nodes
+	LocalNodes []uint32
 
-	Asserts ast.Nodes
+	Asserts []uint32
 
 	ParentScopeId uint32
+	Ast           *ast.AST
 }
 
 func (l *Layer) findField(key uint32) (layerId int) {
@@ -158,7 +159,7 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 		return ValueNone, false, err
 	}
 
-	currentVisibility := ast.ObjectFieldInherit
+	currentVisibility := ast.FieldVisibilityInherit
 
 	layers := t.GetLayers(ctx)
 
@@ -184,7 +185,7 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 			return ValueNone, false, err
 		}
 
-		if visibility != ast.ObjectFieldInherit {
+		if visibility != ast.FieldVisibilityInherit {
 			currentVisibility = visibility
 		}
 
@@ -214,7 +215,7 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 		return ValueNone, false, nil
 	}
 
-	if currentVisibility == ast.ObjectFieldInherit {
+	if currentVisibility == ast.FieldVisibilityInherit {
 		// If not explicitly visible, search for same key in lower layers to determine final visibility
 
 		for j := layerOffset - 1; j >= 0; j-- {
@@ -232,14 +233,14 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 				continue
 			}
 
-			if visibility != ast.ObjectFieldInherit {
+			if visibility != ast.FieldVisibilityInherit {
 				currentVisibility = visibility
 				break
 			}
 		}
 	}
 
-	visible = currentVisibility != ast.ObjectFieldHidden
+	visible = currentVisibility != ast.FieldVisibilityHidden
 
 	if offset == 0 {
 		t.Cache.Set(key, res, visible)
@@ -274,7 +275,7 @@ func (t *Object) createLayerScope(layerIndex int, layer *Layer, ctx Context) (ui
 	for i := range layer.LocalKeys {
 		node := layer.LocalNodes[i]
 
-		val, err := evaluateNodeLazy(node, scopeId, ctx)
+		val, err := evaluateNodeLazy(layer.Ast, node, scopeId, ctx)
 		if err != nil {
 			return 0, err
 		}
@@ -287,9 +288,9 @@ func (t *Object) createLayerScope(layerIndex int, layer *Layer, ctx Context) (ui
 	return scopeId, nil
 }
 
-const DefaultFieldMeta = uint8(ast.ObjectFieldInherit) & MaskVisibility
+const DefaultFieldMeta = uint8(ast.FieldVisibilityInherit) & MaskVisibility
 
-func CreateFieldMeta(visibility ast.ObjectFieldHide, plusSuper bool) uint8 {
+func CreateFieldMeta(visibility ast.FieldVisibility, plusSuper bool) uint8 {
 	m := uint8(visibility) & MaskVisibility
 	if plusSuper {
 		m |= FlagPlusSuper
@@ -297,8 +298,8 @@ func CreateFieldMeta(visibility ast.ObjectFieldHide, plusSuper bool) uint8 {
 	return m
 }
 
-func EvalFieldMeta(m uint8) (visibility ast.ObjectFieldHide, plusSuper, tombstone bool) {
-	visibility = ast.ObjectFieldHide(m & MaskVisibility)
+func EvalFieldMeta(m uint8) (visibility ast.FieldVisibility, plusSuper, tombstone bool) {
+	visibility = ast.FieldVisibility(m & MaskVisibility)
 	plusSuper = (m & FlagPlusSuper) != 0
 	tombstone = (m & FlagTombstone) != 0
 	return
@@ -366,15 +367,15 @@ type FieldPlan struct {
 }
 
 func (fp FieldPlan) IsHidden() bool {
-	return fp.Visibility == uint8(ast.ObjectFieldHidden)
+	return fp.Visibility == uint8(ast.FieldVisibilityHidden)
 }
 
 func (fp FieldPlan) IsInherit() bool {
-	return fp.Visibility == uint8(ast.ObjectFieldInherit)
+	return fp.Visibility == uint8(ast.FieldVisibilityInherit)
 }
 
 func (fp FieldPlan) IsVisible() bool {
-	return fp.Visibility == uint8(ast.ObjectFieldVisible)
+	return fp.Visibility == uint8(ast.FieldVisibilityVisible)
 }
 
 type LayerRef struct {
@@ -448,7 +449,7 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 			if pIdx == -1 {
 				plans = append(plans, FieldPlan{
 					KeyId:            keyID,
-					Visibility:       uint8(ast.ObjectFieldInherit),
+					Visibility:       uint8(ast.FieldVisibilityInherit),
 					Layers:           ctx.State.Registry.LayerRefBufs.Alloc(0, 4),
 					ShadowUntilLayer: math.MaxUint16,
 				})
@@ -466,10 +467,10 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 
 			if plan.IsInherit() {
 				switch vis {
-				case ast.ObjectFieldHidden:
-					plan.Visibility = uint8(ast.ObjectFieldHidden)
-				case ast.ObjectFieldVisible:
-					plan.Visibility = uint8(ast.ObjectFieldVisible)
+				case ast.FieldVisibilityHidden:
+					plan.Visibility = uint8(ast.FieldVisibilityHidden)
+				case ast.FieldVisibilityVisible:
+					plan.Visibility = uint8(ast.FieldVisibilityVisible)
 				}
 			}
 
@@ -656,7 +657,7 @@ func getValue(obj *Object, layerId, fieldId int, ctx Context) (Value, error) {
 			return ValueNone, err
 		}
 
-		val, err = EvaluateNode(n, scopeId, evalCtx)
+		val, err = EvaluateNode(l.Ast, n, scopeId, evalCtx)
 		if err != nil {
 			return ValueNone, err
 		}
@@ -689,7 +690,7 @@ func runAssertions(obj *Object, ctx Context) error {
 		}
 
 		for _, n := range layer.Asserts {
-			val, err := EvaluateNode(n, scopeId, ctx)
+			val, err := EvaluateNode(layer.Ast, n, scopeId, ctx)
 			if err != nil {
 				return err
 			}
@@ -848,7 +849,7 @@ func (t *Object) Prune(ctx Context) (Value, error) {
 
 		layer.Keys = append(layer.Keys, plan.KeyId)
 		layer.Values = append(layer.Values, prunedVal)
-		layer.Meta = append(layer.Meta, CreateFieldMeta(ast.ObjectFieldHide(plan.Visibility), false))
+		layer.Meta = append(layer.Meta, CreateFieldMeta(ast.FieldVisibility(plan.Visibility), false))
 
 		if useMap {
 			layer.Index[plan.KeyId] = index

@@ -53,11 +53,7 @@ func std_makeArray(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 
 		allArgs[i] = evaluator.NamedValue{Value: evaluator.MakeNumber(float64(i))}
 
-		n, _ := ctx.State.Registry.GoCallbackNodes.New()
-		n.Func = mapperFunc
-		n.Args = allArgs[i : i+1]
-
-		res[i] = evaluator.MakeThunk(evaluator.NewThunk(n, 0, ctx), ctx)
+		res[i] = evaluator.MakeCallbackThunk(mapperFunc, allArgs[i:i+1], ctx)
 
 	}
 
@@ -561,11 +557,7 @@ func std_map(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 
 		allArgs[i] = evaluator.NamedValue{Value: v}
 
-		n, _ := ctx.State.Registry.GoCallbackNodes.New()
-		n.Func = mapFunc
-		n.Args = allArgs[i : i+1]
-
-		res[i] = evaluator.MakeThunk(evaluator.NewThunk(n, 0, ctx), ctx)
+		res[i] = evaluator.MakeCallbackThunk(mapFunc, allArgs[i:i+1], ctx)
 
 	}
 
@@ -607,11 +599,7 @@ func std_mapWithIndex(args []evaluator.NamedValue, ctx evaluator.Context) (evalu
 		allArgs[idx] = evaluator.NamedValue{Value: evaluator.MakeNumber(float64(i))}
 		allArgs[idx+1] = evaluator.NamedValue{Value: v}
 
-		n, _ := ctx.State.Registry.GoCallbackNodes.New()
-		n.Func = mapFunc
-		n.Args = allArgs[idx : idx+2]
-
-		res[i] = evaluator.MakeThunk(evaluator.NewThunk(n, 0, ctx), ctx)
+		res[i] = evaluator.MakeCallbackThunk(mapFunc, allArgs[idx:idx+2], ctx)
 
 	}
 
