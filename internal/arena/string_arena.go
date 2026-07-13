@@ -30,14 +30,20 @@ func (a *StringArena) Alloc(s string) uint32 {
 	}
 
 	if length > a.blockSize {
-		return a.headers.Alloc(s) // Avoid copying jumbo strings
+		return a.headers.Alloc(s)
 	}
 
-	targetBytes := a.reserve(length)
+	if a.offset+length > a.blockSize {
+		a.grow()
+	}
+
+	targetBytes := a.elementBlocks[a.activeIdx][a.offset : a.offset+length]
+	a.offset += length
+
 	copy(targetBytes, s)
 
-	arenaStr := unsafe.String(&targetBytes[0], length)
-	return a.headers.Alloc(arenaStr)
+	res := unsafe.String(unsafe.SliceData(targetBytes), length)
+	return a.headers.Alloc(res)
 }
 
 func (a *StringArena) AllocConcat(s1, s2 string) uint32 {
@@ -46,21 +52,23 @@ func (a *StringArena) AllocConcat(s1, s2 string) uint32 {
 	if length == 0 {
 		return a.headers.Alloc("")
 	}
-	if length > a.blockSize {
-		jumboBlock := make([]byte, length)
-		copy(jumboBlock, s1)
-		copy(jumboBlock[len(s1):], s2)
 
-		arenaStr := unsafe.String(&jumboBlock[0], length)
-		return a.headers.Alloc(arenaStr)
+	if length > a.blockSize {
+		return a.allocJumbo(s1, s2, length)
 	}
 
-	targetBytes := a.reserve(length)
-	copy(targetBytes, s1)
-	copy(targetBytes[len(s1):], s2)
+	if a.offset+length > a.blockSize {
+		a.grow()
+	}
 
-	arenaStr := unsafe.String(&targetBytes[0], length)
-	return a.headers.Alloc(arenaStr)
+	targetBytes := a.elementBlocks[a.activeIdx][a.offset : a.offset+length]
+	a.offset += length
+
+	n := copy(targetBytes, s1)
+	copy(targetBytes[n:], s2)
+
+	res := unsafe.String(unsafe.SliceData(targetBytes), length)
+	return a.headers.Alloc(res)
 }
 
 func (a *StringArena) Get(id uint32) string {
@@ -74,20 +82,22 @@ func (a *StringArena) Reset() {
 	a.headers.Reset()
 }
 
-func (a *StringArena) reserve(length int) []byte {
-	currBlock := a.elementBlocks[a.activeIdx]
-	if a.offset+length > len(currBlock) {
-		a.activeIdx++
-		a.offset = 0
-		if a.activeIdx < len(a.elementBlocks) {
-			currBlock = a.elementBlocks[a.activeIdx]
-		} else {
-			currBlock = make([]byte, a.blockSize)
-			a.elementBlocks = append(a.elementBlocks, currBlock)
-		}
+//go:noinline
+func (a *StringArena) grow() {
+	a.activeIdx++
+	a.offset = 0
+	if a.activeIdx < len(a.elementBlocks) {
+		return
 	}
+	a.elementBlocks = append(a.elementBlocks, make([]byte, a.blockSize))
+}
 
-	targetBytes := currBlock[a.offset : a.offset+length]
-	a.offset += length
-	return targetBytes
+//go:noinline
+func (a *StringArena) allocJumbo(s1, s2 string, length int) uint32 {
+	jumboBlock := make([]byte, length)
+	n := copy(jumboBlock, s1)
+	copy(jumboBlock[n:], s2)
+
+	res := unsafe.String(unsafe.SliceData(jumboBlock), length)
+	return a.headers.Alloc(res)
 }
