@@ -349,7 +349,7 @@ func std_extVar(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 			return val, nil
 		}
 
-		n, err := importer.ResolveSnippet(name, s)
+		tree, err := importer.ResolveSnippet(name, s)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
@@ -360,7 +360,7 @@ func std_extVar(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 
 		scopeId := evaluator.CreateFileScope(name, importer.BaseStd, importCtx)
 
-		val, err = evaluator.EvaluateNode(n, scopeId, ctx)
+		val, err = evaluator.EvaluateNode(tree, tree.RootId, scopeId, importCtx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}

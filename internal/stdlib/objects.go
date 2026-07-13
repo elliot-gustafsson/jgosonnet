@@ -247,14 +247,10 @@ func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 		allArgs[idx] = evaluator.NamedValue{Value: evaluator.MakeString(keyString, ctx)}
 		allArgs[idx+1] = evaluator.NamedValue{Value: v}
 
-		n, _ := ctx.State.Registry.GoCallbackNodes.New()
-		n.Func = mapFunc
-		n.Args = allArgs[idx : idx+2]
-
-		thunk := evaluator.NewThunk(n, 0, mapCtx)
+		callbackValue := evaluator.MakeCallbackThunk(mapFunc, allArgs[idx:idx+2], mapCtx)
 
 		layer.Keys = append(layer.Keys, k)
-		layer.Values = append(layer.Values, evaluator.MakeThunk(thunk, mapCtx))
+		layer.Values = append(layer.Values, callbackValue)
 		layer.Meta = append(layer.Meta, evaluator.DefaultFieldMeta)
 
 	}

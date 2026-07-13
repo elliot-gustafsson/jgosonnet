@@ -33,11 +33,9 @@ type Registry struct {
 	Thunks    *arena.Arena[Thunk]
 	Functions *arena.Arena[Function]
 
-	Scopes *arena.Arena[Scope]
-	Layers *arena.Arena[Layer]
-
-	// Nodes           *arena.Arena[ast.Node]
-	GoCallbackNodes *arena.Arena[GoCallbackNode]
+	Scopes         *arena.Arena[Scope]
+	Layers         *arena.Arena[Layer]
+	CallbackThunks *arena.Arena[CallbackThunk]
 
 	Uint8Bufs      *arena.BufferArena[uint8]
 	Uint32Bufs     *arena.BufferArena[uint32]
@@ -69,17 +67,14 @@ func NewRegistry() *Registry {
 		Thunks:    arena.NewArena[Thunk](),
 		Functions: arena.NewArena[Function](),
 
-		Scopes: arena.NewArena[Scope](),
-		Layers: arena.NewArena[Layer](),
-
-		// Nodes:           arena.NewArena[ast.Node](),
-		GoCallbackNodes: arena.NewArena[GoCallbackNode](),
+		Scopes:         arena.NewArena[Scope](),
+		Layers:         arena.NewArena[Layer](),
+		CallbackThunks: arena.NewArena[CallbackThunk](),
 
 		Uint8Bufs:      arena.NewBufferArena[uint8](bufferArenaBlockSize),
 		Uint32Bufs:     arena.NewBufferArena[uint32](bufferArenaBlockSize),
 		LayerBufs:      arena.NewBufferArena[*Layer](bufferArenaBlockSize),
 		NamedValueBufs: arena.NewBufferArena[NamedValue](bufferArenaBlockSize),
-		// NodesBufs:      arena.NewBufferArena[ast.Node](bufferArenaBlockSize),
 
 		LayerRefBufs:  arena.NewBufferArena[LayerRef](bufferArenaBlockSize),
 		FieldPlanBufs: arena.NewBufferArena[FieldPlan](bufferArenaBlockSize),
@@ -97,15 +92,12 @@ func (t *Registry) Reset() {
 
 	t.Scopes.Reset()
 	t.Layers.Reset()
-
-	// t.Nodes.Reset()
-	t.GoCallbackNodes.Reset()
+	t.CallbackThunks.Reset()
 
 	t.Uint8Bufs.Reset()
 	t.Uint32Bufs.Reset()
 	t.LayerBufs.Reset()
 	t.NamedValueBufs.Reset()
-	// t.NodesBufs.Reset()
 
 	t.LayerRefBufs.Reset()
 	t.FieldPlanBufs.Reset()

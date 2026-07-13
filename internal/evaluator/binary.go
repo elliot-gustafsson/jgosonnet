@@ -8,60 +8,6 @@ import (
 	"github.com/google/go-jsonnet/ast"
 )
 
-func handleBinaryOp(op ast.BinaryOp, left, right Value, ctx Context) (Value, error) {
-
-	switch op {
-	case ast.BopPlus:
-		return bopPlus(left, right, ctx)
-	case ast.BopManifestEqual:
-		eq, err := left.Equal(right, ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-		return MakeBool(eq), nil
-	case ast.BopManifestUnequal:
-		eq, err := left.Equal(right, ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-		return MakeBool(!eq), nil
-	case ast.BopGreater:
-		x, err := left.Compare(right, ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-		return MakeBool(x > 0), nil
-	case ast.BopGreaterEq:
-		x, err := left.Compare(right, ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-		return MakeBool(x >= 0), nil
-	case ast.BopLess:
-		x, err := left.Compare(right, ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-		return MakeBool(x < 0), nil
-	case ast.BopLessEq:
-		x, err := left.Compare(right, ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-		return MakeBool(x <= 0), nil
-	}
-
-	if left.IsNumber() && right.IsNumber() {
-		res, err := handleNumberOp(left.Number(), right.Number(), op)
-		if err != nil {
-			return ValueNone, err
-		}
-		return MakeNumber(res), nil
-	}
-
-	return ValueNone, fmt.Errorf("unhandled binary operation %s %s %s", left.Type().String(), op.String(), right.Type().String())
-}
-
 func bopPlus(left, right Value, ctx Context) (Value, error) {
 
 	// Allow 123 + '123', should return '123123'

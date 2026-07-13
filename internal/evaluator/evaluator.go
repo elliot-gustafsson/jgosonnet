@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	old_ast "github.com/google/go-jsonnet/ast"
-
 	"github.com/elliot-gustafsson/jgosonnet/internal/ast"
 )
 
@@ -148,7 +146,7 @@ func evaluateNode(tree *ast.AST, nodeId, scopeId uint32, ctx Context) (Value, er
 		num := math.Float64frombits(bits)
 		return MakeNumber(num), nil
 	case ast.NodeTypeObject:
-		return handleDesugaredObject(tree, node, scopeId, ctx)
+		return handleObject(tree, node, scopeId, ctx)
 	case ast.NodeTypeArray:
 		arr, val := MakeArraySized(int(node.B), ctx)
 
@@ -175,7 +173,7 @@ func evaluateNode(tree *ast.AST, nodeId, scopeId uint32, ctx Context) (Value, er
 			return ValueNone, TypeErrorSpecific(ValueTypeFunction, val.Type())
 		}
 
-		callArgs := tree.SideTable[node.B : node.B+node.C*2]
+		callArgs := tree.SideTable[node.B : node.B+(node.C*2)]
 
 		args := ctx.State.Registry.NamedValueBufs.Alloc(int(node.C), int(node.C))
 		for i := range args {
@@ -277,17 +275,6 @@ func evaluateNode(tree *ast.AST, nodeId, scopeId uint32, ctx Context) (Value, er
 		}
 		return ValueNone, MakeRuntimeError(errors.New(msg.String(ctx)))
 
-	case ast.NodeTypeCallbackFunction:
-		// TODO: fix this --------------------------------------------------------------------------------------------
-		// TODO: fix this --------------------------------------------------------------------------------------------
-		// TODO: fix this --------------------------------------------------------------------------------------------
-		// TODO: fix this --------------------------------------------------------------------------------------------
-		res, err := node.Func.Exec(node.Args, ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-		return res, nil
-
 	// -------------------------------------------------------------------------------
 	// Unary ops
 	// -------------------------------------------------------------------------------
@@ -360,8 +347,8 @@ func evaluateNode(tree *ast.AST, nodeId, scopeId uint32, ctx Context) (Value, er
 			return ValueNone, TypeErrorSpecific(ValueTypeBool, left.Type())
 		}
 
-		if !left.Bool() {
-			return MakeBool(false), nil
+		if left.Bool() {
+			return MakeBool(true), nil
 		}
 
 		right, err := EvaluateNode(tree, node.B, scopeId, ctx)
@@ -372,8 +359,9 @@ func evaluateNode(tree *ast.AST, nodeId, scopeId uint32, ctx Context) (Value, er
 		if !right.IsBool() {
 			return ValueNone, TypeErrorSpecific(ValueTypeBool, right.Type())
 		}
-		// res := left.Bool() || right.Bool()
+
 		return MakeBool(right.Bool()), nil
+
 	case ast.NodeTypeBinaryEqual:
 		left, err := EvaluateNode(tree, node.A, scopeId, ctx)
 		if err != nil {
@@ -680,64 +668,79 @@ func evaluateNode(tree *ast.AST, nodeId, scopeId uint32, ctx Context) (Value, er
 	}
 }
 
-// type GoCallbackNode struct {
-// 	Func Function
-// 	Args []NamedValue
-// }
+func handleObject(tree *ast.AST, node ast.Node, scopeId uint32, ctx Context) (Value, error) {
 
-// func (n *GoCallbackNode) Context() ast.Context             { return nil }
-// func (n *GoCallbackNode) Loc() *old_ast.LocationRange      { return nil }
-// func (n *GoCallbackNode) FreeVariables() ast.Identifiers   { return nil }
-// func (n *GoCallbackNode) SetFreeVariables(ast.Identifiers) {}
-// func (n *GoCallbackNode) SetContext(ast.Context)           {}
-// func (n *GoCallbackNode) OpenFodder() *old_ast.Fodder      { return nil }
+	fieldCount := int(node.B)
 
-type CallbackFunction struct{}
+	offset := int(node.A)
 
-func handleDesugaredObject(tree *ast.AST, node ast.Node, scopeId uint32, ctx Context) (Value, error) {
-
-	fieldCount := len(node.Fields)
-	localsCount := len(node.Locals)
+	// localsCount := len(node.Locals)
 
 	layer, _ := ctx.State.Registry.Layers.New()
 
 	layer.ParentScopeId = scopeId
+	layer.Ast = tree
 
 	if fieldCount > 0 {
-		layer.Keys = ctx.State.Registry.Uint32Bufs.Alloc(0, fieldCount)
-		layer.Nodes = ctx.State.Registry.NodesBufs.Alloc(0, fieldCount)
-		layer.Meta = ctx.State.Registry.Uint8Bufs.Alloc(0, fieldCount)
+		layer.Keys = ctx.State.Registry.Uint32Bufs.Alloc(fieldCount, fieldCount)
+		layer.Nodes = ctx.State.Registry.Uint32Bufs.Alloc(fieldCount, fieldCount)
+		layer.Meta = ctx.State.Registry.Uint8Bufs.Alloc(fieldCount, fieldCount)
+	}
+
+	// TODO: handle locals complete first
+	var localsCount int
+	if node.Flags&ast.FlagObjectHasLocals != 0 {
+		localsCount = int(tree.SideTable[offset])
+		offset++
+
+		layer.LocalKeys = ctx.State.Registry.Uint32Bufs.Alloc(localsCount, localsCount)
+		layer.LocalNodes = ctx.State.Registry.Uint32Bufs.Alloc(localsCount, localsCount)
+	}
+
+	var assertsCount int
+	if node.Flags&ast.FlagObjectHasAsserts != 0 {
+		assertsCount = int(tree.SideTable[offset])
+		offset++
+
+		layer.Asserts = ctx.State.Registry.Uint32Bufs.Alloc(assertsCount, assertsCount)
+		// copy(layer.Asserts, node.Asserts)
 	}
 
 	if localsCount > 0 {
-		layer.LocalKeys = ctx.State.Registry.Uint32Bufs.Alloc(0, localsCount)
-		layer.LocalNodes = ctx.State.Registry.NodesBufs.Alloc(0, localsCount)
+		locals := tree.SideTable[offset : offset+localsCount*2]
+		for i := range localsCount {
+			keyId, localNodeId := locals[i*2], locals[i*2+1]
+
+			layer.LocalKeys[i] = keyId
+			layer.LocalNodes[i] = localNodeId
+		}
+		offset += len(locals)
 	}
 
-	if len(node.Asserts) > 0 {
-		layer.Asserts = ctx.State.Registry.NodesBufs.Alloc(len(node.Asserts), len(node.Asserts))
-		copy(layer.Asserts, node.Asserts)
-	}
+	if assertsCount > 0 {
+		asserts := tree.SideTable[offset : offset+assertsCount]
+		for i := range assertsCount {
+			assertNodeId := asserts[i]
 
-	for _, v := range node.Locals {
-
-		name := string(v.Variable)
-		keyId := ctx.State.Interner.Intern(name)
-
-		layer.LocalKeys = append(layer.LocalKeys, keyId)
-		layer.LocalNodes = append(layer.LocalNodes, v.Body)
-
+			layer.Asserts[i] = assertNodeId
+		}
+		offset += len(asserts)
 	}
 
 	useMap := fieldCount > MaxLayerLinearKeys
-
 	if useMap {
 		layer.Index = make(map[uint32]int, fieldCount)
 	}
 
+	fields := tree.SideTable[offset : offset+fieldCount*3]
+
 	index := 0
-	for _, v := range node.Fields {
-		name, err := EvaluateNode(v.Name, scopeId, ctx)
+	for i := range fieldCount {
+		fieldKeyNodeId := fields[i*3]
+		fieldBodyNodeId := fields[i*3+1]
+		fieldmeta := fields[i*3+2]
+
+		name, err := EvaluateNode(tree, fieldKeyNodeId, scopeId, ctx)
 		if err != nil {
 			return ValueNone, err
 		}
@@ -751,20 +754,26 @@ func handleDesugaredObject(tree *ast.AST, node ast.Node, scopeId uint32, ctx Con
 			return ValueNone, fmt.Errorf("unexpected field name type %s, expected string", name.Type().String())
 		}
 
-		n := name.String(ctx)
+		keyId := name.AsStringConst()
+		if keyId == 0 {
+			// if its a dynamic string we need to intern it
+			name := name.String(ctx)
+			keyId = ctx.State.Interner.Intern(name)
+		}
 
-		keyId := ctx.State.Interner.Intern(n)
-
-		layer.Keys = append(layer.Keys, keyId)
-		layer.Nodes = append(layer.Nodes, v.Body)
-		layer.Meta = append(layer.Meta, CreateFieldMeta(v.Hide, v.PlusSuper))
+		layer.Keys[index] = keyId
+		layer.Nodes[index] = fieldBodyNodeId
+		layer.Meta[index] = uint8(fieldmeta)
 
 		if useMap {
 			layer.Index[keyId] = index
-			index++
 		}
-
+		index++
 	}
+
+	layer.Keys = layer.Keys[:index]
+	layer.Nodes = layer.Nodes[:index]
+	layer.Meta = layer.Meta[:index]
 
 	layers := ctx.State.Registry.LayerBufs.Alloc(1, 1)
 	layers[0] = layer
@@ -797,78 +806,10 @@ func handleLocal(tree *ast.AST, node ast.Node, scopeId uint32, ctx Context) (Val
 	return val, nil
 }
 
-func handleBinary(node *old_ast.Binary, scopeId uint32, ctx Context) (Value, error) {
-	left, err := EvaluateNode(node.Left, scopeId, ctx)
-	if err != nil {
-		return ValueNone, err
-	}
-
-	// Check if fast exit is possible
-	switch node.Op {
-	case ast.BopAnd:
-		if !left.IsBool() {
-			return ValueNone, fmt.Errorf("unexpected type %s for && op, expected boolean", left.Type().String())
-		}
-
-		if !left.Bool() {
-			return MakeBool(false), nil
-		}
-
-		right, err := EvaluateNode(node.Right, scopeId, ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-
-		if !right.IsBool() {
-			return ValueNone, fmt.Errorf("unexpected type %s for && op, expected boolean", right.Type().String())
-		}
-		res := left.Bool() && right.Bool()
-		return MakeBool(res), nil
-
-	case ast.BopOr:
-		if !left.IsBool() {
-			return ValueNone, fmt.Errorf("unexpected type %s for || op, expected boolean", left.Type().String())
-		}
-
-		if left.Bool() {
-			return MakeBool(true), nil
-		}
-
-		right, err := EvaluateNode(node.Right, scopeId, ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-
-		if !right.IsBool() {
-			return ValueNone, fmt.Errorf("unexpected type %s for || op, expected boolean", right.Type().String())
-		}
-		res := left.Bool() || right.Bool()
-		return MakeBool(res), nil
-	default:
-		right, err := EvaluateNode(node.Right, scopeId, ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-
-		res, err := handleBinaryOp(node.Op, left, right, ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-
-		return res, nil
-	}
-
-}
-
 func handleFunction(tree *ast.AST, node ast.Node, scopeId uint32, ctx Context) (Value, error) {
 
 	paramCount := int(node.C)
 	params := tree.SideTable[node.B : node.B+node.C*2]
-
-	paramKeyIds := ctx.State.Registry.Uint32Bufs.Alloc(paramCount, paramCount)
-	for i := range paramKeyIds {
-		paramKeyIds[i] = params[i*2]
-	}
 
 	var fn Func = func(args []NamedValue, _ Context) (Value, error) {
 		if len(args) > paramCount {
@@ -883,7 +824,7 @@ func handleFunction(tree *ast.AST, node ast.Node, scopeId uint32, ctx Context) (
 
 		posIndex := 0
 		for i := range paramCount {
-			keyId := paramKeyIds[i]
+			keyId := params[i*2]
 
 			var bindVal NamedValue
 
@@ -923,7 +864,7 @@ func handleFunction(tree *ast.AST, node ast.Node, scopeId uint32, ctx Context) (
 	}
 
 	f := Function{
-		argsCount: len(paramKeyIds),
+		argsCount: paramCount,
 		fn:        fn,
 	}
 
@@ -949,10 +890,10 @@ func handleIndex(tree *ast.AST, node ast.Node, scopeId uint32, ctx Context) (Val
 			return ValueNone, MakeRuntimeError(fmt.Errorf("unexpected index type for indexing string, expected number, got %s", index.Type().String()))
 		}
 		i := int(index.Number())
-		if len(target.String(ctx)) <= i {
-			return ValueNone, MakeRuntimeError(fmt.Errorf("index (%d) out of bounds, string length %d", i, len(target.Array(ctx))))
-		}
 		s := target.String(ctx)
+		if len(s) <= i {
+			return ValueNone, MakeRuntimeError(fmt.Errorf("index (%d) out of bounds, string length %d", i, len(s)))
+		}
 		return MakeString(string(s[i]), ctx), nil
 	case ValueTypeObject:
 		if !index.IsString() {
@@ -1048,7 +989,7 @@ func handleImport(tree *ast.AST, node ast.Node, scopeId uint32, ctx Context) (Va
 	// }
 
 	file := ctx.State.Interner.Get(node.A)
-	fileLocation := ctx.State.Interner.Get(node.A)
+	fileLocation := ctx.State.Interner.Get(node.B)
 
 	currentFileDir := filepath.Dir(fileLocation)
 
@@ -1102,6 +1043,8 @@ func handleImport(tree *ast.AST, node ast.Node, scopeId uint32, ctx Context) (Va
 
 	importCtx := ctx
 	importCtx.Self = ValueNone
+	importCtx.AstId = uint32(len(ctx.State.Registry.ASTs))
+	ctx.State.Registry.ASTs = append(ctx.State.Registry.ASTs, importedAst)
 
 	v, err := evaluateNodeLazy(importedAst, importedAst.RootId, importScope, importCtx)
 	if err != nil {

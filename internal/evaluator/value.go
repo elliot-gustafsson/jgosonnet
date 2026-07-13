@@ -19,6 +19,7 @@ const (
 	ValueTypeArray
 	ValueTypeFunction
 	ValueTypeThunk
+	ValueTypeCallbackThunk
 )
 
 func (t ValueType) IsLiteral() bool {
@@ -43,7 +44,7 @@ func (t ValueType) String() string {
 		return "array"
 	case ValueTypeFunction:
 		return "function"
-	case ValueTypeThunk:
+	case ValueTypeThunk, ValueTypeCallbackThunk:
 		return "thunk"
 	default:
 		return fmt.Sprintf("unknown (%d)", t)
@@ -54,7 +55,6 @@ type ThunkEvalFunc func(Context) (Value, error)
 
 type Thunk struct {
 	AstId               uint32
-	TreeId              uint32
 	NodeId              uint32
 	ScopeId             uint32
 	CapturedSelf        Value
@@ -101,6 +101,13 @@ func (t Function) Noop() bool {
 
 func (t Function) Length() int {
 	return t.argsCount
+}
+
+type CallbackThunk struct {
+	Func Function
+	Args []NamedValue
+
+	Value Value
 }
 
 type Value uint64
@@ -199,6 +206,13 @@ func MakeThunk(v Thunk, ctx Context) Value {
 	return box(ValueTypeThunk, refId)
 }
 
+func MakeCallbackThunk(v Function, args []NamedValue, ctx Context) Value {
+	f, id := ctx.State.Registry.CallbackThunks.New()
+	f.Func = v
+	f.Args = args
+	return box(ValueTypeCallbackThunk, id)
+}
+
 func MakeTombstoneValue(scope int) Value {
 	return box(ValueTypeNone, uint32(scope))
 }
@@ -253,7 +267,13 @@ func (v Value) Eval(ctx Context) (Value, error) {
 	if !v.IsThunk() {
 		return v, nil
 	}
-	return v.evalThunk(ctx)
+
+	if v.Type() == ValueTypeThunk {
+		return v.evalThunk(ctx)
+	}
+
+	return v.evalCallbackThunk(ctx)
+
 }
 
 //go:noinline
@@ -267,6 +287,7 @@ func (v Value) evalThunk(ctx Context) (Value, error) {
 	evalCtx := ctx
 	evalCtx.Self = thunk.CapturedSelf
 	evalCtx.SuperOffset = thunk.CapturedSuperOffset
+	evalCtx.AstId = thunk.AstId
 
 	tree := ctx.State.Registry.ASTs[thunk.AstId]
 
@@ -278,6 +299,23 @@ func (v Value) evalThunk(ctx Context) (Value, error) {
 	// thunk = v.Thunk(ctx)
 	thunk.Value = evaledVal
 	return evaledVal, nil
+}
+
+//go:noinline
+func (v Value) evalCallbackThunk(ctx Context) (Value, error) {
+	callback := ctx.State.Registry.CallbackThunks.GetPtr(v.RefId())
+
+	if !callback.Value.IsNone() {
+		return callback.Value, nil
+	}
+
+	res, err := callback.Func.Exec(callback.Args, ctx)
+	if err != nil {
+		return ValueNone, err
+	}
+
+	callback.Value = res
+	return res, nil
 }
 
 // AsStringConst returns the raw Interner ID if the value is an interned string literal.
@@ -465,7 +503,8 @@ func (v Value) IsBool() bool {
 }
 
 func (v Value) IsThunk() bool {
-	return uint64(v)>>32 == uint64(ValueTypeThunk)
+	tag := uint64(v) >> 32
+	return tag == uint64(ValueTypeThunk) || tag == uint64(ValueTypeCallbackThunk)
 }
 
 func (v Value) IsObject() bool {
