@@ -190,11 +190,12 @@ func MakeTombstoneValue(scope int) Value {
 }
 
 func (v Value) Type() ValueType {
-	if v.IsNumber() {
+	t := uint64(v) >> 32
+	if t > math.MaxUint8 {
 		return ValueTypeNumber
+
 	}
-	// Shift down 32 bits and mask out the ID to get the Type
-	return ValueType(uint64(v) >> 32)
+	return ValueType(t)
 }
 
 func (v Value) RefId() uint32 {
@@ -414,35 +415,35 @@ func (v Value) IsLiteral() bool {
 }
 
 func (v Value) IsNull() bool {
-	return v.Type() == ValueTypeNull
+	return uint64(v)>>32 == uint64(ValueTypeNull)
 }
 
 func (v Value) IsString() bool {
-	return v.Type() == ValueTypeString
+	return uint64(v)>>32 == uint64(ValueTypeString)
 }
 
 func (v Value) IsNumber() bool {
-	return uint64(v) >= 0x0001000000000000
+	return uint64(v) >= (1 << 48)
 }
 
 func (v Value) IsBool() bool {
-	return v.Type() == ValueTypeBool
+	return uint64(v)>>32 == uint64(ValueTypeBool)
 }
 
 func (v Value) IsThunk() bool {
-	return v.Type() == ValueTypeThunk
+	return uint64(v)>>32 == uint64(ValueTypeThunk)
 }
 
 func (v Value) IsObject() bool {
-	return v.Type() == ValueTypeObject
+	return uint64(v)>>32 == uint64(ValueTypeObject)
 }
 
 func (v Value) IsFunction() bool {
-	return v.Type() == ValueTypeFunction
+	return uint64(v)>>32 == uint64(ValueTypeFunction)
 }
 
 func (v Value) IsArray() bool {
-	return v.Type() == ValueTypeArray
+	return uint64(v)>>32 == uint64(ValueTypeArray)
 }
 
 func (v Value) IsEmpty(ctx Context) bool {
