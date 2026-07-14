@@ -14,14 +14,12 @@ import (
 func EvaluateNode(tree *ast.AST, nodeId, scopeId uint32, ctx Context) (Value, error) {
 	val, err := evaluateNode(tree, nodeId, scopeId, ctx)
 	if err != nil {
-		// return ValueNone, WrapError(err, n)
-		return ValueNone, err // TODO: Fix WrapError
+		return ValueNone, WrapError(err, tree, nodeId)
 	}
 	if val.IsThunk() {
 		val, err = val.Eval(ctx)
 		if err != nil {
-			// return ValueNone, WrapError(err, n)
-			return ValueNone, err // TODO: Fix WrapError
+			return ValueNone, WrapError(err, tree, nodeId)
 		}
 	}
 	return val, nil

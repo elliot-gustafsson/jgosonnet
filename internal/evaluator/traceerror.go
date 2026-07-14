@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/google/go-jsonnet/ast"
+	"github.com/elliot-gustafsson/jgosonnet/internal/ast"
 )
 
 type TraceError struct {
@@ -29,7 +29,7 @@ type Frame struct {
 	Pos  string
 }
 
-func WrapError(err error, node ast.Node) error {
+func WrapError(err error, tree *ast.AST, nodeId uint32) error {
 	if err == nil {
 		return nil
 	}
@@ -42,12 +42,13 @@ func WrapError(err error, node ast.Node) error {
 		}
 	}
 
-	if node == nil || node.Loc() == nil {
-		return traceErr
+	location := tree.Locations[nodeId]
+	if location.Empty() {
+		return err
 	}
 
-	frame := Frame{Pos: node.Loc().String()}
-	if ctx := node.Context(); ctx != nil {
+	frame := Frame{Pos: location.String()}
+	if ctx := location.Context; ctx != nil {
 		frame.Name = *ctx
 	}
 

@@ -87,12 +87,16 @@ type AST struct {
 	Nodes     []Node
 	SideTable []uint32
 	RootId    uint32
+
+	Locations []NodeContext
 }
 
 type AstBuilder struct {
 	Nodes []Node
 
 	SideTable []uint32
+
+	Locations []NodeContext
 
 	Interner *interner.Interner
 }
@@ -101,6 +105,7 @@ func NewAstBuilder(interner *interner.Interner) *AstBuilder {
 	return &AstBuilder{
 		Interner:  interner,
 		Nodes:     make([]Node, 1, 8192),
+		Locations: make([]NodeContext, 1, 8192),
 		SideTable: make([]uint32, 0, 4096),
 	}
 }
@@ -115,6 +120,7 @@ func (b *AstBuilder) Parse(n ast.Node) (*AST, error) {
 		RootId:    rootId,
 		Nodes:     b.Nodes,
 		SideTable: b.SideTable,
+		Locations: b.Locations,
 	}
 
 	return tree, nil
@@ -127,6 +133,22 @@ func (b *AstBuilder) emit(n Node) uint32 {
 }
 
 func (b *AstBuilder) visit(n ast.Node) (uint32, error) {
+
+	var loc NodeContext
+	if lr := n.Loc(); lr != nil {
+		loc = NodeContext{
+			Context: n.Context(),
+			// File:    string(lr.File.DiagnosticFileName),
+			Begin: Location{Line: uint32(lr.Begin.Line), Column: uint32(lr.Begin.Column)},
+			End:   Location{Line: uint32(lr.End.Line), Column: uint32(lr.End.Column)},
+		}
+
+		if lr.File != nil {
+			loc.File = string(lr.File.DiagnosticFileName)
+		}
+
+	}
+	b.Locations = append(b.Locations, loc)
 
 	switch node := n.(type) {
 	default:
