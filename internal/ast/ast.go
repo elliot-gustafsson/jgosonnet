@@ -34,6 +34,7 @@ const (
 	NodeTypeImportStr
 	NodeTypeSelf
 	NodeTypeSuperIndex
+	NodeTypeInSuper
 	NodeTypeError
 
 	// binary ops
@@ -126,9 +127,10 @@ func (b *AstBuilder) Parse(n ast.Node) (*AST, error) {
 	return tree, nil
 }
 
-func (b *AstBuilder) emit(n Node) uint32 {
+func (b *AstBuilder) emit(n Node, loc NodeContext) uint32 {
 	id := uint32(len(b.Nodes))
 	b.Nodes = append(b.Nodes, n)
+	b.Locations = append(b.Locations, loc)
 	return id
 }
 
@@ -138,33 +140,33 @@ func (b *AstBuilder) visit(n ast.Node) (uint32, error) {
 	if lr := n.Loc(); lr != nil {
 		loc = NodeContext{
 			Context: n.Context(),
-			// File:    string(lr.File.DiagnosticFileName),
-			Begin: Location{Line: uint32(lr.Begin.Line), Column: uint32(lr.Begin.Column)},
-			End:   Location{Line: uint32(lr.End.Line), Column: uint32(lr.End.Column)},
+			File:    lr.FileName,
+			Begin:   Location{Line: uint32(lr.Begin.Line), Column: uint32(lr.Begin.Column)},
+			End:     Location{Line: uint32(lr.End.Line), Column: uint32(lr.End.Column)},
 		}
 
-		if lr.File != nil {
-			loc.File = string(lr.File.DiagnosticFileName)
-		}
+		// if lr.File != nil {
+		// 	loc.File = string(lr.File.DiagnosticFileName)
+		// }
 
 	}
-	b.Locations = append(b.Locations, loc)
+	// b.Locations = append(b.Locations, loc)
 
 	switch node := n.(type) {
 	default:
 		return 0, fmt.Errorf("unhandled node type: %T", node)
 	case *ast.LiteralString:
 		id := b.Interner.Intern(node.Value)
-		return b.emit(Node{Type: NodeTypeString, A: id}), nil
+		return b.emit(Node{Type: NodeTypeString, A: id}, loc), nil
 
 	case *ast.LiteralNull:
-		return b.emit(Node{Type: NodeTypeNull}), nil
+		return b.emit(Node{Type: NodeTypeNull}, loc), nil
 
 	case *ast.LiteralBoolean:
 		if node.Value {
-			return b.emit(Node{Type: NodeTypeTrue}), nil
+			return b.emit(Node{Type: NodeTypeTrue}, loc), nil
 		}
-		return b.emit(Node{Type: NodeTypeFalse}), nil
+		return b.emit(Node{Type: NodeTypeFalse}, loc), nil
 
 	case *ast.LiteralNumber:
 		num, err := strconv.ParseFloat(node.OriginalString, 64)
@@ -178,7 +180,7 @@ func (b *AstBuilder) visit(n ast.Node) (uint32, error) {
 			A:    uint32(bits >> 32),
 			B:    uint32(bits),
 		}
-		return b.emit(res), nil
+		return b.emit(res, loc), nil
 
 	case *ast.DesugaredObject:
 
@@ -257,7 +259,7 @@ func (b *AstBuilder) visit(n ast.Node) (uint32, error) {
 			offset += 3
 		}
 
-		return b.emit(Node{Type: NodeTypeObject, A: uint32(startIdx), B: uint32(numFields), Flags: flags}), nil
+		return b.emit(Node{Type: NodeTypeObject, A: uint32(startIdx), B: uint32(numFields), Flags: flags}, loc), nil
 
 	case *ast.Array:
 
@@ -277,7 +279,7 @@ func (b *AstBuilder) visit(n ast.Node) (uint32, error) {
 			b.SideTable[offset] = id
 		}
 
-		return b.emit(Node{Type: NodeTypeArray, A: uint32(startIdx), B: uint32(arrSize)}), nil
+		return b.emit(Node{Type: NodeTypeArray, A: uint32(startIdx), B: uint32(arrSize)}, loc), nil
 
 	case *ast.Local:
 
@@ -315,7 +317,7 @@ func (b *AstBuilder) visit(n ast.Node) (uint32, error) {
 			C:    uint32(binds),
 		}
 
-		return b.emit(res), nil
+		return b.emit(res, loc), nil
 
 	case *ast.Apply:
 
@@ -362,7 +364,7 @@ func (b *AstBuilder) visit(n ast.Node) (uint32, error) {
 			return 0, err
 		}
 
-		return b.emit(Node{Type: NodeTypeApply, A: funcId, B: uint32(startIdx), C: uint32(paramCount)}), nil
+		return b.emit(Node{Type: NodeTypeApply, A: funcId, B: uint32(startIdx), C: uint32(paramCount)}, loc), nil
 
 	case *ast.Index:
 
@@ -376,11 +378,11 @@ func (b *AstBuilder) visit(n ast.Node) (uint32, error) {
 			return 0, err
 		}
 
-		return b.emit(Node{Type: NodeTypeIndex, A: index, B: target}), nil
+		return b.emit(Node{Type: NodeTypeIndex, A: index, B: target}, loc), nil
 
 	case *ast.Var:
 		keyId := b.Interner.Intern(string(node.Id))
-		return b.emit(Node{Type: NodeTypeVar, A: keyId}), nil
+		return b.emit(Node{Type: NodeTypeVar, A: keyId}, loc), nil
 
 	case *ast.Function:
 
@@ -415,7 +417,7 @@ func (b *AstBuilder) visit(n ast.Node) (uint32, error) {
 			return 0, err
 		}
 
-		return b.emit(Node{Type: NodeTypeFunction, A: body, B: uint32(startIdx), C: uint32(paramCount)}), nil
+		return b.emit(Node{Type: NodeTypeFunction, A: body, B: uint32(startIdx), C: uint32(paramCount)}, loc), nil
 
 	case *ast.Conditional:
 
@@ -434,7 +436,7 @@ func (b *AstBuilder) visit(n ast.Node) (uint32, error) {
 			return 0, err
 		}
 
-		return b.emit(Node{Type: NodeTypeConditional, A: cond, B: bTrue, C: bFalse}), nil
+		return b.emit(Node{Type: NodeTypeConditional, A: cond, B: bTrue, C: bFalse}, loc), nil
 
 	case *ast.Binary:
 
@@ -491,7 +493,7 @@ func (b *AstBuilder) visit(n ast.Node) (uint32, error) {
 			t = NodeTypeBinaryOr
 		}
 
-		return b.emit(Node{Type: t, A: left, B: right}), nil
+		return b.emit(Node{Type: t, A: left, B: right}, loc), nil
 
 	case *ast.Unary:
 
@@ -502,16 +504,16 @@ func (b *AstBuilder) visit(n ast.Node) (uint32, error) {
 			if n, ok := node.Expr.(*ast.LiteralBoolean); ok {
 				if n.Value {
 					// note: false here is correct since we flip the bool
-					return b.emit(Node{Type: NodeTypeFalse}), nil
+					return b.emit(Node{Type: NodeTypeFalse}, loc), nil
 				}
-				return b.emit(Node{Type: NodeTypeTrue}), nil
+				return b.emit(Node{Type: NodeTypeTrue}, loc), nil
 			}
 
 			id, err := b.visit(node.Expr)
 			if err != nil {
 				return 0, err
 			}
-			return b.emit(Node{Type: NodeTypeUnaryNot, A: id}), nil
+			return b.emit(Node{Type: NodeTypeUnaryNot, A: id}, loc), nil
 
 		case ast.UopMinus:
 
@@ -527,14 +529,14 @@ func (b *AstBuilder) visit(n ast.Node) (uint32, error) {
 					A:    uint32(bits >> 32),
 					B:    uint32(bits),
 				}
-				return b.emit(res), nil
+				return b.emit(res, loc), nil
 			}
 
 			id, err := b.visit(node.Expr)
 			if err != nil {
 				return 0, err
 			}
-			return b.emit(Node{Type: NodeTypeUnaryMinus, A: id}), nil
+			return b.emit(Node{Type: NodeTypeUnaryMinus, A: id}, loc), nil
 
 		case ast.UopBitwiseNot:
 
@@ -550,41 +552,50 @@ func (b *AstBuilder) visit(n ast.Node) (uint32, error) {
 					A:    uint32(bits >> 32),
 					B:    uint32(bits),
 				}
-				return b.emit(res), nil
+				return b.emit(res, loc), nil
 			}
 
 			id, err := b.visit(node.Expr)
 			if err != nil {
 				return 0, err
 			}
-			return b.emit(Node{Type: NodeTypeUnaryBitwiseNot, A: id}), nil
+			return b.emit(Node{Type: NodeTypeUnaryBitwiseNot, A: id}, loc), nil
 		}
 
 	case *ast.Import:
 		id := b.Interner.Intern(node.File.Value)
 		fileLoc := b.Interner.Intern(node.NodeBase.LocRange.FileName)
-		return b.emit(Node{Type: NodeTypeImport, A: id, B: fileLoc}), nil
+		return b.emit(Node{Type: NodeTypeImport, A: id, B: fileLoc}, loc), nil
 
 	case *ast.ImportStr:
 		id := b.Interner.Intern(node.File.Value)
-		return b.emit(Node{Type: NodeTypeImportStr, A: id}), nil
+		return b.emit(Node{Type: NodeTypeImportStr, A: id}, loc), nil
 
 	case *ast.Self:
-		return b.emit(Node{Type: NodeTypeSelf}), nil
+		return b.emit(Node{Type: NodeTypeSelf}, loc), nil
 
 	case *ast.SuperIndex:
+		// TODO: can only be LiteralString?
 		id, err := b.visit(node.Index)
 		if err != nil {
 			return 0, err
 		}
-		return b.emit(Node{Type: NodeTypeSuperIndex, A: id}), nil
+		return b.emit(Node{Type: NodeTypeSuperIndex, A: id}, loc), nil
+
+	case *ast.InSuper:
+		// TODO: can only be LiteralString?
+		id, err := b.visit(node.Index)
+		if err != nil {
+			return 0, err
+		}
+		return b.emit(Node{Type: NodeTypeInSuper, A: id}, loc), nil
 
 	case *ast.Error:
 		id, err := b.visit(node.Expr)
 		if err != nil {
 			return 0, err
 		}
-		return b.emit(Node{Type: NodeTypeError, A: id}), nil
+		return b.emit(Node{Type: NodeTypeError, A: id}, loc), nil
 
 	}
 

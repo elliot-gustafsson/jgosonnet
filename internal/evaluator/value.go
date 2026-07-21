@@ -468,7 +468,7 @@ func (v Value) ToString(ctx Context) (string, error) {
 			return "", err
 		}
 		return b.String(), nil
-	case ValueTypeThunk:
+	case ValueTypeThunk, ValueTypeCallbackThunk:
 		v, err := v.Eval(ctx)
 		if err != nil {
 			return "", err
@@ -611,7 +611,7 @@ func (a Value) Equal(b Value, ctx Context) (bool, error) {
 		}
 
 		return true, nil
-	case ValueTypeThunk:
+	case ValueTypeThunk, ValueTypeCallbackThunk:
 		a, err := a.Eval(ctx)
 		if err != nil {
 			return false, err
@@ -665,7 +665,7 @@ func (a Value) Compare(b Value, ctx Context) (int, error) {
 			j++
 		}
 		return cmp.Compare(len(aArr), len(bArr)), nil
-	case ValueTypeThunk:
+	case ValueTypeThunk, ValueTypeCallbackThunk:
 		a, err := a.Eval(ctx)
 		if err != nil {
 			return 0, err

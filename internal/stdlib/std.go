@@ -227,7 +227,7 @@ func f(f evaluator.Func, params ...param) func(evaluator.Context) evaluator.Func
 
 			var onNamedArgs bool
 
-			orderedArgs := make([]evaluator.NamedValue, len(argIds))
+			orderedArgs := ctx.State.Registry.NamedValueBufs.Alloc(len(argIds), len(argIds))
 			posIdx := 0
 
 			for _, na := range args {

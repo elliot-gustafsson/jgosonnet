@@ -242,9 +242,7 @@ func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 		v := vals[i]
 		idx := i * 2
 
-		keyString := ctx.State.Interner.Get(k)
-
-		allArgs[idx] = evaluator.NamedValue{Value: evaluator.MakeString(keyString, ctx)}
+		allArgs[idx] = evaluator.NamedValue{Value: evaluator.MakeStringValue(k | evaluator.StringConstFlag)}
 		allArgs[idx+1] = evaluator.NamedValue{Value: v}
 
 		callbackValue := evaluator.MakeCallbackThunk(mapFunc, allArgs[idx:idx+2], mapCtx)

@@ -33,6 +33,7 @@ type Layer struct {
 
 	ParentScopeId uint32
 	Ast           *ast.AST
+	AstId         uint32
 }
 
 func (l *Layer) findField(key uint32) (layerId int) {
@@ -651,6 +652,7 @@ func getValue(obj *Object, layerId, fieldId int, ctx Context) (Value, error) {
 
 		evalCtx := ctx
 		evalCtx.SuperOffset = uint32(len(layers) - 1 - layerId)
+		evalCtx.AstId = l.AstId
 
 		scopeId, err := obj.getScope(layerId, l, evalCtx)
 		if err != nil {
@@ -683,6 +685,7 @@ func runAssertions(obj *Object, ctx Context) error {
 
 		evalCtx := ctx
 		evalCtx.SuperOffset = uint32(len(layers) - 1 - i)
+		evalCtx.AstId = layer.AstId
 
 		scopeId, err := obj.getScope(i, layer, evalCtx)
 		if err != nil {
@@ -690,7 +693,7 @@ func runAssertions(obj *Object, ctx Context) error {
 		}
 
 		for _, n := range layer.Asserts {
-			val, err := EvaluateNode(layer.Ast, n, scopeId, ctx)
+			val, err := EvaluateNode(layer.Ast, n, scopeId, evalCtx)
 			if err != nil {
 				return err
 			}
@@ -711,7 +714,7 @@ func GetObjectFields(obj *Object, ctx Context, inclhidden bool) []Value {
 	res := make([]Value, 0, len(plans))
 	for _, fp := range plans {
 		if inclhidden || !fp.IsHidden() {
-			res = append(res, MakeString(ctx.State.Interner.Get(fp.KeyId), ctx))
+			res = append(res, MakeStringValue(fp.KeyId|StringConstFlag))
 		}
 	}
 
@@ -763,7 +766,7 @@ func GetObjectKeysValues(obj *Object, ctx Context, inclHidden bool) ([]Value, er
 			ctx.State.Interner.Intern("value"),
 		}
 		layer.Values = []Value{
-			MakeString(ctx.State.Interner.Get(plan.KeyId), ctx),
+			MakeStringValue(plan.KeyId | StringConstFlag),
 			val,
 		}
 

@@ -1,6 +1,7 @@
 package interner
 
 import (
+	"strings"
 	"sync"
 	"sync/atomic"
 )
@@ -68,14 +69,14 @@ func (i *Interner) Intern(s string) uint32 {
 				copy(newChunks, oldChunks)
 
 				newChunk := new([chunkSize]string)
-				newChunk[itemIdx] = s
+				newChunk[itemIdx] = strings.Clone(s)
 				newChunks[len(oldChunks)] = newChunk
 
 				i.chunks.Store(&newChunks) // Atomically swap in the new slice header
 			} else {
 				// It is safe to mutate the array element because readers only read old, fully
 				// initialized strings, and we bounds check on count before reading this index.
-				oldChunks[chunkIdx][itemIdx] = s
+				oldChunks[chunkIdx][itemIdx] = strings.Clone(s)
 			}
 
 			i.table[idx] = entry{h, newId}

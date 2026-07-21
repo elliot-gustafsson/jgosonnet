@@ -279,12 +279,12 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 	baseScopeId := evaluator.CreateFileScope(file, std, ctx)
 
 	env := &evaluator.Environment{
-		BaseScopeId:     baseScopeId,
-		TraceOut:        t.traceOut,
-		Importer:        evaluator.NewImporter(t.jpaths, std, t.astImporter),
-		ExtVars:         t.extVars,
-		ExtCodes:        t.extCodes,
-		NativeFunctions: make(map[string]evaluator.Function, len(t.nativeFuncs)),
+		BaseScopeId: baseScopeId,
+		TraceOut:    t.traceOut,
+		Importer:    evaluator.NewImporter(t.jpaths, std, t.astImporter),
+		ExtVars:     t.extVars,
+		ExtCodes:    t.extCodes,
+		// NativeFunctions: make(map[string]evaluator.Function, len(t.nativeFuncs)),
 	}
 	ctx.State.Environment = env
 

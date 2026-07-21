@@ -63,7 +63,7 @@ func ManifestValue(value Value, ctx Context) (any, error) {
 			return nil, err
 		}
 		return ManifestValue(res, ctx)
-	case ValueTypeThunk:
+	case ValueTypeThunk, ValueTypeCallbackThunk:
 		v, err := value.Eval(ctx)
 		if err != nil {
 			return nil, err
@@ -262,7 +262,9 @@ func evaluateNode(tree *ast.AST, nodeId, scopeId uint32, ctx Context) (Value, er
 	case ast.NodeTypeSelf:
 		return ctx.Self, nil
 	case ast.NodeTypeSuperIndex:
-		return handleSuperIndex(tree, node, scopeId, ctx)
+		return handleSuperIndex(tree, node.A, scopeId, ctx)
+	case ast.NodeTypeInSuper:
+		return handleInSuper(tree, node.A, scopeId, ctx)
 	case ast.NodeTypeError:
 		msg, err := EvaluateNode(tree, node.A, scopeId, ctx)
 		if err != nil {
@@ -678,6 +680,7 @@ func handleObject(tree *ast.AST, node ast.Node, scopeId uint32, ctx Context) (Va
 
 	layer.ParentScopeId = scopeId
 	layer.Ast = tree
+	layer.AstId = ctx.AstId
 
 	if fieldCount > 0 {
 		layer.Keys = ctx.State.Registry.Uint32Bufs.Alloc(fieldCount, fieldCount)
@@ -938,10 +941,14 @@ func handleIndex(tree *ast.AST, node ast.Node, scopeId uint32, ctx Context) (Val
 
 }
 
-func handleSuperIndex(tree *ast.AST, node ast.Node, scopeId uint32, ctx Context) (Value, error) {
-	index, err := EvaluateNode(tree, node.A, scopeId, ctx)
+func handleSuperIndex(tree *ast.AST, indexNodeId, scopeId uint32, ctx Context) (Value, error) {
+	index, err := EvaluateNode(tree, indexNodeId, scopeId, ctx)
 	if err != nil {
 		return ValueNone, err
+	}
+
+	if !index.IsString() {
+		return ValueNone, TypeErrorSpecific(ValueTypeString, index.Type())
 	}
 
 	if ctx.Self.IsNone() {
@@ -975,6 +982,48 @@ func handleSuperIndex(tree *ast.AST, node ast.Node, scopeId uint32, ctx Context)
 	}
 
 	return val, nil
+}
+
+func handleInSuper(tree *ast.AST, indexNodeId, scopeId uint32, ctx Context) (Value, error) {
+	index, err := EvaluateNode(tree, indexNodeId, scopeId, ctx)
+	if err != nil {
+		return ValueNone, err
+	}
+
+	if !index.IsString() {
+		return ValueNone, TypeErrorSpecific(ValueTypeString, index.Type())
+	}
+
+	if ctx.Self.IsNone() {
+		return ValueNone, errors.New("ctx.Self not set")
+	}
+
+	keyId := index.AsStringConst()
+	if keyId == 0 {
+		// if its a dynamic string we need to intern it
+		name := index.String(ctx)
+		keyId = ctx.State.Interner.Intern(name)
+	}
+
+	obj := ctx.Self.Object(ctx)
+
+	targetOffset := ctx.SuperOffset + 1
+
+	val, _, err := obj.GetFieldWithOffset(keyId, ctx, int(targetOffset))
+	if err != nil {
+		return ValueNone, err
+	}
+
+	if val.IsNone() {
+		return MakeFalse(), nil
+	}
+
+	val, err = val.Eval(ctx)
+	if err != nil {
+		return ValueNone, err
+	}
+
+	return MakeTrue(), nil
 }
 
 func handleImport(tree *ast.AST, node ast.Node, scopeId uint32, ctx Context) (Value, error) {
@@ -1036,8 +1085,8 @@ func handleImport(tree *ast.AST, node ast.Node, scopeId uint32, ctx Context) (Va
 		return ValueNone, errors.Join(errors.New("error resolving import"), rangeErr)
 	}
 
-	// importScope := CreateFileScope(file, importer.BaseStd, ctx)
-	importScope := ctx.State.Environment.BaseScopeId
+	importScope := CreateFileScope(file, importer.BaseStd, ctx)
+	// importScope := ctx.State.Environment.BaseScopeId
 
 	importCtx := ctx
 	importCtx.Self = ValueNone
