@@ -43,11 +43,12 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, indentLevel int,
 		return fmt.Errorf("unhandled value type: %s", value.Type().String())
 	case ValueTypeNumber:
 		data := value.Number()
+		var p [64]byte
 		if config.StrictFloat {
-			b.WriteString(strconv.FormatFloat(data, 'f', -1, 64))
+			b.Write(strconv.AppendFloat(p[:0], data, 'f', -1, 64))
 			return nil
 		}
-		b.WriteString(unparseNumber(data))
+		b.Write(unparseNumber(p[:0], data))
 		return nil
 	case ValueTypeNull:
 		if config.Python {
@@ -220,17 +221,17 @@ func writeIndent(b *strings.Builder, indentLevel int, step string) {
 }
 
 // Borrowed from go-jsonnet, optimized to avoid fmt reflection
-func unparseNumber(v float64) string {
+func unparseNumber(dst []byte, v float64) []byte {
 	if v == math.Floor(v) {
 		// return fmt.Sprintf("%.0f", v)
-		return strconv.FormatFloat(v, 'f', 0, 64)
+		return strconv.AppendFloat(dst, v, 'f', 0, 64)
 	}
 
 	// See "What Every Computer Scientist Should Know About Floating-Point Arithmetic"
 	// Theorem 15
 	// http://docs.oracle.com/cd/E19957-01/806-3568/ncg_goldberg.html
 	// return fmt.Sprintf("%.17g", v)
-	return strconv.FormatFloat(v, 'g', 17, 64)
+	return strconv.AppendFloat(dst, v, 'g', 17, 64)
 }
 
 const (

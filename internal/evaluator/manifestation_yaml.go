@@ -33,12 +33,13 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, indentLevel in
 		return fmt.Errorf("unhandled value type: %s", value.Type().String())
 	case ValueTypeNumber:
 		data := value.Number()
+
+		var p [64]byte
 		if config.FormatIntegers && data == math.Floor(data) {
-			buf.WriteString(strconv.FormatFloat(data, 'f', 0, 64))
+			buf.Write(strconv.AppendFloat(p[:0], data, 'f', 0, 64))
 			return nil
 		}
-		buf.WriteString(strconv.FormatFloat(data, 'f', -1, 64))
-		// buf.WriteString(unparseNumber(data))
+		buf.Write(strconv.AppendFloat(p[:0], data, 'f', -1, 64))
 		return nil
 	case ValueTypeNull:
 		buf.WriteString("null")

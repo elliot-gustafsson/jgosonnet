@@ -123,7 +123,8 @@ func writeTomlValue(b *strings.Builder, value Value, ctx Context, cindent, sinde
 		}
 		return nil
 	case ValueTypeNumber:
-		b.WriteString(unparseNumber(value.Number()))
+		var p [64]byte
+		b.Write(unparseNumber(p[:0], value.Number()))
 		return nil
 	case ValueTypeString:
 		writeJsonString(b, value.String(ctx))

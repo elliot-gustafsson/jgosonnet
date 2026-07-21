@@ -373,8 +373,9 @@ func (v Value) ToString(ctx Context) (string, error) {
 	case ValueTypeString:
 		return v.String(ctx), nil
 	case ValueTypeNumber:
-		res := unparseNumber(v.Number())
-		return res, nil
+		var p [64]byte
+		res := unparseNumber(p[:0], v.Number())
+		return string(res), nil
 	case ValueTypeBool:
 		if v.Bool() {
 			return "true", nil

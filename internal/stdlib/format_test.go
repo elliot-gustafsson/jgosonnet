@@ -291,12 +291,6 @@ func TestFormat(t *testing.T) {
 		},
 		// --- Python/Jsonnet Specifics ---
 		{
-			name:     "Repr %r (Fallback to String)",
-			format:   "Repr: %r",
-			args:     []any{"test"},
-			expected: "Repr: test",
-		},
-		{
 			name:     "Float to Char (%c)",
 			format:   "%c",
 			args:     []any{65.0}, // Should cast to int 65 -> 'A'
@@ -355,7 +349,7 @@ func TestFormat(t *testing.T) {
 			name:        "Unknown Verb",
 			format:      "%z",
 			args:        []any{1},
-			expectedErr: "unsupported format character 'z'",
+			expectedErr: "RUNTIME ERROR: Unrecognised conversion type: z",
 		},
 	}
 	for _, tt := range tests {
@@ -378,6 +372,663 @@ func TestFormat(t *testing.T) {
 		})
 	}
 }
+
+func TestFormatStrings(t *testing.T) {
+	tests := []struct {
+		name        string
+		format      string
+		args        any // Can be []any, map[string]any, or single value
+		expected    string
+		expectedErr string
+	}{
+		{
+			name:     "String",
+			format:   "Hello %s",
+			args:     []any{"World"},
+			expected: "Hello World",
+		},
+		{
+			name:     "String padding",
+			format:   "|%10s|",
+			args:     []any{"test"},
+			expected: "|      test|",
+		},
+		{
+			name:     "String zero padding", // go-jsonnet refuses to do this
+			format:   "|%010s|",
+			args:     []any{"test"},
+			expected: "|      test|",
+		},
+		{
+			name:     "String padding left jusify",
+			format:   "|%-10s|",
+			args:     []any{"test"},
+			expected: "|test      |",
+		},
+		{
+			name:     "String precision", // go-jsonnet doesnt cut strings
+			format:   "%.2s",
+			args:     []any{"test"},
+			expected: "test",
+		},
+		{
+			name:     "String format alternate",
+			format:   "%#s",
+			args:     []any{"test"},
+			expected: "test",
+		},
+		{
+			name:     "String format force sign",
+			format:   "%+s",
+			args:     []any{"test"},
+			expected: "test",
+		},
+		{
+			name:     "String format space sign",
+			format:   "% s",
+			args:     []any{"test"},
+			expected: "test",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := evaluator.Context{
+				State: &evaluator.ContextState{
+					Interner: evaluator.NewInterner(),
+					Registry: evaluator.NewRegistry(),
+				},
+			}
+			val := toValue(tt.args, ctx)
+			got, err := formatString(tt.format, val, ctx)
+			if err != nil {
+				assert.EqualError(t, err, tt.expectedErr)
+				assert.Equal(t, "", got)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expected, got)
+
+		})
+	}
+}
+func TestFormatIntegers(t *testing.T) {
+	tests := []struct {
+		name        string
+		format      string
+		args        any // Can be []any, map[string]any, or single value
+		expected    string
+		expectedErr string
+	}{
+		// %d // TODO: make sure that i and u behaves exactly as d
+		{
+			name:     "Integer (%d)",
+			format:   "%d",
+			args:     []any{66},
+			expected: "66",
+		},
+		{
+			name:     "Integer (%d) negative",
+			format:   "%d",
+			args:     []any{-66},
+			expected: "-66",
+		},
+		{
+			name:     "Integer (%d) decimals",
+			format:   "%d",
+			args:     []any{66.666},
+			expected: "66",
+		},
+		{
+			name:     "Integer (%d) force sign",
+			format:   "%+d",
+			args:     []any{66},
+			expected: "+66",
+		},
+		{
+			name:     "Integer (%d) force sign + space sign",
+			format:   "%+ d",
+			args:     []any{66},
+			expected: "+66",
+		},
+		{
+			name:     "Integer (%d) negative force sign",
+			format:   "%+d",
+			args:     []any{-66},
+			expected: "-66",
+		},
+		{
+			name:     "Integer (%d) space sign",
+			format:   "% d",
+			args:     []any{66},
+			expected: " 66",
+		},
+		{
+			name:     "Integer (%d) negative space sign",
+			format:   "% d",
+			args:     []any{-66},
+			expected: "-66",
+		},
+		{
+			name:     "Integer (%d) padding",
+			format:   "|%5d|",
+			args:     []any{66},
+			expected: "|   66|",
+		},
+		{
+			name:     "Integer (%d) zero padding",
+			format:   "|%05d|",
+			args:     []any{66},
+			expected: "|00066|",
+		},
+		{
+			name:     "Integer (%d) padding left justify",
+			format:   "|%-5d|",
+			args:     []any{66},
+			expected: "|66   |",
+		},
+		{
+			name:     "Integer (%d) zero padding left justify",
+			format:   "|%-05d|",
+			args:     []any{66},
+			expected: "|66   |", // would change the number so fallbacks to spaces
+		},
+		{
+			name:     "Integer (%d) padding force sign",
+			format:   "|%+5d|",
+			args:     []any{66},
+			expected: "|  +66|",
+		},
+		{
+			name:     "Integer (%d) padding force sign left justify",
+			format:   "|%+-5d|",
+			args:     []any{66},
+			expected: "|+66  |",
+		},
+		{
+			name:     "Integer (%d) padding space sign",
+			format:   "|% 5d|",
+			args:     []any{66},
+			expected: "|   66|",
+		},
+		{
+			name:     "Integer (%d) padding space sign left justify",
+			format:   "|% -5d|",
+			args:     []any{66},
+			expected: "| 66  |",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := evaluator.Context{
+				State: &evaluator.ContextState{
+					Interner: evaluator.NewInterner(),
+					Registry: evaluator.NewRegistry(),
+				},
+			}
+			val := toValue(tt.args, ctx)
+			got, err := formatString(tt.format, val, ctx)
+			if err != nil {
+				assert.EqualError(t, err, tt.expectedErr)
+				assert.Equal(t, "", got)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expected, got)
+
+		})
+	}
+}
+
+func TestFormatOctal(t *testing.T) {
+	tests := []struct {
+		name        string
+		format      string
+		args        any // Can be []any, map[string]any, or single value
+		expected    string
+		expectedErr string
+	}{
+		{
+			name:     "Octal (%o)",
+			format:   "%o",
+			args:     []any{66},
+			expected: "102",
+		},
+		{
+			name:     "Octal (%o) negative",
+			format:   "%+o",
+			args:     []any{-66},
+			expected: "-102",
+		},
+		{
+			name:     "Octal (%o) force sign",
+			format:   "%+o",
+			args:     []any{66},
+			expected: "+102",
+		},
+		{
+			name:     "Octal (%o) negative force sign",
+			format:   "%+o",
+			args:     []any{-66},
+			expected: "-102",
+		},
+		{
+			name:     "Octal (%o) space sign",
+			format:   "% o",
+			args:     []any{66},
+			expected: " 102",
+		},
+		{
+			name:     "Octal (%o) negative space sign",
+			format:   "% o",
+			args:     []any{-66},
+			expected: "-102",
+		},
+		{
+			name:     "Octal (%o) padding",
+			format:   "|%5o|",
+			args:     []any{66},
+			expected: "|  102|",
+		},
+		{
+			name:     "Octal (%o) zero padding",
+			format:   "|%05o|",
+			args:     []any{66},
+			expected: "|00102|",
+		},
+		{
+			name:     "Octal (%o) padding left justify",
+			format:   "|%-5o|",
+			args:     []any{66},
+			expected: "|102  |",
+		},
+		{
+			name:     "Octal (%o) zero padding left justify",
+			format:   "|%-05o|",
+			args:     []any{66},
+			expected: "|102  |", // would change the number so fallbacks to spaces
+		},
+		{
+			name:     "Octal (%o) padding force sign",
+			format:   "|%+5o|",
+			args:     []any{66},
+			expected: "| +102|",
+		},
+		{
+			name:     "Octal (%o) padding force sign left justify",
+			format:   "|%+-5o|",
+			args:     []any{66},
+			expected: "|+102 |",
+		},
+		{
+			name:     "Octal (%o) padding space sign",
+			format:   "|% 5o|",
+			args:     []any{66},
+			expected: "|  102|",
+		},
+		{
+			name:     "Octal (%o) padding space sign left justify",
+			format:   "|% -5o|",
+			args:     []any{66},
+			expected: "| 102 |",
+		},
+		{
+			name:     "Octal (%o) alternate",
+			format:   "|%#o|",
+			args:     []any{66},
+			expected: "|0102|",
+		},
+		{
+			name:     "Octal (%o) alternate force sign",
+			format:   "|%#+o|",
+			args:     []any{66},
+			expected: "|+0102|",
+		},
+		{
+			name:     "Octal (%o) negative alternate force sign",
+			format:   "|%#o|",
+			args:     []any{-66},
+			expected: "|-0102|",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := evaluator.Context{
+				State: &evaluator.ContextState{
+					Interner: evaluator.NewInterner(),
+					Registry: evaluator.NewRegistry(),
+				},
+			}
+			val := toValue(tt.args, ctx)
+			got, err := formatString(tt.format, val, ctx)
+			if err != nil {
+				assert.EqualError(t, err, tt.expectedErr)
+				assert.Equal(t, "", got)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expected, got)
+
+		})
+	}
+}
+func TestFormatHex(t *testing.T) {
+	tests := []struct {
+		name        string
+		format      string
+		args        any // Can be []any, map[string]any, or single value
+		expected    string
+		expectedErr string
+	}{
+		{
+			name:     "Hex (%x)",
+			format:   "%x",
+			args:     []any{14},
+			expected: "e",
+		},
+		{
+			name:     "Hex (%X)",
+			format:   "%X",
+			args:     []any{14},
+			expected: "E",
+		},
+		{
+			name:     "Hex (%x) negative",
+			format:   "%+x",
+			args:     []any{-14},
+			expected: "-e",
+		},
+		{
+			name:     "Hex (%X) negative",
+			format:   "%+X",
+			args:     []any{-14},
+			expected: "-E",
+		},
+		{
+			name:     "Hex (%x) force sign",
+			format:   "%+x",
+			args:     []any{14},
+			expected: "+e",
+		},
+		{
+			name:     "Hex (%X) force sign",
+			format:   "%+X",
+			args:     []any{14},
+			expected: "+E",
+		},
+		{
+			name:     "Hex (%x) negative force sign",
+			format:   "%+x",
+			args:     []any{-14},
+			expected: "-e",
+		},
+		{
+			name:     "Hex (%X) negative force sign",
+			format:   "%+X",
+			args:     []any{-14},
+			expected: "-E",
+		},
+		{
+			name:     "Hex (%x) space sign",
+			format:   "% x",
+			args:     []any{14},
+			expected: " e",
+		},
+		{
+			name:     "Hex (%X) space sign",
+			format:   "% X",
+			args:     []any{14},
+			expected: " E",
+		},
+		{
+			name:     "Hex (%x) negative space sign",
+			format:   "% x",
+			args:     []any{-14},
+			expected: "-e",
+		},
+		{
+			name:     "Hex (%X) negative space sign",
+			format:   "% X",
+			args:     []any{-14},
+			expected: "-E",
+		},
+		{
+			name:     "Hex (%x) padding",
+			format:   "|%5x|",
+			args:     []any{14},
+			expected: "|    e|",
+		},
+		{
+			name:     "Hex (%X) padding",
+			format:   "|%5X|",
+			args:     []any{14},
+			expected: "|    E|",
+		},
+		{
+			name:     "Hex (%x) zero padding",
+			format:   "|%05x|",
+			args:     []any{14},
+			expected: "|0000e|",
+		},
+		{
+			name:     "Hex (%X) zero padding",
+			format:   "|%05X|",
+			args:     []any{14},
+			expected: "|0000E|",
+		},
+		{
+			name:     "Hex (%x) padding left justify",
+			format:   "|%-5x|",
+			args:     []any{14},
+			expected: "|e    |",
+		},
+		{
+			name:     "Hex (%X) padding left justify",
+			format:   "|%-5X|",
+			args:     []any{14},
+			expected: "|E    |",
+		},
+		{
+			name:     "Hex (%x) zero padding left justify",
+			format:   "|%-05x|",
+			args:     []any{14},
+			expected: "|e    |", // would change the number so fallbacks to spaces
+		},
+		{
+			name:     "Hex (%X) zero padding left justify",
+			format:   "|%-05X|",
+			args:     []any{14},
+			expected: "|E    |", // would change the number so fallbacks to spaces
+		},
+		{
+			name:     "Hex (%x) padding force sign",
+			format:   "|%+5x|",
+			args:     []any{14},
+			expected: "|   +e|",
+		},
+		{
+			name:     "Hex (%X) padding force sign",
+			format:   "|%+5X|",
+			args:     []any{14},
+			expected: "|   +E|",
+		},
+		{
+			name:     "Hex (%x) padding force sign left justify",
+			format:   "|%+-5x|",
+			args:     []any{14},
+			expected: "|+e   |",
+		},
+		{
+			name:     "Hex (%X) padding force sign left justify",
+			format:   "|%+-5X|",
+			args:     []any{14},
+			expected: "|+E   |",
+		},
+		{
+			name:     "Hex (%x) padding space sign",
+			format:   "|% 5x|",
+			args:     []any{14},
+			expected: "|    e|",
+		},
+		{
+			name:     "Hex (%X) padding space sign",
+			format:   "|% 5X|",
+			args:     []any{14},
+			expected: "|    E|",
+		},
+		{
+			name:     "Hex (%x) padding space sign left justify",
+			format:   "|% -5x|",
+			args:     []any{14},
+			expected: "| e   |",
+		},
+		{
+			name:     "Hex (%X) padding space sign left justify",
+			format:   "|% -5X|",
+			args:     []any{14},
+			expected: "| E   |",
+		},
+		{
+			name:     "Hex (%x) alternate",
+			format:   "|%#x|",
+			args:     []any{14},
+			expected: "|0xe|",
+		},
+		{
+			name:     "Hex (%X) alternate",
+			format:   "|%#X|",
+			args:     []any{14},
+			expected: "|0XE|",
+		},
+		{
+			name:     "Hex (%x) alternate zero",
+			format:   "|%#x|",
+			args:     []any{0},
+			expected: "|0x0|",
+		},
+		{
+			name:     "Hex (%X) alternate zero",
+			format:   "|%#X|",
+			args:     []any{0},
+			expected: "|0X0|",
+		},
+		{
+			name:     "Hex (%x) alternate force sign",
+			format:   "|%#+x|",
+			args:     []any{14},
+			expected: "|+0xe|",
+		},
+		{
+			name:     "Hex (%X) alternate force sign",
+			format:   "|%#+X|",
+			args:     []any{14},
+			expected: "|+0XE|",
+		},
+		{
+			name:     "Hex (%x) negative alternate force sign",
+			format:   "|%#x|",
+			args:     []any{-14},
+			expected: "|-0xe|",
+		},
+		{
+			name:     "Hex (%X) negative alternate force sign",
+			format:   "|%#X|",
+			args:     []any{-14},
+			expected: "|-0XE|",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := evaluator.Context{
+				State: &evaluator.ContextState{
+					Interner: evaluator.NewInterner(),
+					Registry: evaluator.NewRegistry(),
+				},
+			}
+			val := toValue(tt.args, ctx)
+			got, err := formatString(tt.format, val, ctx)
+			if err != nil {
+				assert.EqualError(t, err, tt.expectedErr)
+				assert.Equal(t, "", got)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expected, got)
+
+		})
+	}
+}
+
+func TestFormatFloat(t *testing.T) {
+	tests := []struct {
+		name        string
+		format      string
+		args        any // Can be []any, map[string]any, or single value
+		expected    string
+		expectedErr string
+	}{
+		{
+			name:     "Float (%f)",
+			format:   "%f",
+			args:     []any{66},
+			expected: "66.000000",
+		},
+		{
+			name:     "Float (%f) decimals",
+			format:   "%f",
+			args:     []any{66.12345678},
+			expected: "66.123457",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := evaluator.Context{
+				State: &evaluator.ContextState{
+					Interner: evaluator.NewInterner(),
+					Registry: evaluator.NewRegistry(),
+				},
+			}
+			val := toValue(tt.args, ctx)
+			got, err := formatString(tt.format, val, ctx)
+			if err != nil {
+				assert.EqualError(t, err, tt.expectedErr)
+				assert.Equal(t, "", got)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expected, got)
+
+		})
+	}
+}
+
+// func TestJsonnetFormat(t *testing.T) {
+
+// 	// var dst [64]byte
+// 	// println(string(strconv.AppendFloat(dst[:0], 6666666666666666.6666666666666666, 'E', -1, 64)))
+
+// 	vm := jsonnet.MakeVM()
+
+// 	format := "|%.f|"
+// 	arg := "10"
+
+// 	snippet := fmt.Sprintf("'%s' %% %s", format, arg)
+
+// 	node, err := jsonnet.SnippetToAST("test.jsonnet", snippet)
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
+
+// 	res, err := vm.Evaluate(node)
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
+
+// 	println()
+// 	println(res)
+// 	println()
+
+// 	// assert.Equal(t, "\"0x0\"\n", res)
+// }
 
 // Helper to convert Go types to jsonnet evaluator.Value types
 func toValue(v any, ctx evaluator.Context) evaluator.Value {

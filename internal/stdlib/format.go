@@ -3,20 +3,21 @@ package stdlib
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
-	"sync"
 	"unicode/utf8"
+	"unsafe"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 )
 
-var bufPool = sync.Pool{
-	New: func() any {
-		// Start with a small capacity to avoid wasting RAM on tiny strings
-		return bytes.NewBuffer(make([]byte, 0, 64))
-	},
-}
+// var bufPool = sync.Pool{
+// 	New: func() any {
+// 		// Start with a small capacity to avoid wasting RAM on tiny strings
+// 		return bytes.NewBuffer(make([]byte, 0, 64))
+// 	},
+// }
 
 func std_format(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
@@ -36,6 +37,14 @@ func std_format(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 	return evaluator.MakeString(str, ctx), nil
 }
 
+const (
+	FormatFlagAlternate   = 0x01 // Binary 00000001 (#)
+	FormatFlagLeftJustify = 0x02 // Binary 00000010 (-)
+	FormatFlagForceSign   = 0x04 // Binary 00000100 (+)
+	FormatFlagSpaceSign   = 0x08 // Binary 00001000 ( )
+	FormatFlagZeroPad     = 0x10 // Binary 00010000 (0)
+)
+
 // Sprintf formats a string using Python-style format specifiers.
 // It supports:
 // - Positional args: Sprintf("Value: %d", 10)
@@ -43,14 +52,11 @@ func std_format(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 // - Flags:           %#0- +
 // - Width/Prec:      %10.5f, %*.2f (dynamic width), %.*f (dynamic prec)
 func formatString(str string, data evaluator.Value, ctx evaluator.Context) (string, error) {
+	n := len(str)
 
-	buf := bufPool.Get().(*bytes.Buffer)
-	buf.Reset()
-	defer bufPool.Put(buf)
-	// pre greow to hopefully avoid reallocs
-	if cap := buf.Cap(); cap < len(str) {
-		buf.Grow(len(str) + len(str)/5 - cap)
-	}
+	var buf strings.Builder
+	// Pre-allocate the length of the format string + reasonable padding buffer
+	buf.Grow(n + 64)
 
 	// 1. Normalize input data into List or Map
 	var args []evaluator.Value
@@ -77,30 +83,27 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 		dict = data.Object(ctx)
 		useNamed = true
 	case evaluator.ValueTypeString, evaluator.ValueTypeBool, evaluator.ValueTypeNumber, evaluator.ValueTypeNull:
-		args = []evaluator.Value{data}
+		argBuf := [1]evaluator.Value{data}
+		args = argBuf[:]
 	}
 
-	i := 0
-	n := len(str)
 	argIdx := 0
+	for i := 0; i < n; {
 
-	for i < n {
-		// Find the next '%' from the current position
-		remain := str[i:]
-		idx := strings.IndexByte(remain, '%')
-
-		if idx == -1 {
-			// No more verbs found, write and exit
-			buf.WriteString(remain)
-			break
+		if str[i] != '%' {
+			next := strings.IndexByte(str[i:], '%')
+			if next == -1 {
+				buf.WriteString(str[i:])
+				break
+			}
+			buf.WriteString(str[i : i+next])
+			i += next
 		}
 
-		// Write the chunk of text before the '%'
-		buf.WriteString(remain[:idx])
-		i += idx
+		if i < n && str[i] == '%' {
+			i++
+		}
 
-		// We are now standing on '%'. Advance past it.
-		i++
 		if i >= n {
 			return "", fmt.Errorf("incomplete format string")
 		}
@@ -134,20 +137,35 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 		// }
 
 		// 2. Parse Flags
-		var flags strings.Builder
-		for i < n && strings.ContainsRune("#0- +", rune(str[i])) {
-			flags.WriteString(string(str[i]))
+
+		var flags uint8
+
+	ParseFlags:
+		for i < n {
+			switch str[i] {
+			case '#':
+				flags |= FormatFlagAlternate
+			case '0':
+				flags |= FormatFlagZeroPad
+			case '-':
+				flags |= FormatFlagLeftJustify
+			case ' ':
+				flags |= FormatFlagSpaceSign
+			case '+':
+				flags |= FormatFlagForceSign
+			default:
+				break ParseFlags
+			}
 			i++
 		}
 
 		// 3. Parse Width
 		widthVal := -1
-		widthStr := ""
 
 		if i < n && str[i] == '*' {
 			// Dynamic Width
 			if useNamed {
-				return "", fmt.Errorf("width '*' cannot be used with dictionary arguments")
+				return "", fmt.Errorf("* width not supported with mapping")
 			}
 			if argIdx >= len(args) {
 				return "", fmt.Errorf("not enough arguments for format string")
@@ -160,26 +178,26 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 			argIdx++
 			i++
 		} else {
-			// Static Width
-			start := i
+			hasWidth := false
+			w := 0
 			for i < n && str[i] >= '0' && str[i] <= '9' {
+				w = w*10 + int(str[i]-'0')
+				hasWidth = true
 				i++
 			}
-			if i > start {
-				widthStr = str[start:i]
+			if hasWidth {
+				widthVal = w
 			}
 		}
 
 		// 4. Parse Precision
 		precVal := -1
-		precStr := ""
-
 		if i < n && str[i] == '.' {
-			i++ // Skip '.'
+			i++
 			if i < n && str[i] == '*' {
 				// Dynamic Precision
 				if useNamed {
-					return "", fmt.Errorf("precision '*' cannot be used with dictionary arguments")
+					return "", fmt.Errorf("* precision not supported with mapping")
 				}
 				if argIdx >= len(args) {
 					return "", fmt.Errorf("not enough arguments for format string")
@@ -192,17 +210,25 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 				argIdx++
 				i++
 			} else {
-				// Static Precision
-				start := i
+				// Inline ASCII to Integer
+				hasPrec := false
+				p := 0
 				for i < n && str[i] >= '0' && str[i] <= '9' {
+					p = p*10 + int(str[i]-'0')
+					hasPrec = true
 					i++
 				}
-				precStr = str[start:i]
+				// If a dot is present but no digits (e.g. "%.f"), precision is explicitly 0
+				if hasPrec {
+					precVal = p
+				} else {
+					precVal = 0
+				}
 			}
 		}
 
-		// 5. Length Modifier (Ignored in Go/Jsonnet, e.g. 'l', 'h')
-		for i < n && strings.ContainsRune("hlL", rune(str[i])) {
+		// 5. length modifier, ignored in Jsonnet.
+		for i < n && (str[i] == 'h' || str[i] == 'l' || str[i] == 'L') {
 			i++
 		}
 
@@ -217,10 +243,6 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 		var currentArg evaluator.Value
 
 		if useNamed {
-			// val, ok := dict[key]
-			// if !ok {
-			// 	return "", fmt.Errorf("key '%s' not found", key)
-			// }
 			keyId := ctx.State.Interner.Intern(key)
 			subCtx := ctx
 			subCtx.Self = data
@@ -245,93 +267,152 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 			return "", err
 		}
 
-		// Rebuild format string
-		fmtBuilder := strings.Builder{}
-		fmtBuilder.WriteByte('%')
-		fmtBuilder.WriteString(flags.String())
-
+		width := 0
 		if widthVal != -1 {
-			fmtBuilder.WriteString(strconv.Itoa(widthVal))
-		} else {
-			fmtBuilder.WriteString(widthStr)
+			width = widthVal
 		}
 
-		if precVal != -1 {
-			fmtBuilder.WriteByte('.')
-			fmtBuilder.WriteString(strconv.Itoa(precVal))
-		} else if precStr != "" {
-			fmtBuilder.WriteByte('.')
-			fmtBuilder.WriteString(precStr)
+		// Negative width implies left-justify
+		if width < 0 {
+			width = -width
+			flags |= FormatFlagLeftJustify
 		}
+
+		prec := precVal
 
 		switch verb {
-		case 's', 'r':
-			// %s: String
-			fmtBuilder.WriteByte('s')
-			// var strVal string
-			// if currentArg == nil {
-			// 	strVal = "null" // Jsonnet style null
-			// } else if s, ok := currentArg.(string); ok {
-			// 	strVal = s
-			// } else {
-			// 	strVal = fmt.Sprint(currentArg) // Fallback for bool/numbers
-			// }
+		case 's':
 
 			strVal, err := currentArg.ToString(ctx)
 			if err != nil {
 				return "", err
 			}
-			fmt.Fprintf(buf, fmtBuilder.String(), strVal)
 
-		case 'd', 'i', 'u', 'o', 'x', 'X':
-			// Integer types
-
-			// Go does not support %i or %u, map to d
-			if verb == 'i' || verb == 'u' {
-				fmtBuilder.WriteRune('d')
-			} else {
-				fmtBuilder.WriteRune(verb)
+			if width == 0 && flags == 0 {
+				buf.WriteString(strVal)
+				continue
 			}
 
-			// Jsonnet numbers are float64. Convert to Int64.
-			if currentArg.IsNumber() {
-				fmt.Fprintf(buf, fmtBuilder.String(), int64(currentArg.Number()))
-			} else {
-				return "", fmt.Errorf("format %%%c requires integer", verb)
+			// note: jsonnet doesnt support precision on strings
+			writeFormatString(&buf, strVal, width, flags)
+
+		case 'd', 'i', 'u': // Integer types
+
+			if !currentArg.IsNumber() {
+				return "", fmt.Errorf("format %%%c requires number", verb)
+			}
+			num := int64(currentArg.Number())
+
+			if width == 0 && flags == 0 {
+				var dst [64]byte
+				buf.Write(strconv.AppendInt(dst[:0], num, 10))
+				continue
 			}
 
-		case 'f', 'F', 'e', 'E', 'g', 'G':
-			// Float types
-			fmtBuilder.WriteRune(verb)
-			if currentArg.IsNumber() {
-				n := currentArg.Number()
-				// if verb == 'f' || verb == 'F' {
-				// 	// Add small epsilon to "fix" IEEE 754
-				// 	n += 1e-9
-				// }
-				fmt.Fprintf(buf, fmtBuilder.String(), n) // +1e-9
-			} else {
+			// note: jsonnet doesnt support precision on integer types
+			writeFormatInteger(&buf, num, width, flags)
+
+		case 'o': // Octal
+
+			if !currentArg.IsNumber() {
+				return "", fmt.Errorf("format %%%c requires number", verb)
+			}
+			num := int64(currentArg.Number())
+
+			if width == 0 && prec == -1 && flags == 0 {
+				var dst [64]byte
+				buf.Write(strconv.AppendInt(dst[:0], num, 8))
+				continue
+			}
+
+			writeFormatOctal(&buf, num, width, prec, flags)
+
+		case 'x', 'X': // Hex
+
+			if !currentArg.IsNumber() {
+				return "", fmt.Errorf("format %%%c requires number", verb)
+			}
+			num := int64(currentArg.Number())
+			uppercase := verb == 'X'
+
+			if width == 0 && prec == -1 && flags == 0 {
+				var dst [64]byte
+				res := strconv.AppendInt(dst[:0], num, 16)
+				if uppercase {
+					toUppercase(res)
+				}
+				buf.Write(res)
+				continue
+			}
+
+			writeFormatHex(&buf, num, width, flags, uppercase)
+
+		case 'f', 'F', 'e', 'E', 'g', 'G': // Float types
+
+			if !currentArg.IsNumber() {
 				return "", fmt.Errorf("format %%%c requires number", verb)
 			}
 
+			var uppercase bool
+			fmt := byte(verb)
+
+			switch verb {
+			case 'F':
+				fmt = 'f'
+				uppercase = true // Need this for NaN/Inf
+			case 'E':
+				uppercase = true
+			case 'G':
+				uppercase = true
+			}
+
+			if prec < 0 {
+				prec = 6
+			}
+
+			num := currentArg.Number()
+			if width == 0 && flags == 0 {
+				var dst [128]byte
+				res := strconv.AppendFloat(dst[:0], num, fmt, prec, 64)
+				if uppercase {
+					toUppercase(res)
+				}
+				buf.Write(res)
+				continue
+			}
+
+			writeFormatFloat(&buf, num, fmt, width, prec, flags, uppercase)
+
 		case 'c':
 			// Character
-			fmtBuilder.WriteByte('c')
-			if currentArg.IsNumber() {
+			var char rune
+			switch {
+			case currentArg.IsNumber():
 				n := currentArg.Number()
 				if n > codepointMax {
 					return "", fmt.Errorf("invalid unicode codepoint, got %v", n)
 				}
-				fmt.Fprintf(buf, fmtBuilder.String(), rune(n))
-			} else if currentArg.IsString() && len(currentArg.String(ctx)) == 1 {
-				r, _ := utf8.DecodeRuneInString(currentArg.String(ctx))
-				fmt.Fprintf(buf, fmtBuilder.String(), r)
-			} else {
+				char = rune(n)
+			case currentArg.IsString():
+				s := currentArg.String(ctx)
+				if utf8.RuneCountInString(s) == 1 {
+					char, _ = utf8.DecodeRuneInString(s)
+					break
+				}
+				fallthrough
+			default:
 				return "", fmt.Errorf("format %%c requires integer or char")
 			}
 
+			if width == 0 && flags == 0 {
+				buf.WriteRune(char)
+				continue
+			}
+
+			writeFormatChar(&buf, char, width, flags)
+
 		default:
-			return "", fmt.Errorf("unsupported format character '%c'", verb)
+			return "", evaluator.MakeRuntimeError(fmt.Errorf("Unrecognised conversion type: %s", string(verb)))
 		}
 	}
 
@@ -340,4 +421,252 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 	}
 
 	return buf.String(), nil
+}
+
+func writePad(b *strings.Builder, zeroPad bool, count int) {
+	const (
+		spaces = "                                                                "
+		zeros  = "0000000000000000000000000000000000000000000000000000000000000000"
+	)
+
+	var chunk string
+	if zeroPad {
+		chunk = zeros
+	} else {
+		chunk = spaces
+	}
+
+	for count > 0 {
+		if count <= len(chunk) {
+			b.WriteString(chunk[:count])
+			break
+		}
+
+		b.WriteString(chunk)
+		count -= len(chunk)
+	}
+
+}
+
+func writePadded(buf *strings.Builder, content []byte, prefix string, padLen int, flags uint8) {
+	leftJustify := flags&FormatFlagLeftJustify != 0
+	zeroPad := !leftJustify && flags&FormatFlagZeroPad != 0
+
+	// right justified, space padded
+	if !leftJustify && !zeroPad && padLen > 0 {
+		writePad(buf, false, padLen)
+	}
+
+	if prefix != "" {
+		buf.WriteString(prefix)
+	}
+
+	// right justified, zero padded
+	if zeroPad && padLen > 0 {
+		writePad(buf, true, padLen)
+	}
+
+	buf.Write(content)
+
+	// left justified, space padded
+	if leftJustify && padLen > 0 {
+		writePad(buf, false, padLen)
+	}
+}
+
+//go:noinline
+func writeFormatString(buf *strings.Builder, s string, width int, flags uint8) {
+	padLen := width - utf8.RuneCountInString(s)
+
+	content := unsafe.Slice(unsafe.StringData(s), len(s))
+
+	flags &^= FormatFlagZeroPad
+	writePadded(buf, content, "", padLen, flags)
+}
+
+//go:noinline
+func writeFormatInteger(buf *strings.Builder, num int64, width int, flags uint8) {
+	var dst [64]byte
+
+	var prefix string
+	u := uint64(num)
+
+	if num < 0 {
+		prefix = "-"
+		u = -u
+	} else if flags&FormatFlagForceSign != 0 {
+		prefix = "+"
+	} else if flags&FormatFlagSpaceSign != 0 {
+		prefix = " "
+	}
+
+	res := strconv.AppendUint(dst[:0], u, 10)
+
+	padLen := width - len(res) - len(prefix)
+	writePadded(buf, res, prefix, padLen, flags)
+}
+
+//go:noinline
+func writeFormatOctal(buf *strings.Builder, num int64, width, prec int, flags uint8) {
+	var dst [64]byte
+
+	u := uint64(num)
+	if num < 0 {
+		u = -u
+	}
+
+	res := strconv.AppendUint(dst[:0], u, 8)
+
+	// alternate flag for octal ensures it starts with '0'
+	alt := flags&FormatFlagAlternate != 0 && res[0] != '0'
+	forceSign := flags&FormatFlagForceSign != 0
+	spaceSign := flags&FormatFlagSpaceSign != 0
+
+	var prefix string
+	switch {
+	case num < 0 && alt:
+		prefix = "-0"
+	case num < 0:
+		prefix = "-"
+
+	case forceSign && alt:
+		prefix = "+0"
+	case forceSign:
+		prefix = "+"
+
+	case spaceSign && alt:
+		prefix = " 0"
+	case spaceSign:
+		prefix = " "
+
+	case alt:
+		prefix = "0"
+	}
+
+	padLen := width - len(res) - len(prefix)
+	writePadded(buf, res, prefix, padLen, flags)
+}
+
+//go:noinline
+func writeFormatHex(buf *strings.Builder, num int64, width int, flags uint8, uppercase bool) {
+	var dst [64]byte
+
+	u := uint64(num)
+	isNeg := num < 0
+	if isNeg {
+		u = -u
+	}
+
+	res := strconv.AppendUint(dst[:0], u, 16)
+	if uppercase {
+		toUppercase(res)
+	}
+
+	alt := flags&FormatFlagAlternate != 0
+	forceSign := flags&FormatFlagForceSign != 0
+	spaceSign := flags&FormatFlagSpaceSign != 0
+
+	var prefix string
+	switch {
+	case isNeg && alt && uppercase:
+		prefix = "-0X"
+	case isNeg && alt:
+		prefix = "-0x"
+	case isNeg:
+		prefix = "-"
+
+	case forceSign && alt && uppercase:
+		prefix = "+0X"
+	case forceSign && alt:
+		prefix = "+0x"
+	case forceSign:
+		prefix = "+"
+
+	case spaceSign && alt && uppercase:
+		prefix = " 0X"
+	case spaceSign && alt:
+		prefix = " 0x"
+	case spaceSign:
+		prefix = " "
+
+	case alt && uppercase:
+		prefix = "0X"
+	case alt:
+		prefix = "0x"
+	}
+
+	padLen := width - len(res) - len(prefix)
+	writePadded(buf, res, prefix, padLen, flags)
+}
+
+//go:noinline
+func writeFormatFloat(buf *strings.Builder, num float64, fmt byte, width, prec int, flags uint8, uppercase bool) {
+	var dst [128]byte
+
+	res := strconv.AppendFloat(dst[:0], num, fmt, prec, 64)
+
+	if len(res) > 0 && (res[0] == '-' || res[0] == '+') {
+		res = res[1:]
+	}
+
+	if uppercase {
+		toUppercase(res)
+	}
+
+	alt := flags&FormatFlagAlternate != 0
+	if alt && prec == 0 && !math.IsNaN(num) && !math.IsInf(num, 0) {
+
+		if fmt == 'f' {
+			res = append(res, '.')
+
+		} else {
+			var c byte = 'e'
+			if uppercase {
+				c = 'E'
+			}
+			idx := bytes.IndexByte(res, c)
+			if idx != -1 {
+				res = append(res, 0)
+				copy(res[idx+1:], res[idx:])
+				res[idx] = '.'
+			}
+		}
+
+	}
+
+	isNeg := math.Signbit(num)
+	forceSign := flags&FormatFlagForceSign != 0
+	spaceSign := flags&FormatFlagSpaceSign != 0
+
+	var prefix string
+	switch {
+	case isNeg:
+		prefix = "-"
+	case forceSign:
+		prefix = "+"
+	case spaceSign:
+		prefix = " "
+	}
+
+	padLen := width - len(res) - len(prefix)
+	writePadded(buf, res, prefix, padLen, flags)
+}
+
+//go:noinline
+func writeFormatChar(buf *strings.Builder, c rune, width int, flags uint8) {
+	var dst [utf8.UTFMax]byte
+	n := utf8.EncodeRune(dst[:], c)
+
+	padLen := width - 1
+	flags &^= FormatFlagZeroPad
+	writePadded(buf, dst[:n], "", padLen, flags)
+}
+
+func toUppercase(x []byte) {
+	for i := range x {
+		// If it's a lowercase letter (a-z), shift it to uppercase (A-Z)
+		if x[i] >= 'a' && x[i] <= 'z' {
+			x[i] -= 32
+		}
+	}
 }
