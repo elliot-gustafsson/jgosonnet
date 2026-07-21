@@ -130,7 +130,7 @@ func evaluateNode(tree *ast.AST, nodeId, scopeId uint32, ctx Context) (Value, er
 
 	switch node.Type {
 	default:
-		return ValueNone, fmt.Errorf("unhandled node type: %T", node)
+		return ValueNone, fmt.Errorf("unhandled node type: %d", node.Type)
 	case ast.NodeTypeString:
 		return MakeStringValue(node.A | StringConstFlag), nil
 	case ast.NodeTypeNull:
