@@ -29,6 +29,8 @@ type Registry struct {
 	Thunks    *arena.Arena[Thunk]
 	Functions *arena.Arena[Function]
 
+	BuiltinFunctions []BuiltinFunction
+
 	Scopes *arena.Arena[Scope]
 	Layers *arena.Arena[Layer]
 

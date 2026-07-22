@@ -248,7 +248,7 @@ func std_filter(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 
 	mapperFuncInput := []evaluator.NamedValue{{}}
 
-	res := []evaluator.Value{}
+	res := make([]evaluator.Value, 0, len(inputArray)/2)
 	for _, v := range inputArray {
 		mapperFuncInput[0] = evaluator.NamedValue{Value: v}
 		out, err := mapperFunc.Exec(mapperFuncInput, ctx)
@@ -1060,29 +1060,19 @@ func std_sum(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 }
 
 func std_flattenArrays(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 1 {
-		return evaluator.ValueNone, fmt.Errorf("unexpected number of args passed to std.flattenArrays %d, expected 1", len(args))
-	}
 
-	arr, err := args[0].Eval(ctx)
+	arr, err := args[0].EvalArray(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	if !arr.IsArray() {
-		return evaluator.ValueNone, fmt.Errorf("unexpected type passed to std.flattenArrays (arg 0): %s, expected array", arr.Type().String())
-	}
-
-	res := []evaluator.Value{}
-	for _, v := range arr.Array(ctx) {
-		v, err := v.Eval(ctx)
+	res := make([]evaluator.Value, 0, len(arr))
+	for _, v := range arr {
+		v, err := v.EvalArray(ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
-		if !v.IsArray() {
-			return evaluator.ValueNone, fmt.Errorf("unexpected type in std.flattenArrays arr: %s, expected array", v.Type().String())
-		}
-		res = append(res, v.Array(ctx)...)
+		res = append(res, v...)
 	}
 	return evaluator.MakeArray(res, ctx), nil
 }

@@ -552,7 +552,7 @@ func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, err
 	}
 
 	f := Function{
-		argsCount: len(paramKeyIds),
+		argsCount: len(paramKeyIds), // TODO: should be the number of required args only
 		fn:        fn,
 	}
 

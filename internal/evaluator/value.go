@@ -20,6 +20,7 @@ const (
 	ValueTypeObject
 	ValueTypeArray
 	ValueTypeFunction
+	ValueTypeBuiltinFunction
 	ValueTypeThunk
 )
 
@@ -43,7 +44,7 @@ func (t ValueType) String() string {
 		return "object"
 	case ValueTypeArray:
 		return "array"
-	case ValueTypeFunction:
+	case ValueTypeFunction, ValueTypeBuiltinFunction:
 		return "function"
 	case ValueTypeThunk:
 		return "thunk"
@@ -71,8 +72,6 @@ func NewThunk(node ast.Node, scopeId uint32, ctx Context) Thunk {
 		CapturedSuperOffset: ctx.SuperOffset,
 	}
 }
-
-type Func = func(args []NamedValue, ctx Context) (Value, error)
 
 type Function struct {
 	argsCount int
@@ -178,6 +177,10 @@ func MakeArraySized(l int, ctx Context) ([]Value, Value) {
 func MakeFunction(v Function, ctx Context) Value {
 	refId := ctx.State.Registry.Functions.Alloc(v)
 	return box(ValueTypeFunction, refId)
+}
+
+func MakeNativeFunction(id uint32) Value {
+	return box(ValueTypeBuiltinFunction, id)
 }
 
 func MakeThunk(v Thunk, ctx Context) Value {
@@ -440,7 +443,8 @@ func (v Value) IsObject() bool {
 }
 
 func (v Value) IsFunction() bool {
-	return uint64(v)>>32 == uint64(ValueTypeFunction)
+	tag := uint64(v) >> 32
+	return tag == uint64(ValueTypeFunction) || tag == uint64(ValueTypeBuiltinFunction)
 }
 
 func (v Value) IsArray() bool {
