@@ -18,46 +18,39 @@ type YamlManifestConfig struct {
 	Modern               bool
 }
 
-func ManifestYaml(b *strings.Builder, value Value, ctx Context, config YamlManifestConfig) error {
+func ManifestYaml(b []byte, value Value, ctx Context, config YamlManifestConfig) ([]byte, error) {
 	return manifestYaml(value, ctx, b, 0, config)
 }
 
-func manifestYaml(value Value, ctx Context, buf *strings.Builder, indentLevel int, config YamlManifestConfig) error {
+func manifestYaml(value Value, ctx Context, b []byte, indentLevel int, config YamlManifestConfig) ([]byte, error) {
 	value, err := value.Eval(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	switch value.Type() {
 	default:
-		return fmt.Errorf("unhandled value type: %s", value.Type().String())
+		return nil, fmt.Errorf("unhandled value type: %s", value.Type().String())
 	case ValueTypeNumber:
 		data := value.Number()
 
-		var p [64]byte
 		if config.FormatIntegers && data == math.Floor(data) {
-			buf.Write(strconv.AppendFloat(p[:0], data, 'f', 0, 64))
-			return nil
+			return strconv.AppendFloat(b, data, 'f', 0, 64), nil
 		}
-		buf.Write(strconv.AppendFloat(p[:0], data, 'f', -1, 64))
-		return nil
+		return strconv.AppendFloat(b, data, 'f', -1, 64), nil
 	case ValueTypeNull:
-		buf.WriteString("null")
-		return nil
+		return append(b, "null"...), nil
 	case ValueTypeBool:
 		if value.Bool() {
-			buf.WriteString("true")
-		} else {
-			buf.WriteString("false")
+			return append(b, "true"...), nil
 		}
-		return nil
+		return append(b, "false"...), nil
 	case ValueTypeString:
 		data := value.String(ctx)
 
 		n := len(data)
 		if n == 0 {
-			buf.WriteString(`""`)
-			return nil
+			return append(b, `""`...), nil
 		}
 
 		var multiline bool
@@ -88,32 +81,32 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, indentLevel in
 
 		if !multiline {
 			if config.QuoteValues {
-				writeYamlString(buf, data, true, false, config.Modern)
-				return nil
+				b = writeYamlString(b, data, true, false, config.Modern)
+				return b, nil
 			}
 
-			writeYamlString(buf, data, false, true, config.Modern)
-			return nil
+			b = writeYamlString(b, data, false, true, config.Modern)
+			return b, nil
 		}
 
-		buf.WriteByte('|')
+		b = append(b, '|')
 		if config.UseBlockScalars {
 			firstByte := data[0]
 			if firstByte == ' ' || /* data[0] == '\t' || */ firstByte == '\n' {
-				buf.WriteString(yamlIndentNumber)
+				b = append(b, yamlIndentNumber...)
 			}
 
 			if lastByte != '\n' {
-				buf.WriteByte('-')
+				b = append(b, '-')
 			} else if n >= 2 && data[n-2] == '\n' || n == 1 {
-				buf.WriteByte('+')
+				b = append(b, '+')
 			}
 
 			if firstByte == '\n' {
 				data = data[1:] // prefix trim
 				n--             // update length
 				if n == 0 {
-					return nil
+					return b, nil
 				}
 			}
 		}
@@ -137,37 +130,36 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, indentLevel in
 				start += idx + 1
 			}
 
-			buf.WriteByte('\n')
+			b = append(b, '\n')
 			if line != "" || !config.UseBlockScalars {
-				writeYamlIndent(buf, indentLevel+1)
-				buf.WriteString(line)
+				b = writeYamlIndent(b, indentLevel+1)
+				b = append(b, line...)
 			}
 		}
 
-		return nil
+		return b, nil
 	case ValueTypeArray:
 		data := value.Array(ctx)
 		if len(data) == 0 {
-			buf.WriteString("[]")
-			return nil
+			return append(b, "[]"...), nil
 		}
 		for i, v := range data {
 			v, err := v.Eval(ctx)
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 			if i != 0 {
-				buf.WriteByte('\n')
-				writeYamlIndent(buf, indentLevel)
+				b = append(b, '\n')
+				b = writeYamlIndent(b, indentLevel)
 			}
-			buf.WriteByte('-')
+			b = append(b, '-')
 
 			if v.IsArray() && len(v.Array(ctx)) > 0 {
-				buf.WriteByte('\n')
-				writeYamlIndent(buf, indentLevel+1)
+				b = append(b, '\n')
+				b = writeYamlIndent(b, indentLevel+1)
 			} else {
-				buf.WriteByte(' ')
+				b = append(b, ' ')
 			}
 
 			nextIndentLevel := indentLevel
@@ -176,18 +168,17 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, indentLevel in
 				nextIndentLevel++
 			}
 
-			err = manifestYaml(v, ctx, buf, nextIndentLevel, config)
+			b, err = manifestYaml(v, ctx, b, nextIndentLevel, config)
 			if err != nil {
-				return err
+				return nil, err
 			}
 		}
-		return nil
+		return b, nil
 	case ValueTypeObject:
 		obj := value.Object(ctx)
 		plans := CompileObjectPlanEx(obj, ctx, config.NaturalSort)
 		if len(plans) == 0 {
-			buf.WriteString("{}")
-			return nil
+			return append(b, "{}"...), nil
 		}
 
 		subCtx := ctx
@@ -199,27 +190,27 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, indentLevel in
 				continue
 			}
 			if hasWritten {
-				buf.WriteByte('\n')
-				writeYamlIndent(buf, indentLevel)
+				b = append(b, '\n')
+				b = writeYamlIndent(b, indentLevel)
 			}
 
 			keyStr := ctx.State.Interner.Get(p.KeyId)
-			writeYamlString(buf, keyStr, config.QuoteKeys, config.Modern, config.Modern)
+			b = writeYamlString(b, keyStr, config.QuoteKeys, config.Modern, config.Modern)
 
-			buf.WriteByte(':')
+			b = append(b, ':')
 
 			fieldValue, err := p.GetValue(obj, subCtx)
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 			nextIndentLevel := indentLevel
 
 			if fieldValue.IsArray() && len(fieldValue.Array(subCtx)) > 0 {
-				buf.WriteByte('\n')
-				writeYamlIndent(buf, indentLevel)
+				b = append(b, '\n')
+				b = writeYamlIndent(b, indentLevel)
 				if config.IndentArrayInObjects {
-					writeYamlIndent(buf, 1)
+					b = writeYamlIndent(b, 1)
 					nextIndentLevel++
 				}
 
@@ -235,24 +226,24 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, indentLevel in
 				}
 
 				if hasFields {
-					buf.WriteByte('\n')
-					writeYamlIndent(buf, indentLevel+1)
+					b = append(b, '\n')
+					b = writeYamlIndent(b, indentLevel+1)
 					nextIndentLevel++
 				} else {
-					buf.WriteByte(' ')
+					b = append(b, ' ')
 				}
 			} else {
-				buf.WriteByte(' ')
+				b = append(b, ' ')
 			}
 
-			err = manifestYaml(fieldValue, subCtx, buf, nextIndentLevel, config)
+			b, err = manifestYaml(fieldValue, subCtx, b, nextIndentLevel, config)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			hasWritten = true
 		}
 
-		return nil
+		return b, nil
 	}
 }
 
@@ -264,7 +255,7 @@ var (
 	yamlIndentNumber = strconv.Itoa(yamlIndentSpaces)
 )
 
-func writeYamlIndent(b *strings.Builder, indentLevel int) {
+func writeYamlIndent(b []byte, indentLevel int) []byte {
 	// 64 spaces
 	const maxIndentString = "                                                                "
 
@@ -274,14 +265,16 @@ func writeYamlIndent(b *strings.Builder, indentLevel int) {
 		// If the remaining spaces fit in our pre-allocated string,
 		// slice it, write it, and we are done!
 		if totalSpaces <= len(maxIndentString) {
-			b.WriteString(maxIndentString[:totalSpaces])
+			b = append(b, maxIndentString[:totalSpaces]...)
 			break
 		}
 
 		// Otherwise, write the max chunk of 64 spaces and subtract it
-		b.WriteString(maxIndentString)
+		b = append(b, maxIndentString...)
 		totalSpaces -= len(maxIndentString)
 	}
+
+	return b
 }
 
 func yamlReserved(s string) bool {
@@ -309,14 +302,12 @@ func yamlReserved(s string) bool {
 	return false
 }
 
-func writeYamlString(b *strings.Builder, s string, forceQuotes, preferSingleQuotes, modern bool) {
+func writeYamlString(b []byte, s string, forceQuotes, preferSingleQuotes, modern bool) []byte {
 	if len(s) == 0 {
 		if preferSingleQuotes {
-			b.WriteString("''")
-		} else {
-			b.WriteString(`""`)
+			return append(b, "''"...)
 		}
-		return
+		return append(b, `""`...)
 	}
 
 	needsQuotes := forceQuotes
@@ -342,10 +333,10 @@ func writeYamlString(b *strings.Builder, s string, forceQuotes, preferSingleQuot
 		if !needsQuotes {
 
 			if yamlReserved(s) || isYamlNumber(s) || isYamlTimestamp(s) {
-				b.WriteByte('"')
-				b.WriteString(s)
-				b.WriteByte('"')
-				return
+				b = append(b, '"')
+				b = append(b, s...)
+				b = append(b, '"')
+				return b
 			}
 		}
 	}
@@ -395,37 +386,36 @@ func writeYamlString(b *strings.Builder, s string, forceQuotes, preferSingleQuot
 	}
 
 	if !needsQuotes {
-		b.WriteString(s)
-		return
+		return append(b, s...)
 	}
 
 	if !useSingle {
-		writeJsonString(b, s)
-		return
+		return writeJsonString(b, s)
 	}
 
 	if !hasSingleQuote {
-		b.WriteByte('\'')
-		b.WriteString(s)
-		b.WriteByte('\'')
-		return
+		b = append(b, '\'')
+		b = append(b, s...)
+		b = append(b, '\'')
+		return b
 	}
 
 	// escape single quotes
-	b.WriteByte('\'')
+	b = append(b, '\'')
 	remaining := s
 	for {
 		idx := strings.IndexByte(remaining, '\'')
 		if idx == -1 {
 			// No more quotes found, write the rest of the string
-			b.WriteString(remaining)
+			b = append(b, remaining...)
 			break
 		}
-		b.WriteString(remaining[:idx])
-		b.WriteString("''")
+		b = append(b, remaining[:idx]...)
+		b = append(b, "''"...)
 		remaining = remaining[idx+1:]
 	}
-	b.WriteByte('\'')
+	b = append(b, '\'')
+	return b
 }
 
 func isYamlNumber(s string) bool {

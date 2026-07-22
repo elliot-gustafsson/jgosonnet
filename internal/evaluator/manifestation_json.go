@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math"
 	"strconv"
-	"strings"
 )
 
 type JsonManifestConfig struct {
@@ -26,147 +25,131 @@ var (
 	JsonConfigPython   = &JsonManifestConfig{IndentStep: "", Newline: "", KeyValSep: ": ", SpaceComma: true, Python: true}
 )
 
-func ManifestJson(b *strings.Builder, value Value, ctx Context, config *JsonManifestConfig) error {
+func ManifestJson(b []byte, value Value, ctx Context, config *JsonManifestConfig) ([]byte, error) {
 	config.hasNewline = config.Newline != ""
 	return manifestJson(value, ctx, b, 0, config)
 }
 
-func manifestJson(value Value, ctx Context, b *strings.Builder, indentLevel int, config *JsonManifestConfig) error {
+func manifestJson(value Value, ctx Context, b []byte, indentLevel int, config *JsonManifestConfig) ([]byte, error) {
 
 	value, err := value.Eval(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	switch value.Type() {
 	default:
-		return fmt.Errorf("unhandled value type: %s", value.Type().String())
+		return nil, fmt.Errorf("unhandled value type: %s", value.Type().String())
 	case ValueTypeNumber:
 		data := value.Number()
-		var p [64]byte
 		if config.StrictFloat {
-			b.Write(strconv.AppendFloat(p[:0], data, 'f', -1, 64))
-			return nil
+			return strconv.AppendFloat(b, data, 'f', -1, 64), nil
 		}
-		b.Write(unparseNumber(p[:0], data))
-		return nil
+		return unparseNumber(b, data), nil
 	case ValueTypeNull:
 		if config.Python {
-			b.WriteString("None")
-			return nil
+			return append(b, "None"...), nil
 		}
-		b.WriteString("null")
-		return nil
+		return append(b, "null"...), nil
 	case ValueTypeBool:
 		if config.Python {
 			if value.Bool() {
-				b.WriteString("True")
-			} else {
-				b.WriteString("False")
+				return append(b, "True"...), nil
 			}
-			return nil
+			return append(b, "False"...), nil
 		}
 		if value.Bool() {
-			b.WriteString("true")
-		} else {
-			b.WriteString("false")
+			return append(b, "true"...), nil
 		}
-		return nil
+		return append(b, "false"...), nil
 	case ValueTypeString:
 		data := value.String(ctx)
 		if data == "" {
-			b.WriteString(`""`)
-			return nil
+			return append(b, `""`...), nil
 		}
-		writeJsonString(b, data)
-		return nil
+		return writeJsonString(b, data), nil
 	case ValueTypeArray:
 		data := value.Array(ctx)
 		if len(data) == 0 {
 			if config.SpaceComma && !config.Python {
-				b.WriteString("[ ]")
-				return nil
+				return append(b, "[ ]"...), nil
 			}
 
 			if config.hasNewline {
-				b.WriteByte('[')
-				b.WriteString(config.Newline)
-				b.WriteString(config.Newline)
-				writeIndent(b, indentLevel, config.IndentStep)
-				b.WriteByte(']')
-				return nil
+				b = append(b, '[')
+				b = append(b, config.Newline...)
+				b = append(b, config.Newline...)
+				b = writeJsonIndent(b, indentLevel, config.IndentStep)
+				b = append(b, ']')
+				return b, nil
 			}
 
-			b.WriteString("[]")
-			return nil
+			return append(b, "[]"...), nil
 		}
 
-		b.WriteByte('[')
+		b = append(b, '[')
 		nextIndentLevel := indentLevel
 		if config.IndentStep != "" {
 			nextIndentLevel++
 		}
 
-		b.WriteString(config.Newline)
+		b = append(b, config.Newline...)
 
 		for i, v := range data {
 			v, err := v.Eval(ctx)
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 			if i > 0 {
-				b.WriteByte(',')
+				b = append(b, ',')
 				if config.hasNewline {
-					b.WriteString(config.Newline)
+					b = append(b, config.Newline...)
 				} else if config.SpaceComma {
-					b.WriteByte(' ')
+					b = append(b, ' ')
 				}
 			}
 
 			if i != 0 || config.hasNewline {
-				writeIndent(b, nextIndentLevel, config.IndentStep)
+				b = writeJsonIndent(b, nextIndentLevel, config.IndentStep)
 			}
 
-			err = manifestJson(v, ctx, b, nextIndentLevel, config)
+			b, err = manifestJson(v, ctx, b, nextIndentLevel, config)
 			if err != nil {
-				return err
+				return nil, err
 			}
-
 		}
 
-		b.WriteString(config.Newline)
-		writeIndent(b, indentLevel, config.IndentStep)
-		b.WriteByte(']')
-		return nil
+		b = append(b, config.Newline...)
+		b = writeJsonIndent(b, indentLevel, config.IndentStep)
+		b = append(b, ']')
+		return b, nil
 	case ValueTypeObject:
 		obj := value.Object(ctx)
 		plans := CompileObjectPlan(obj, ctx)
 		if len(plans) == 0 {
 			if config.SpaceComma && !config.Python {
-				b.WriteString("{ }")
-				return nil
+				return append(b, "{ }"...), nil
 			}
 
 			if config.hasNewline {
-				b.WriteByte('{')
-				b.WriteString(config.Newline)
-				b.WriteString(config.Newline)
-				writeIndent(b, indentLevel, config.IndentStep)
-				b.WriteByte('}')
-				return nil
+				b = append(b, '{')
+				b = append(b, config.Newline...)
+				b = append(b, config.Newline...)
+				b = writeJsonIndent(b, indentLevel, config.IndentStep)
+				b = append(b, '}')
+				return b, nil
 			}
 
-			b.WriteString("{}")
-			return nil
+			return append(b, "{}"...), nil
 		}
 
-		b.WriteByte('{')
+		b = append(b, '{')
 		nextIndentLevel := indentLevel
 		if config.IndentStep != "" {
 			nextIndentLevel++
 		}
-		b.WriteString(config.Newline)
+		b = append(b, config.Newline...)
 
 		subCtx := ctx
 		subCtx.Self = value
@@ -179,45 +162,45 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, indentLevel int,
 			}
 
 			if hasWritten {
-				b.WriteByte(',')
+				b = append(b, ',')
 				if config.hasNewline {
-					b.WriteString(config.Newline)
+					b = append(b, config.Newline...)
 				} else if config.SpaceComma {
-					b.WriteByte(' ')
+					b = append(b, ' ')
 				}
 			}
 
-			writeIndent(b, nextIndentLevel, config.IndentStep)
+			b = writeJsonIndent(b, nextIndentLevel, config.IndentStep)
 
-			writeJsonString(b, subCtx.State.Interner.Get(p.KeyId))
-			b.WriteString(config.KeyValSep)
+			b = writeJsonString(b, subCtx.State.Interner.Get(p.KeyId))
+			b = append(b, config.KeyValSep...)
 
 			fieldValue, err := p.GetValue(obj, subCtx)
 			if err != nil {
-				return err
+				return nil, err
 			}
 
-			err = manifestJson(fieldValue, subCtx, b, nextIndentLevel, config)
+			b, err = manifestJson(fieldValue, subCtx, b, nextIndentLevel, config)
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 			hasWritten = true
 		}
 
-		b.WriteString(config.Newline)
-		writeIndent(b, indentLevel, config.IndentStep)
-		b.WriteByte('}')
-
-		return nil
+		b = append(b, config.Newline...)
+		b = writeJsonIndent(b, indentLevel, config.IndentStep)
+		b = append(b, '}')
+		return b, nil
 	}
 
 }
 
-func writeIndent(b *strings.Builder, indentLevel int, step string) {
+func writeJsonIndent(b []byte, indentLevel int, step string) []byte {
 	for range indentLevel {
-		b.WriteString(step)
+		b = append(b, step...)
 	}
+	return b
 }
 
 // Borrowed from go-jsonnet, optimized to avoid fmt reflection
@@ -238,14 +221,14 @@ const (
 	hexChars = "0123456789abcdef"
 )
 
-func writeJsonString(b *strings.Builder, s string) {
+func writeJsonString(b []byte, s string) []byte {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		if c < 0x20 || c == '"' || c == '\\' {
 
 			// Fast path failed, proceed to slow path
-			b.WriteByte('"')
-			b.WriteString(s[:i])
+			b = append(b, '"')
+			b = append(b, s[:i]...)
 
 			start := i
 			for ; i < len(s); i++ {
@@ -255,41 +238,42 @@ func writeJsonString(b *strings.Builder, s string) {
 				}
 
 				if start < i {
-					b.WriteString(s[start:i])
+					b = append(b, s[start:i]...)
 				}
 
 				switch c {
 				case '"', '\\':
-					b.WriteByte('\\')
-					b.WriteByte(c)
+					b = append(b, '\\')
+					b = append(b, c)
 				case '\n':
-					b.WriteString(`\n`)
+					b = append(b, `\n`...)
 				case '\r':
-					b.WriteString(`\r`)
+					b = append(b, `\r`...)
 				case '\t':
-					b.WriteString(`\t`)
+					b = append(b, `\t`...)
 				case '\b':
-					b.WriteString(`\b`)
+					b = append(b, `\b`...)
 				case '\f':
-					b.WriteString(`\f`)
+					b = append(b, `\f`...)
 				default:
-					b.WriteString(`\u00`)
-					b.WriteByte(hexChars[c>>4])
-					b.WriteByte(hexChars[c&0xF])
+					b = append(b, `\u00`...)
+					b = append(b, hexChars[c>>4])
+					b = append(b, hexChars[c&0xF])
 				}
 				start = i + 1
 			}
 
 			if start < len(s) {
-				b.WriteString(s[start:])
+				b = append(b, s[start:]...)
 			}
-			b.WriteByte('"')
-			return
+			b = append(b, '"')
+			return b
 		}
 	}
 
 	// Fast path: No escapes needed. Just wrap in double quotes
-	b.WriteByte('"')
-	b.WriteString(s)
-	b.WriteByte('"')
+	b = append(b, '"')
+	b = append(b, s...)
+	b = append(b, '"')
+	return b
 }

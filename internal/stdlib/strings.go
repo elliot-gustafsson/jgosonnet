@@ -519,14 +519,18 @@ func std_escapeStringJson(args []evaluator.NamedValue, ctx evaluator.Context) (e
 		return evaluator.ValueNone, err
 	}
 
-	var b strings.Builder
+	sp, b := evaluator.GetBufferSlice(1024)
 
-	err = evaluator.ManifestJson(&b, evaluator.MakeString(strval, ctx), ctx, evaluator.JsonConfigMinified)
+	b, err = evaluator.ManifestJson(b, evaluator.MakeString(strval, ctx), ctx, evaluator.JsonConfigMinified)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	return evaluator.MakeString(b.String(), ctx), nil
+	res := string(b)
+
+	evaluator.PutBufferSlice(sp, b)
+
+	return evaluator.MakeString(res, ctx), nil
 }
 
 func std_equalsIgnoreCase(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {

@@ -12,13 +12,6 @@ import (
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 )
 
-// var bufPool = sync.Pool{
-// 	New: func() any {
-// 		// Start with a small capacity to avoid wasting RAM on tiny strings
-// 		return bytes.NewBuffer(make([]byte, 0, 64))
-// 	},
-// }
-
 func std_format(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
 	format, err := args[0].EvalString(ctx)
@@ -54,9 +47,7 @@ const (
 func formatString(str string, data evaluator.Value, ctx evaluator.Context) (string, error) {
 	n := len(str)
 
-	var buf strings.Builder
-	// Pre-allocate the length of the format string + reasonable padding buffer
-	buf.Grow(n + 64)
+	sp, b := evaluator.GetBufferSlice(n + 128)
 
 	// 1. Normalize input data into List or Map
 	var args []evaluator.Value
@@ -93,10 +84,10 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 		if str[i] != '%' {
 			next := strings.IndexByte(str[i:], '%')
 			if next == -1 {
-				buf.WriteString(str[i:])
+				b = append(b, str[i:]...)
 				break
 			}
-			buf.WriteString(str[i : i+next])
+			b = append(b, str[i:i+next]...)
 			i += next
 		}
 
@@ -110,7 +101,7 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 
 		// Handle "%%" (Literal Percent)
 		if str[i] == '%' {
-			buf.WriteByte('%')
+			b = append(b, '%')
 			i++
 			continue
 		}
@@ -289,12 +280,12 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 			}
 
 			if width == 0 && flags == 0 {
-				buf.WriteString(strVal)
+				b = append(b, strVal...)
 				continue
 			}
 
 			// note: jsonnet doesnt support precision on strings
-			writeFormatString(&buf, strVal, width, flags)
+			b = writeFormatString(b, strVal, width, flags)
 
 		case 'd', 'i', 'u': // Integer types
 
@@ -304,13 +295,12 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 			num := int64(currentArg.Number())
 
 			if width == 0 && flags == 0 {
-				var dst [64]byte
-				buf.Write(strconv.AppendInt(dst[:0], num, 10))
+				b = strconv.AppendInt(b, num, 10)
 				continue
 			}
 
 			// note: jsonnet doesnt support precision on integer types
-			writeFormatInteger(&buf, num, width, flags)
+			b = writeFormatInteger(b, num, width, flags)
 
 		case 'o': // Octal
 
@@ -320,12 +310,11 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 			num := int64(currentArg.Number())
 
 			if width == 0 && prec == -1 && flags == 0 {
-				var dst [64]byte
-				buf.Write(strconv.AppendInt(dst[:0], num, 8))
+				b = strconv.AppendInt(b, num, 8)
 				continue
 			}
 
-			writeFormatOctal(&buf, num, width, prec, flags)
+			b = writeFormatOctal(b, num, width, prec, flags)
 
 		case 'x', 'X': // Hex
 
@@ -336,16 +325,15 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 			uppercase := verb == 'X'
 
 			if width == 0 && prec == -1 && flags == 0 {
-				var dst [64]byte
-				res := strconv.AppendInt(dst[:0], num, 16)
+				startIdx := len(b)
+				b = strconv.AppendInt(b, num, 16)
 				if uppercase {
-					toUppercase(res)
+					toUppercase(b[startIdx:])
 				}
-				buf.Write(res)
 				continue
 			}
 
-			writeFormatHex(&buf, num, width, flags, uppercase)
+			b = writeFormatHex(b, num, width, flags, uppercase)
 
 		case 'f', 'F', 'e', 'E', 'g', 'G': // Float types
 
@@ -372,16 +360,15 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 
 			num := currentArg.Number()
 			if width == 0 && flags == 0 {
-				var dst [128]byte
-				res := strconv.AppendFloat(dst[:0], num, fmt, prec, 64)
+				startIdx := len(b)
+				b = strconv.AppendFloat(b, num, fmt, prec, 64)
 				if uppercase {
-					toUppercase(res)
+					toUppercase(b[startIdx:])
 				}
-				buf.Write(res)
 				continue
 			}
 
-			writeFormatFloat(&buf, num, fmt, width, prec, flags, uppercase)
+			b = writeFormatFloat(b, num, fmt, width, prec, flags, uppercase)
 
 		case 'c':
 			// Character
@@ -405,11 +392,11 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 			}
 
 			if width == 0 && flags == 0 {
-				buf.WriteRune(char)
+				b = utf8.AppendRune(b, char)
 				continue
 			}
 
-			writeFormatChar(&buf, char, width, flags)
+			b = writeFormatChar(b, char, width, flags)
 
 		default:
 			return "", evaluator.MakeRuntimeError(fmt.Errorf("Unrecognised conversion type: %s", string(verb)))
@@ -420,10 +407,14 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 		return "", fmt.Errorf("not all arguments converted during string formatting")
 	}
 
-	return buf.String(), nil
+	res := string(b)
+
+	evaluator.PutBufferSlice(sp, b)
+
+	return res, nil
 }
 
-func writePad(b *strings.Builder, zeroPad bool, count int) {
+func writePad(b []byte, zeroPad bool, count int) []byte {
 	const (
 		spaces = "                                                                "
 		zeros  = "0000000000000000000000000000000000000000000000000000000000000000"
@@ -438,55 +429,56 @@ func writePad(b *strings.Builder, zeroPad bool, count int) {
 
 	for count > 0 {
 		if count <= len(chunk) {
-			b.WriteString(chunk[:count])
+			b = append(b, chunk[:count]...)
 			break
 		}
 
-		b.WriteString(chunk)
+		b = append(b, chunk...)
 		count -= len(chunk)
 	}
-
+	return b
 }
 
-func writePadded(buf *strings.Builder, content []byte, prefix string, padLen int, flags uint8) {
+func writePadded(b []byte, content []byte, prefix string, padLen int, flags uint8) []byte {
 	leftJustify := flags&FormatFlagLeftJustify != 0
 	zeroPad := !leftJustify && flags&FormatFlagZeroPad != 0
 
 	// right justified, space padded
 	if !leftJustify && !zeroPad && padLen > 0 {
-		writePad(buf, false, padLen)
+		b = writePad(b, false, padLen)
 	}
 
 	if prefix != "" {
-		buf.WriteString(prefix)
+		b = append(b, prefix...)
 	}
 
 	// right justified, zero padded
 	if zeroPad && padLen > 0 {
-		writePad(buf, true, padLen)
+		b = writePad(b, true, padLen)
 	}
 
-	buf.Write(content)
+	b = append(b, content...)
 
 	// left justified, space padded
 	if leftJustify && padLen > 0 {
-		writePad(buf, false, padLen)
+		b = writePad(b, false, padLen)
 	}
+
+	return b
 }
 
 //go:noinline
-func writeFormatString(buf *strings.Builder, s string, width int, flags uint8) {
+func writeFormatString(b []byte, s string, width int, flags uint8) []byte {
 	padLen := width - utf8.RuneCountInString(s)
 
 	content := unsafe.Slice(unsafe.StringData(s), len(s))
 
 	flags &^= FormatFlagZeroPad
-	writePadded(buf, content, "", padLen, flags)
+	return writePadded(b, content, "", padLen, flags)
 }
 
 //go:noinline
-func writeFormatInteger(buf *strings.Builder, num int64, width int, flags uint8) {
-	var dst [64]byte
+func writeFormatInteger(b []byte, num int64, width int, flags uint8) []byte {
 
 	var prefix string
 	u := uint64(num)
@@ -500,21 +492,33 @@ func writeFormatInteger(buf *strings.Builder, num int64, width int, flags uint8)
 		prefix = " "
 	}
 
+	if width == 0 {
+		if prefix != "" {
+			b = append(b, prefix...)
+		}
+		return strconv.AppendUint(b, u, 10)
+	}
+
+	var dst [64]byte
 	res := strconv.AppendUint(dst[:0], u, 10)
 
 	padLen := width - len(res) - len(prefix)
-	writePadded(buf, res, prefix, padLen, flags)
+	return writePadded(b, res, prefix, padLen, flags)
 }
 
 //go:noinline
-func writeFormatOctal(buf *strings.Builder, num int64, width, prec int, flags uint8) {
-	var dst [64]byte
+func writeFormatOctal(b []byte, num int64, width, prec int, flags uint8) []byte {
 
 	u := uint64(num)
 	if num < 0 {
 		u = -u
 	}
 
+	if width == 0 && prec == -1 && flags&FormatFlagAlternate == 0 {
+		return strconv.AppendUint(b, u, 8)
+	}
+
+	var dst [64]byte
 	res := strconv.AppendUint(dst[:0], u, 8)
 
 	// alternate flag for octal ensures it starts with '0'
@@ -544,12 +548,11 @@ func writeFormatOctal(buf *strings.Builder, num int64, width, prec int, flags ui
 	}
 
 	padLen := width - len(res) - len(prefix)
-	writePadded(buf, res, prefix, padLen, flags)
+	return writePadded(b, res, prefix, padLen, flags)
 }
 
 //go:noinline
-func writeFormatHex(buf *strings.Builder, num int64, width int, flags uint8, uppercase bool) {
-	var dst [64]byte
+func writeFormatHex(b []byte, num int64, width int, flags uint8, uppercase bool) []byte {
 
 	u := uint64(num)
 	isNeg := num < 0
@@ -557,6 +560,7 @@ func writeFormatHex(buf *strings.Builder, num int64, width int, flags uint8, upp
 		u = -u
 	}
 
+	var dst [64]byte
 	res := strconv.AppendUint(dst[:0], u, 16)
 	if uppercase {
 		toUppercase(res)
@@ -596,11 +600,11 @@ func writeFormatHex(buf *strings.Builder, num int64, width int, flags uint8, upp
 	}
 
 	padLen := width - len(res) - len(prefix)
-	writePadded(buf, res, prefix, padLen, flags)
+	return writePadded(b, res, prefix, padLen, flags)
 }
 
 //go:noinline
-func writeFormatFloat(buf *strings.Builder, num float64, fmt byte, width, prec int, flags uint8, uppercase bool) {
+func writeFormatFloat(b []byte, num float64, fmt byte, width, prec int, flags uint8, uppercase bool) []byte {
 	var dst [128]byte
 
 	res := strconv.AppendFloat(dst[:0], num, fmt, prec, 64)
@@ -649,17 +653,22 @@ func writeFormatFloat(buf *strings.Builder, num float64, fmt byte, width, prec i
 	}
 
 	padLen := width - len(res) - len(prefix)
-	writePadded(buf, res, prefix, padLen, flags)
+	return writePadded(b, res, prefix, padLen, flags)
 }
 
 //go:noinline
-func writeFormatChar(buf *strings.Builder, c rune, width int, flags uint8) {
+func writeFormatChar(b []byte, c rune, width int, flags uint8) []byte {
+
+	if width == 0 {
+		return utf8.AppendRune(b, c)
+	}
+
 	var dst [utf8.UTFMax]byte
 	n := utf8.EncodeRune(dst[:], c)
 
 	padLen := width - 1
 	flags &^= FormatFlagZeroPad
-	writePadded(buf, dst[:n], "", padLen, flags)
+	return writePadded(b, dst[:n], "", padLen, flags)
 }
 
 func toUppercase(x []byte) {

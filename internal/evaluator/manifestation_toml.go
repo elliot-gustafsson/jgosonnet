@@ -2,25 +2,20 @@ package evaluator
 
 import (
 	"fmt"
-	"strings"
 )
 
-func ManifestToml(b *strings.Builder, value Value, ctx Context, sindent string) error {
+func ManifestToml(b []byte, value Value, ctx Context, sindent string) ([]byte, error) {
 
 	if !value.IsObject() {
-		return fmt.Errorf("root value must be object for toml manifestation, got: %s", value.Type().String())
+		return nil, fmt.Errorf("root value must be object for toml manifestation, got: %s", value.Type().String())
 	}
 
 	obj := value.Object(ctx)
 
-	err := renderTomlTable(b, obj, ctx, sindent, []string{}, "", false)
-	if err != nil {
-		return err
-	}
-	return nil
+	return renderTomlTable(b, obj, ctx, sindent, []string{}, "", false)
 }
 
-func renderTomlTable(b *strings.Builder, obj *Object, ctx Context, sindent string, path []string, cindent string, initNewline bool) error {
+func renderTomlTable(b []byte, obj *Object, ctx Context, sindent string, path []string, cindent string, initNewline bool) ([]byte, error) {
 
 	fieldPlans := CompileObjectPlan(obj, ctx)
 
@@ -35,12 +30,12 @@ func renderTomlTable(b *strings.Builder, obj *Object, ctx Context, sindent strin
 
 		val, err := plan.GetValue(obj, ctx)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		isSection, err := tomlIsSection(val, ctx)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		if isSection {
@@ -49,37 +44,37 @@ func renderTomlTable(b *strings.Builder, obj *Object, ctx Context, sindent strin
 		}
 
 		if initNewline {
-			b.WriteByte('\n')
+			b = append(b, '\n')
 			initNewline = false
 		}
 
 		if hasWritten {
-			b.WriteByte('\n')
+			b = append(b, '\n')
 		}
 
 		fieldName := ctx.State.Interner.Get(plan.KeyId)
 
-		b.WriteString(cindent)
-		writeTomlKey(b, fieldName)
-		b.WriteString(" = ")
+		b = append(b, cindent...)
+		b = writeTomlKey(b, fieldName)
+		b = append(b, " = "...)
 
-		err = writeTomlValue(b, val, ctx, cindent, sindent, false)
+		b, err = writeTomlValue(b, val, ctx, cindent, sindent, false)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		hasWritten = true
 	}
 
 	if /* hasWritten && */ len(complexValues) > 0 {
-		b.WriteString("\n\n")
+		b = append(b, "\n\n"...)
 	}
 
 	for i, val := range complexValues {
 		if i == 0 && !hasWritten && initNewline {
-			b.WriteByte('\n')
+			b = append(b, '\n')
 		} else if i > 0 {
-			b.WriteString("\n\n")
+			b = append(b, "\n\n"...)
 		}
 
 		fieldName := ctx.State.Interner.Get(val.Key)
@@ -88,56 +83,52 @@ func renderTomlTable(b *strings.Builder, obj *Object, ctx Context, sindent strin
 
 		switch val.Type() {
 		case ValueTypeObject:
-			err := writeTomlTable(b, val.Object(ctx), ctx, sindent, childPath, cindent)
+			var err error
+			b, err = writeTomlTable(b, val.Object(ctx), ctx, sindent, childPath, cindent)
 			if err != nil {
-				return err
+				return nil, err
 			}
 		case ValueTypeArray:
-			err := writeTomlTableArray(b, val.Array(ctx), ctx, sindent, childPath, cindent)
+			var err error
+			b, err = writeTomlTableArray(b, val.Array(ctx), ctx, sindent, childPath, cindent)
 			if err != nil {
-				return err
+				return nil, err
 			}
 		default:
-			return fmt.Errorf("invalid type for section: %s", val.Type().String())
+			return nil, fmt.Errorf("invalid type for section: %s", val.Type().String())
 		}
 		continue
 	}
 
-	return nil
+	return b, nil
 }
 
-func writeTomlValue(b *strings.Builder, value Value, ctx Context, cindent, sindent string, inline bool) error {
+func writeTomlValue(b []byte, value Value, ctx Context, cindent, sindent string, inline bool) ([]byte, error) {
 	value, err := value.Eval(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	switch value.Type() {
 	default:
-		return fmt.Errorf("unsupported value type %s for toml manifestation", value.Type().String())
+		return nil, fmt.Errorf("unsupported value type %s for toml manifestation", value.Type().String())
 	case ValueTypeBool:
 		if value.Bool() {
-			b.WriteString("true")
-		} else {
-			b.WriteString("false")
+			return append(b, "true"...), nil
 		}
-		return nil
+		return append(b, "false"...), nil
 	case ValueTypeNumber:
-		var p [64]byte
-		b.Write(unparseNumber(p[:0], value.Number()))
-		return nil
+		return unparseNumber(b, value.Number()), nil
 	case ValueTypeString:
-		writeJsonString(b, value.String(ctx))
-		return nil
+		return writeJsonString(b, value.String(ctx)), nil
 	case ValueTypeArray:
 		arr := value.Array(ctx)
 
 		if len(arr) == 0 {
-			b.WriteString("[]")
-			return nil
+			return append(b, "[]"...), nil
 		}
 
-		b.WriteByte('[')
+		b = append(b, '[')
 
 		newIndent := cindent + sindent
 		separator := "\n"
@@ -146,43 +137,42 @@ func writeTomlValue(b *strings.Builder, value Value, ctx Context, cindent, sinde
 			separator = " "
 		}
 
-		b.WriteString(separator)
+		b = append(b, separator...)
 
 		for i, v := range arr {
 			v, err := v.Eval(ctx)
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 			if i > 0 {
-				b.WriteByte(',')
-				b.WriteString(separator)
+				b = append(b, ',')
+				b = append(b, separator...)
 			}
 
-			b.WriteString(newIndent)
-			err = writeTomlValue(b, v, ctx, "", sindent, true)
+			b = append(b, newIndent...)
+			b, err = writeTomlValue(b, v, ctx, "", sindent, true)
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 		}
-		b.WriteString(separator)
+		b = append(b, separator...)
 		if !inline {
-			b.WriteString(cindent)
+			b = append(b, cindent...)
 		}
-		b.WriteByte(']')
+		b = append(b, ']')
 
-		return nil
+		return b, nil
 	case ValueTypeObject:
 		obj := value.Object(ctx)
 		plans := CompileObjectPlan(obj, ctx)
 
 		if len(plans) == 0 {
-			b.WriteString("{}")
-			return nil
+			return append(b, "{}"...), nil
 		}
 
-		b.WriteString("{ ")
+		b = append(b, "{ "...)
 
 		hasWritten := false
 
@@ -193,94 +183,91 @@ func writeTomlValue(b *strings.Builder, value Value, ctx Context, cindent, sinde
 
 			v, err := plan.GetValue(obj, ctx)
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 			if hasWritten {
-				b.WriteString(", ")
+				b = append(b, ", "...)
 			}
 
 			fieldName := ctx.State.Interner.Get(plan.KeyId)
-			writeTomlKey(b, fieldName)
-			b.WriteString(" = ")
+			b = writeTomlKey(b, fieldName)
+			b = append(b, " = "...)
 
-			err = writeTomlValue(b, v, ctx, "", sindent, true)
+			b, err = writeTomlValue(b, v, ctx, "", sindent, true)
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 			hasWritten = true
 		}
 
-		b.WriteString(" }")
-		return nil
+		b = append(b, " }"...)
+		return b, nil
 	}
 
 }
 
-func writeTomlTable(b *strings.Builder, obj *Object, ctx Context, sindent string, path []string, cindent string) error {
+func writeTomlTable(b []byte, obj *Object, ctx Context, sindent string, path []string, cindent string) ([]byte, error) {
 
-	b.WriteString(cindent)
-	b.WriteByte('[')
+	b = append(b, cindent...)
+	b = append(b, '[')
 
 	for i, el := range path {
 		if i > 0 {
-			b.WriteByte('.')
+			b = append(b, '.')
 		}
-		writeTomlKey(b, el)
-
+		b = writeTomlKey(b, el)
 	}
 
-	b.WriteByte(']')
+	b = append(b, ']')
 
 	return renderTomlTable(b, obj, ctx, sindent, path, cindent+sindent, true)
 }
 
-func writeTomlTableArray(b *strings.Builder, arr []Value, ctx Context, sindent string, path []string, cindent string) error {
+func writeTomlTableArray(b []byte, arr []Value, ctx Context, sindent string, path []string, cindent string) ([]byte, error) {
 
 	hasWritten := false
 	for _, v := range arr {
 		v, err := v.Eval(ctx)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		if !v.IsObject() {
-			return fmt.Errorf("invalid type for section: %s", v.Type().String())
+			return nil, fmt.Errorf("invalid type for section: %s", v.Type().String())
 		}
 		if hasWritten {
-			b.WriteString("\n\n")
+			b = append(b, "\n\n"...)
 		}
 
-		b.WriteString(cindent)
-		b.WriteString("[[")
+		b = append(b, cindent...)
+		b = append(b, "[["...)
 		for i, el := range path {
 			if i > 0 {
-				b.WriteByte('.')
+				b = append(b, '.')
 			}
-			writeTomlKey(b, el)
+			b = writeTomlKey(b, el)
 		}
-		b.WriteString("]]")
+		b = append(b, "]]"...)
 
-		err = renderTomlTable(b, v.Object(ctx), ctx, sindent, path, cindent+sindent, true)
+		b, err = renderTomlTable(b, v.Object(ctx), ctx, sindent, path, cindent+sindent, true)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		hasWritten = true
-
 	}
 
-	return nil
+	return b, nil
 }
 
-func writeTomlKey(b *strings.Builder, s string) {
+func writeTomlKey(b []byte, s string) []byte {
 	bareAllowed := true
 
 	// for empty string, return ''
 	if len(s) == 0 {
-		b.WriteString("''")
-		return
+		return append(b, "''"...)
 	}
 
 	for _, c := range s {
@@ -293,11 +280,10 @@ func writeTomlKey(b *strings.Builder, s string) {
 	}
 
 	if bareAllowed {
-		b.WriteString(s)
-		return
+		return append(b, s...)
 	}
 
-	writeJsonString(b, s)
+	return writeJsonString(b, s)
 }
 
 func tomlIsSection(val Value, ctx Context) (bool, error) {

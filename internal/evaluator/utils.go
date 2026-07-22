@@ -3,9 +3,31 @@ package evaluator
 import (
 	"cmp"
 	"strings"
+	"sync"
 	"unicode"
 	"unicode/utf8"
 )
+
+var bufferPool = sync.Pool{
+	New: func() any {
+		return new([]byte) // empty slice, caller resizes
+	},
+}
+
+func GetBufferSlice(c int) (sp *[]byte, b []byte) {
+	sp = bufferPool.Get().(*[]byte)
+	b = (*sp)[:0]
+
+	if cap(b) < c {
+		b = make([]byte, 0, c)
+	}
+	return
+}
+
+func PutBufferSlice(sp *[]byte, b []byte) {
+	*sp = b
+	bufferPool.Put(sp)
+}
 
 func naturalStringSort(a, b string) int {
 	i, j := 0, 0

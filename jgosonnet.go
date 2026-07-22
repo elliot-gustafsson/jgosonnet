@@ -79,8 +79,7 @@ func (t *Evaluator) EvaluateJson(file string) (string, error) {
 		return "", wrapEvaluationErr(err)
 	}
 
-	var b strings.Builder
-	b.Grow(1024 * 1024)
+	sp, b := evaluator.GetBufferSlice(1024 * 1024)
 
 	c := &evaluator.JsonManifestConfig{
 		IndentStep: "   ",
@@ -89,14 +88,18 @@ func (t *Evaluator) EvaluateJson(file string) (string, error) {
 		SpaceComma: true,
 	}
 
-	err = evaluator.ManifestJson(&b, value, ctx, c)
+	b, err = evaluator.ManifestJson(b, value, ctx, c)
 	if err != nil {
 		return "", wrapManifestationErr(err)
 	}
 
-	b.WriteByte('\n')
+	b = append(b, '\n')
 
-	return b.String(), nil
+	res := string(b)
+
+	evaluator.PutBufferSlice(sp, b)
+
+	return res, nil
 }
 
 func (t *Evaluator) EvaluateJsonMulti(file string) (map[string]string, error) {
@@ -125,24 +128,27 @@ func (t *Evaluator) EvaluateJsonMulti(file string) (map[string]string, error) {
 		SpaceComma: true,
 	}
 
+	sp, b := evaluator.GetBufferSlice(64 * 1024)
+
 	res := make(map[string]string, len(root))
 	for key, v := range root {
 
-		var b strings.Builder
-		b.Grow(64 * 1024)
-
-		err = evaluator.ManifestJson(&b, v, evalCtx, c)
+		b, err = evaluator.ManifestJson(b, v, evalCtx, c)
 		if err != nil {
 			return nil, wrapManifestationErr(err)
 		}
 
-		b.WriteByte('\n')
+		b = append(b, '\n')
 
 		// Clone string due to string arena being reset in defer
 		kClone := strings.Clone(key)
 
-		res[kClone] = b.String()
+		res[kClone] = string(b)
+
+		b = b[:0]
 	}
+
+	evaluator.PutBufferSlice(sp, b)
 
 	return res, nil
 }
@@ -155,8 +161,7 @@ func (t *Evaluator) EvaluateYaml(file string) (string, error) {
 		return "", wrapEvaluationErr(err)
 	}
 
-	var b strings.Builder
-	b.Grow(1024 * 1024)
+	sp, b := evaluator.GetBufferSlice(1024 * 1024)
 
 	c := evaluator.YamlManifestConfig{
 		IndentArrayInObjects: true,
@@ -166,14 +171,18 @@ func (t *Evaluator) EvaluateYaml(file string) (string, error) {
 		Modern:               true,
 	}
 
-	err = evaluator.ManifestYaml(&b, value, ctx, c)
+	b, err = evaluator.ManifestYaml(b, value, ctx, c)
 	if err != nil {
 		return "", wrapManifestationErr(err)
 	}
 
-	b.WriteByte('\n')
+	b = append(b, '\n')
 
-	return b.String(), nil
+	res := string(b)
+
+	evaluator.PutBufferSlice(sp, b)
+
+	return res, nil
 }
 
 // NOTE: Maybe fully compliant, use with caution
@@ -204,24 +213,27 @@ func (t *Evaluator) EvaluateYamlMulti(file string) (map[string]string, error) {
 		Modern:               true,
 	}
 
+	sp, b := evaluator.GetBufferSlice(64 * 1024)
+
 	res := make(map[string]string, len(root))
 	for key, v := range root {
 
-		var b strings.Builder
-		b.Grow(64 * 1024)
-
-		err = evaluator.ManifestYaml(&b, v, evalCtx, c)
+		b, err = evaluator.ManifestYaml(b, v, evalCtx, c)
 		if err != nil {
 			return nil, wrapManifestationErr(err)
 		}
 
-		b.WriteByte('\n')
+		b = append(b, '\n')
 
 		// Clone string due to string arena being reset in defer
 		kClone := strings.Clone(key)
 
-		res[kClone] = b.String()
+		res[kClone] = string(b)
+
+		b = b[:0]
 	}
+
+	evaluator.PutBufferSlice(sp, b)
 
 	return res, nil
 }

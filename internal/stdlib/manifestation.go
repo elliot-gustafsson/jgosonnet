@@ -31,8 +31,7 @@ func std_manifestYamlDoc(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 		quote_keys = b
 	}
 
-	var b strings.Builder
-	b.Grow(1024)
+	sp, b := evaluator.GetBufferSlice(1024)
 
 	c := evaluator.YamlManifestConfig{
 		IndentArrayInObjects: indent_array_in_object,
@@ -44,12 +43,16 @@ func std_manifestYamlDoc(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	err = evaluator.ManifestYaml(&b, v, ctx, c)
+	b, err = evaluator.ManifestYaml(b, v, ctx, c)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	return evaluator.MakeString(b.String(), ctx), nil
+	res := string(b)
+
+	evaluator.PutBufferSlice(sp, b)
+
+	return evaluator.MakeString(res, ctx), nil
 }
 
 func std_manifestYamlStream(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -86,8 +89,7 @@ func std_manifestYamlStream(args []evaluator.NamedValue, ctx evaluator.Context) 
 		quote_keys = b
 	}
 
-	var b strings.Builder
-	b.Grow(1024)
+	sp, b := evaluator.GetBufferSlice(1024)
 
 	c := evaluator.YamlManifestConfig{
 		IndentArrayInObjects: indent_array_in_object,
@@ -100,60 +102,70 @@ func std_manifestYamlStream(args []evaluator.NamedValue, ctx evaluator.Context) 
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
-		b.WriteString(yamlSeparator)
-		b.WriteByte('\n')
+		b = append(b, yamlSeparator...)
+		b = append(b, '\n')
 
-		err = evaluator.ManifestYaml(&b, v, ctx, c)
+		b, err = evaluator.ManifestYaml(b, v, ctx, c)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
-		b.WriteByte('\n')
+		b = append(b, '\n')
 	}
 
 	if c_document_end {
-		b.WriteString("...")
-		b.WriteByte('\n')
+		b = append(b, "..."...)
+		b = append(b, '\n')
 	}
 
-	return evaluator.MakeString(b.String(), ctx), nil
+	res := string(b)
+
+	evaluator.PutBufferSlice(sp, b)
+
+	return evaluator.MakeString(res, ctx), nil
 }
 
 func std_manifestJson(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	// std.manifestJsonEx(value, indent, newline, key_val_sep)
 
-	var b strings.Builder
-	b.Grow(1024)
+	sp, b := evaluator.GetBufferSlice(1024)
 
 	a, err := args[0].Eval(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	err = evaluator.ManifestJson(&b, a, ctx, evaluator.JsonConfigPretty)
+	b, err = evaluator.ManifestJson(b, a, ctx, evaluator.JsonConfigPretty)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	return evaluator.MakeString(b.String(), ctx), nil
+	res := string(b)
+
+	evaluator.PutBufferSlice(sp, b)
+
+	return evaluator.MakeString(res, ctx), nil
 }
 
 func std_manifestJsonMinified(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	// std.manifestJsonEx(value, indent, newline, key_val_sep)
 
-	var b strings.Builder
-	b.Grow(1024)
+	sp, b := evaluator.GetBufferSlice(1024)
 
 	a, err := args[0].Eval(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	err = evaluator.ManifestJson(&b, a, ctx, evaluator.JsonConfigMinified)
+	b, err = evaluator.ManifestJson(b, a, ctx, evaluator.JsonConfigMinified)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	return evaluator.MakeString(b.String(), ctx), nil
+	res := string(b)
+
+	evaluator.PutBufferSlice(sp, b)
+
+	return evaluator.MakeString(res, ctx), nil
 }
 
 func std_manifestJsonEx(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -182,8 +194,7 @@ func std_manifestJsonEx(args []evaluator.NamedValue, ctx evaluator.Context) (eva
 		key_val_sep = v
 	}
 
-	var b strings.Builder
-	b.Grow(1024)
+	sp, b := evaluator.GetBufferSlice(1024)
 
 	c := &evaluator.JsonManifestConfig{
 		IndentStep:  indent,
@@ -195,12 +206,16 @@ func std_manifestJsonEx(args []evaluator.NamedValue, ctx evaluator.Context) (eva
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	err = evaluator.ManifestJson(&b, v, ctx, c)
+	b, err = evaluator.ManifestJson(b, v, ctx, c)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	return evaluator.MakeString(b.String(), ctx), nil
+	res := string(b)
+
+	evaluator.PutBufferSlice(sp, b)
+
+	return evaluator.MakeString(res, ctx), nil
 }
 
 func std_manifestIni(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -340,13 +355,19 @@ func std_manifestPython(args []evaluator.NamedValue, ctx evaluator.Context) (eva
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	var b strings.Builder
-	err = evaluator.ManifestJson(&b, v, ctx, evaluator.JsonConfigPython)
+
+	sp, b := evaluator.GetBufferSlice(1024)
+
+	b, err = evaluator.ManifestJson(b, v, ctx, evaluator.JsonConfigPython)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	return evaluator.MakeString(b.String(), ctx), nil
+	res := string(b)
+
+	evaluator.PutBufferSlice(sp, b)
+
+	return evaluator.MakeString(res, ctx), nil
 }
 
 func std_manifestPythonVars(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -358,7 +379,8 @@ func std_manifestPythonVars(args []evaluator.NamedValue, ctx evaluator.Context) 
 
 	plans := evaluator.CompileObjectPlan(obj, ctx)
 
-	var b strings.Builder
+	sp, b := evaluator.GetBufferSlice(1024)
+
 	for _, plan := range plans {
 		keyId := plan.KeyId
 
@@ -367,22 +389,27 @@ func std_manifestPythonVars(args []evaluator.NamedValue, ctx evaluator.Context) 
 		}
 
 		name := ctx.State.Interner.Get(keyId)
-		b.WriteString(name)
-		b.WriteString(" = ")
+		b = append(b, name...)
+		b = append(b, " = "...)
 
 		value, err := plan.GetValue(obj, ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
 
-		err = evaluator.ManifestJson(&b, value, ctx, evaluator.JsonConfigPython)
+		b, err = evaluator.ManifestJson(b, value, ctx, evaluator.JsonConfigPython)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
 
-		b.WriteByte('\n')
+		b = append(b, '\n')
 	}
-	return evaluator.MakeString(b.String(), ctx), nil
+
+	res := string(b)
+
+	evaluator.PutBufferSlice(sp, b)
+
+	return evaluator.MakeString(res, ctx), nil
 }
 
 func std_manifestXmlJsonml(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -498,15 +525,19 @@ func std_manifestTomlEx(args []evaluator.NamedValue, ctx evaluator.Context) (eva
 		return evaluator.ValueNone, err
 	}
 
-	var b strings.Builder
+	sp, b := evaluator.GetBufferSlice(1024)
 
 	evalCtx := ctx
 	evalCtx.Self = val
 
-	err = evaluator.ManifestToml(&b, val, evalCtx, sindent)
+	b, err = evaluator.ManifestToml(b, val, evalCtx, sindent)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	return evaluator.MakeString(b.String(), ctx), nil
+	res := string(b)
+
+	evaluator.PutBufferSlice(sp, b)
+
+	return evaluator.MakeString(res, ctx), nil
 }

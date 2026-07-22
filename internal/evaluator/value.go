@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"fmt"
 	"math"
-	"strings"
 
 	"github.com/google/go-jsonnet/ast"
 )
@@ -382,21 +381,28 @@ func (v Value) ToString(ctx Context) (string, error) {
 		}
 		return "false", nil
 	case ValueTypeArray:
-		var b strings.Builder
-		err := ManifestJson(&b, v, ctx, JsonConfigToString)
+		sp, b := GetBufferSlice(256)
+		var err error
+		b, err = ManifestJson(b, v, ctx, JsonConfigToString)
 		if err != nil {
 			return "", err
 		}
-		return b.String(), nil
+		res := string(b)
+		PutBufferSlice(sp, b)
+		return res, nil
 	case ValueTypeObject:
 		subCtx := ctx
 		subCtx.Self = v
-		var b strings.Builder
-		err := ManifestJson(&b, v, subCtx, JsonConfigToString)
+
+		sp, b := GetBufferSlice(256)
+		var err error
+		b, err = ManifestJson(b, v, subCtx, JsonConfigToString)
 		if err != nil {
 			return "", err
 		}
-		return b.String(), nil
+		res := string(b)
+		PutBufferSlice(sp, b)
+		return res, nil
 	case ValueTypeThunk:
 		v, err := v.Eval(ctx)
 		if err != nil {
