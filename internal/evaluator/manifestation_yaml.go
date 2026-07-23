@@ -18,11 +18,11 @@ type YamlManifestConfig struct {
 	Modern               bool
 }
 
-func ManifestYaml(b *strings.Builder, value Value, ctx Context, config YamlManifestConfig) error {
+func ManifestYaml(b *Builder, value Value, ctx Context, config YamlManifestConfig) error {
 	return manifestYaml(value, ctx, b, 0, config)
 }
 
-func manifestYaml(value Value, ctx Context, buf *strings.Builder, indentLevel int, config YamlManifestConfig) error {
+func manifestYaml(value Value, ctx Context, buf *Builder, indentLevel int, config YamlManifestConfig) error {
 	value, err := value.Eval(ctx)
 	if err != nil {
 		return err
@@ -34,12 +34,11 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, indentLevel in
 	case ValueTypeNumber:
 		data := value.Number()
 
-		var p [64]byte
 		if config.FormatIntegers && data == math.Floor(data) {
-			buf.Write(strconv.AppendFloat(p[:0], data, 'f', 0, 64))
+			buf.AppendFloat(data, 'f', 0, 64)
 			return nil
 		}
-		buf.Write(strconv.AppendFloat(p[:0], data, 'f', -1, 64))
+		buf.AppendFloat(data, 'f', -1, 64)
 		return nil
 	case ValueTypeNull:
 		buf.WriteString("null")
@@ -264,7 +263,7 @@ var (
 	yamlIndentNumber = strconv.Itoa(yamlIndentSpaces)
 )
 
-func writeYamlIndent(b *strings.Builder, indentLevel int) {
+func writeYamlIndent(b *Builder, indentLevel int) {
 	// 64 spaces
 	const maxIndentString = "                                                                "
 
@@ -309,7 +308,7 @@ func yamlReserved(s string) bool {
 	return false
 }
 
-func writeYamlString(b *strings.Builder, s string, forceQuotes, preferSingleQuotes, modern bool) {
+func writeYamlString(b *Builder, s string, forceQuotes, preferSingleQuotes, modern bool) {
 	if len(s) == 0 {
 		if preferSingleQuotes {
 			b.WriteString("''")

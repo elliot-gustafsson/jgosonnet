@@ -31,7 +31,7 @@ func std_manifestYamlDoc(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 		quote_keys = b
 	}
 
-	var b strings.Builder
+	b := evaluator.GetBuilder()
 	b.Grow(1024)
 
 	c := evaluator.YamlManifestConfig{
@@ -44,12 +44,15 @@ func std_manifestYamlDoc(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	err = evaluator.ManifestYaml(&b, v, ctx, c)
+	err = evaluator.ManifestYaml(b, v, ctx, c)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	return evaluator.MakeString(b.String(), ctx), nil
+	s := b.String()
+	evaluator.PutBuilder(b)
+
+	return evaluator.MakeString(s, ctx), nil
 }
 
 func std_manifestYamlStream(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -86,7 +89,7 @@ func std_manifestYamlStream(args []evaluator.NamedValue, ctx evaluator.Context) 
 		quote_keys = b
 	}
 
-	var b strings.Builder
+	b := evaluator.GetBuilder()
 	b.Grow(1024)
 
 	c := evaluator.YamlManifestConfig{
@@ -103,7 +106,7 @@ func std_manifestYamlStream(args []evaluator.NamedValue, ctx evaluator.Context) 
 		b.WriteString(yamlSeparator)
 		b.WriteByte('\n')
 
-		err = evaluator.ManifestYaml(&b, v, ctx, c)
+		err = evaluator.ManifestYaml(b, v, ctx, c)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
@@ -115,13 +118,16 @@ func std_manifestYamlStream(args []evaluator.NamedValue, ctx evaluator.Context) 
 		b.WriteByte('\n')
 	}
 
-	return evaluator.MakeString(b.String(), ctx), nil
+	s := b.String()
+	evaluator.PutBuilder(b)
+
+	return evaluator.MakeString(s, ctx), nil
 }
 
 func std_manifestJson(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	// std.manifestJsonEx(value, indent, newline, key_val_sep)
 
-	var b strings.Builder
+	b := evaluator.GetBuilder()
 	b.Grow(1024)
 
 	a, err := args[0].Eval(ctx)
@@ -129,18 +135,21 @@ func std_manifestJson(args []evaluator.NamedValue, ctx evaluator.Context) (evalu
 		return evaluator.ValueNone, err
 	}
 
-	err = evaluator.ManifestJson(&b, a, ctx, evaluator.JsonConfigPretty)
+	err = evaluator.ManifestJson(b, a, ctx, evaluator.JsonConfigPretty)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	return evaluator.MakeString(b.String(), ctx), nil
+	s := b.String()
+	evaluator.PutBuilder(b)
+
+	return evaluator.MakeString(s, ctx), nil
 }
 
 func std_manifestJsonMinified(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	// std.manifestJsonEx(value, indent, newline, key_val_sep)
 
-	var b strings.Builder
+	b := evaluator.GetBuilder()
 	b.Grow(1024)
 
 	a, err := args[0].Eval(ctx)
@@ -148,12 +157,15 @@ func std_manifestJsonMinified(args []evaluator.NamedValue, ctx evaluator.Context
 		return evaluator.ValueNone, err
 	}
 
-	err = evaluator.ManifestJson(&b, a, ctx, evaluator.JsonConfigMinified)
+	err = evaluator.ManifestJson(b, a, ctx, evaluator.JsonConfigMinified)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	return evaluator.MakeString(b.String(), ctx), nil
+	s := b.String()
+	evaluator.PutBuilder(b)
+
+	return evaluator.MakeString(s, ctx), nil
 }
 
 func std_manifestJsonEx(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -182,7 +194,7 @@ func std_manifestJsonEx(args []evaluator.NamedValue, ctx evaluator.Context) (eva
 		key_val_sep = v
 	}
 
-	var b strings.Builder
+	b := evaluator.GetBuilder()
 	b.Grow(1024)
 
 	c := &evaluator.JsonManifestConfig{
@@ -195,12 +207,15 @@ func std_manifestJsonEx(args []evaluator.NamedValue, ctx evaluator.Context) (eva
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	err = evaluator.ManifestJson(&b, v, ctx, c)
+	err = evaluator.ManifestJson(b, v, ctx, c)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	return evaluator.MakeString(b.String(), ctx), nil
+	s := b.String()
+	evaluator.PutBuilder(b)
+
+	return evaluator.MakeString(s, ctx), nil
 }
 
 func std_manifestIni(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -340,13 +355,16 @@ func std_manifestPython(args []evaluator.NamedValue, ctx evaluator.Context) (eva
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	var b strings.Builder
-	err = evaluator.ManifestJson(&b, v, ctx, evaluator.JsonConfigPython)
+	b := evaluator.GetBuilder()
+	err = evaluator.ManifestJson(b, v, ctx, evaluator.JsonConfigPython)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	return evaluator.MakeString(b.String(), ctx), nil
+	s := b.String()
+	evaluator.PutBuilder(b)
+
+	return evaluator.MakeString(s, ctx), nil
 }
 
 func std_manifestPythonVars(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -358,7 +376,7 @@ func std_manifestPythonVars(args []evaluator.NamedValue, ctx evaluator.Context) 
 
 	plans := evaluator.CompileObjectPlan(obj, ctx)
 
-	var b strings.Builder
+	b := evaluator.GetBuilder()
 	for _, plan := range plans {
 		keyId := plan.KeyId
 
@@ -375,14 +393,18 @@ func std_manifestPythonVars(args []evaluator.NamedValue, ctx evaluator.Context) 
 			return evaluator.ValueNone, err
 		}
 
-		err = evaluator.ManifestJson(&b, value, ctx, evaluator.JsonConfigPython)
+		err = evaluator.ManifestJson(b, value, ctx, evaluator.JsonConfigPython)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
 
 		b.WriteByte('\n')
 	}
-	return evaluator.MakeString(b.String(), ctx), nil
+
+	s := b.String()
+	evaluator.PutBuilder(b)
+
+	return evaluator.MakeString(s, ctx), nil
 }
 
 func std_manifestXmlJsonml(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -498,15 +520,18 @@ func std_manifestTomlEx(args []evaluator.NamedValue, ctx evaluator.Context) (eva
 		return evaluator.ValueNone, err
 	}
 
-	var b strings.Builder
+	b := evaluator.GetBuilder()
 
 	evalCtx := ctx
 	evalCtx.Self = val
 
-	err = evaluator.ManifestToml(&b, val, evalCtx, sindent)
+	err = evaluator.ManifestToml(b, val, evalCtx, sindent)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	return evaluator.MakeString(b.String(), ctx), nil
+	s := b.String()
+	evaluator.PutBuilder(b)
+
+	return evaluator.MakeString(s, ctx), nil
 }

@@ -79,7 +79,7 @@ func (t *Evaluator) EvaluateJson(file string) (string, error) {
 		return "", wrapEvaluationErr(err)
 	}
 
-	var b strings.Builder
+	b := evaluator.GetBuilder()
 	b.Grow(1024 * 1024)
 
 	c := &evaluator.JsonManifestConfig{
@@ -89,14 +89,16 @@ func (t *Evaluator) EvaluateJson(file string) (string, error) {
 		SpaceComma: true,
 	}
 
-	err = evaluator.ManifestJson(&b, value, ctx, c)
+	err = evaluator.ManifestJson(b, value, ctx, c)
 	if err != nil {
 		return "", wrapManifestationErr(err)
 	}
 
 	b.WriteByte('\n')
 
-	return b.String(), nil
+	s := b.String()
+	evaluator.PutBuilder(b)
+	return s, nil
 }
 
 func (t *Evaluator) EvaluateJsonMulti(file string) (map[string]string, error) {
@@ -125,13 +127,13 @@ func (t *Evaluator) EvaluateJsonMulti(file string) (map[string]string, error) {
 		SpaceComma: true,
 	}
 
+	b := evaluator.GetBuilder()
+	b.Grow(64 * 1024)
+
 	res := make(map[string]string, len(root))
 	for key, v := range root {
 
-		var b strings.Builder
-		b.Grow(64 * 1024)
-
-		err = evaluator.ManifestJson(&b, v, evalCtx, c)
+		err = evaluator.ManifestJson(b, v, evalCtx, c)
 		if err != nil {
 			return nil, wrapManifestationErr(err)
 		}
@@ -142,7 +144,11 @@ func (t *Evaluator) EvaluateJsonMulti(file string) (map[string]string, error) {
 		kClone := strings.Clone(key)
 
 		res[kClone] = b.String()
+
+		b.Reset()
 	}
+
+	evaluator.PutBuilder(b)
 
 	return res, nil
 }
@@ -155,7 +161,7 @@ func (t *Evaluator) EvaluateYaml(file string) (string, error) {
 		return "", wrapEvaluationErr(err)
 	}
 
-	var b strings.Builder
+	b := evaluator.GetBuilder()
 	b.Grow(1024 * 1024)
 
 	c := evaluator.YamlManifestConfig{
@@ -166,14 +172,16 @@ func (t *Evaluator) EvaluateYaml(file string) (string, error) {
 		Modern:               true,
 	}
 
-	err = evaluator.ManifestYaml(&b, value, ctx, c)
+	err = evaluator.ManifestYaml(b, value, ctx, c)
 	if err != nil {
 		return "", wrapManifestationErr(err)
 	}
 
 	b.WriteByte('\n')
 
-	return b.String(), nil
+	s := b.String()
+	evaluator.PutBuilder(b)
+	return s, nil
 }
 
 // NOTE: Maybe fully compliant, use with caution
@@ -204,13 +212,13 @@ func (t *Evaluator) EvaluateYamlMulti(file string) (map[string]string, error) {
 		Modern:               true,
 	}
 
+	b := evaluator.GetBuilder()
+	b.Grow(64 * 1024)
+
 	res := make(map[string]string, len(root))
 	for key, v := range root {
 
-		var b strings.Builder
-		b.Grow(64 * 1024)
-
-		err = evaluator.ManifestYaml(&b, v, evalCtx, c)
+		err = evaluator.ManifestYaml(b, v, evalCtx, c)
 		if err != nil {
 			return nil, wrapManifestationErr(err)
 		}
@@ -221,7 +229,11 @@ func (t *Evaluator) EvaluateYamlMulti(file string) (map[string]string, error) {
 		kClone := strings.Clone(key)
 
 		res[kClone] = b.String()
+
+		b.Reset()
 	}
+
+	evaluator.PutBuilder(b)
 
 	return res, nil
 }

@@ -3,8 +3,6 @@ package evaluator
 import (
 	"fmt"
 	"math"
-	"strconv"
-	"strings"
 )
 
 type JsonManifestConfig struct {
@@ -26,12 +24,12 @@ var (
 	JsonConfigPython   = &JsonManifestConfig{IndentStep: "", Newline: "", KeyValSep: ": ", SpaceComma: true, Python: true}
 )
 
-func ManifestJson(b *strings.Builder, value Value, ctx Context, config *JsonManifestConfig) error {
+func ManifestJson(b *Builder, value Value, ctx Context, config *JsonManifestConfig) error {
 	config.hasNewline = config.Newline != ""
 	return manifestJson(value, ctx, b, 0, config)
 }
 
-func manifestJson(value Value, ctx Context, b *strings.Builder, indentLevel int, config *JsonManifestConfig) error {
+func manifestJson(value Value, ctx Context, b *Builder, indentLevel int, config *JsonManifestConfig) error {
 
 	value, err := value.Eval(ctx)
 	if err != nil {
@@ -43,12 +41,11 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, indentLevel int,
 		return fmt.Errorf("unhandled value type: %s", value.Type().String())
 	case ValueTypeNumber:
 		data := value.Number()
-		var p [64]byte
 		if config.StrictFloat {
-			b.Write(strconv.AppendFloat(p[:0], data, 'f', -1, 64))
+			b.AppendFloat(data, 'f', -1, 64)
 			return nil
 		}
-		b.Write(unparseNumber(p[:0], data))
+		unparseNumber(b, data)
 		return nil
 	case ValueTypeNull:
 		if config.Python {
@@ -214,38 +211,43 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, indentLevel int,
 
 }
 
-func writeIndent(b *strings.Builder, indentLevel int, step string) {
+func writeIndent(b *Builder, indentLevel int, step string) {
+	buf := b.Bytes()
 	for range indentLevel {
-		b.WriteString(step)
+		buf = append(buf, step...)
 	}
+	b.Set(buf)
 }
 
 // Borrowed from go-jsonnet, optimized to avoid fmt reflection
-func unparseNumber(dst []byte, v float64) []byte {
+func unparseNumber(b *Builder, v float64) {
 	if v == math.Floor(v) {
 		// return fmt.Sprintf("%.0f", v)
-		return strconv.AppendFloat(dst, v, 'f', 0, 64)
+		b.AppendFloat(v, 'f', 0, 64)
+		return
 	}
 
 	// See "What Every Computer Scientist Should Know About Floating-Point Arithmetic"
 	// Theorem 15
 	// http://docs.oracle.com/cd/E19957-01/806-3568/ncg_goldberg.html
 	// return fmt.Sprintf("%.17g", v)
-	return strconv.AppendFloat(dst, v, 'g', 17, 64)
+	b.AppendFloat(v, 'g', 17, 64)
 }
 
 const (
 	hexChars = "0123456789abcdef"
 )
 
-func writeJsonString(b *strings.Builder, s string) {
+func writeJsonString(b *Builder, s string) {
+	buf := b.Bytes()
+
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		if c < 0x20 || c == '"' || c == '\\' {
 
 			// Fast path failed, proceed to slow path
-			b.WriteByte('"')
-			b.WriteString(s[:i])
+			buf = append(buf, '"')
+			buf = append(buf, s[:i]...)
 
 			start := i
 			for ; i < len(s); i++ {
@@ -255,41 +257,44 @@ func writeJsonString(b *strings.Builder, s string) {
 				}
 
 				if start < i {
-					b.WriteString(s[start:i])
+					buf = append(buf, s[start:i]...)
 				}
 
 				switch c {
 				case '"', '\\':
-					b.WriteByte('\\')
-					b.WriteByte(c)
+					buf = append(buf, '\\')
+					buf = append(buf, c)
 				case '\n':
-					b.WriteString(`\n`)
+					buf = append(buf, `\n`...)
 				case '\r':
-					b.WriteString(`\r`)
+					buf = append(buf, `\r`...)
 				case '\t':
-					b.WriteString(`\t`)
+					buf = append(buf, `\t`...)
 				case '\b':
-					b.WriteString(`\b`)
+					buf = append(buf, `\b`...)
 				case '\f':
-					b.WriteString(`\f`)
+					buf = append(buf, `\f`...)
 				default:
-					b.WriteString(`\u00`)
-					b.WriteByte(hexChars[c>>4])
-					b.WriteByte(hexChars[c&0xF])
+					buf = append(buf, `\u00`...)
+					buf = append(buf, hexChars[c>>4])
+					buf = append(buf, hexChars[c&0xF])
 				}
 				start = i + 1
 			}
 
 			if start < len(s) {
-				b.WriteString(s[start:])
+				buf = append(buf, s[start:]...)
 			}
-			b.WriteByte('"')
+			buf = append(buf, '"')
+			b.Set(buf)
 			return
 		}
 	}
 
 	// Fast path: No escapes needed. Just wrap in double quotes
-	b.WriteByte('"')
-	b.WriteString(s)
-	b.WriteByte('"')
+	buf = append(buf, '"')
+	buf = append(buf, s...)
+	buf = append(buf, '"')
+
+	b.Set(buf)
 }

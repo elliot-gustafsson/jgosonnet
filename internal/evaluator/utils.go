@@ -2,10 +2,92 @@ package evaluator
 
 import (
 	"cmp"
+	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 	"unicode/utf8"
+	"unsafe"
 )
+
+var builderPool = sync.Pool{
+	New: func() any {
+		return new(Builder)
+	},
+}
+
+func GetBuilder() *Builder {
+	return builderPool.Get().(*Builder)
+}
+
+func PutBuilder(b *Builder) {
+	b.Reset()
+	builderPool.Put(b)
+}
+
+type Builder struct {
+	buf []byte
+}
+
+func (b *Builder) Grow(n int) {
+	b.buf = slices.Grow(b.buf, n)
+}
+
+func (b *Builder) Length() int {
+	return len(b.buf)
+}
+
+func (b *Builder) Write(p []byte) {
+	b.buf = append(b.buf, p...)
+}
+
+func (b *Builder) Set(p []byte) {
+	b.buf = p
+}
+
+func (b *Builder) WriteString(s string) {
+	b.buf = append(b.buf, s...)
+}
+
+func (b *Builder) WriteByte(c byte) {
+	b.buf = append(b.buf, c)
+}
+
+func (b *Builder) WriteRune(c rune) {
+	b.buf = utf8.AppendRune(b.buf, c)
+}
+
+func (b *Builder) AppendInt(i int64, base int) {
+	b.buf = strconv.AppendInt(b.buf, i, base)
+}
+
+func (b *Builder) AppendUint(i uint64, base int) {
+	b.buf = strconv.AppendUint(b.buf, i, base)
+}
+
+func (b *Builder) AppendFloat(f float64, fmt byte, prec, bitSize int) {
+	b.buf = strconv.AppendFloat(b.buf, f, fmt, prec, bitSize)
+}
+
+func (b *Builder) Bytes() []byte {
+	return b.buf
+}
+
+func (b *Builder) String() string {
+	return string(b.buf)
+}
+
+func (b *Builder) UnsafeString() string {
+	if len(b.buf) == 0 {
+		return ""
+	}
+	return unsafe.String(unsafe.SliceData(b.buf), len(b.buf))
+}
+
+func (b *Builder) Reset() {
+	b.buf = b.buf[:0]
+}
 
 func naturalStringSort(a, b string) int {
 	i, j := 0, 0

@@ -2,10 +2,9 @@ package evaluator
 
 import (
 	"fmt"
-	"strings"
 )
 
-func ManifestToml(b *strings.Builder, value Value, ctx Context, sindent string) error {
+func ManifestToml(b *Builder, value Value, ctx Context, sindent string) error {
 
 	if !value.IsObject() {
 		return fmt.Errorf("root value must be object for toml manifestation, got: %s", value.Type().String())
@@ -20,7 +19,7 @@ func ManifestToml(b *strings.Builder, value Value, ctx Context, sindent string) 
 	return nil
 }
 
-func renderTomlTable(b *strings.Builder, obj *Object, ctx Context, sindent string, path []string, cindent string, initNewline bool) error {
+func renderTomlTable(b *Builder, obj *Object, ctx Context, sindent string, path []string, cindent string, initNewline bool) error {
 
 	fieldPlans := CompileObjectPlan(obj, ctx)
 
@@ -106,7 +105,7 @@ func renderTomlTable(b *strings.Builder, obj *Object, ctx Context, sindent strin
 	return nil
 }
 
-func writeTomlValue(b *strings.Builder, value Value, ctx Context, cindent, sindent string, inline bool) error {
+func writeTomlValue(b *Builder, value Value, ctx Context, cindent, sindent string, inline bool) error {
 	value, err := value.Eval(ctx)
 	if err != nil {
 		return err
@@ -123,8 +122,7 @@ func writeTomlValue(b *strings.Builder, value Value, ctx Context, cindent, sinde
 		}
 		return nil
 	case ValueTypeNumber:
-		var p [64]byte
-		b.Write(unparseNumber(p[:0], value.Number()))
+		unparseNumber(b, value.Number())
 		return nil
 	case ValueTypeString:
 		writeJsonString(b, value.String(ctx))
@@ -218,7 +216,7 @@ func writeTomlValue(b *strings.Builder, value Value, ctx Context, cindent, sinde
 
 }
 
-func writeTomlTable(b *strings.Builder, obj *Object, ctx Context, sindent string, path []string, cindent string) error {
+func writeTomlTable(b *Builder, obj *Object, ctx Context, sindent string, path []string, cindent string) error {
 
 	b.WriteString(cindent)
 	b.WriteByte('[')
@@ -236,7 +234,7 @@ func writeTomlTable(b *strings.Builder, obj *Object, ctx Context, sindent string
 	return renderTomlTable(b, obj, ctx, sindent, path, cindent+sindent, true)
 }
 
-func writeTomlTableArray(b *strings.Builder, arr []Value, ctx Context, sindent string, path []string, cindent string) error {
+func writeTomlTableArray(b *Builder, arr []Value, ctx Context, sindent string, path []string, cindent string) error {
 
 	hasWritten := false
 	for _, v := range arr {
@@ -274,7 +272,7 @@ func writeTomlTableArray(b *strings.Builder, arr []Value, ctx Context, sindent s
 	return nil
 }
 
-func writeTomlKey(b *strings.Builder, s string) {
+func writeTomlKey(b *Builder, s string) {
 	bareAllowed := true
 
 	// for empty string, return ''

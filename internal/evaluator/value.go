@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"fmt"
 	"math"
-	"strings"
 
 	"github.com/google/go-jsonnet/ast"
 )
@@ -373,30 +372,37 @@ func (v Value) ToString(ctx Context) (string, error) {
 	case ValueTypeString:
 		return v.String(ctx), nil
 	case ValueTypeNumber:
-		var p [64]byte
-		res := unparseNumber(p[:0], v.Number())
-		return string(res), nil
+		b := GetBuilder()
+		unparseNumber(b, v.Number())
+		s := b.String()
+		PutBuilder(b)
+		return s, nil
 	case ValueTypeBool:
 		if v.Bool() {
 			return "true", nil
 		}
 		return "false", nil
 	case ValueTypeArray:
-		var b strings.Builder
-		err := ManifestJson(&b, v, ctx, JsonConfigToString)
+		b := GetBuilder()
+		err := ManifestJson(b, v, ctx, JsonConfigToString)
 		if err != nil {
 			return "", err
 		}
-		return b.String(), nil
+		s := b.String()
+		PutBuilder(b)
+		return s, nil
 	case ValueTypeObject:
 		subCtx := ctx
 		subCtx.Self = v
-		var b strings.Builder
-		err := ManifestJson(&b, v, subCtx, JsonConfigToString)
+
+		b := GetBuilder()
+		err := ManifestJson(b, v, subCtx, JsonConfigToString)
 		if err != nil {
 			return "", err
 		}
-		return b.String(), nil
+		s := b.String()
+		PutBuilder(b)
+		return s, nil
 	case ValueTypeThunk:
 		v, err := v.Eval(ctx)
 		if err != nil {
