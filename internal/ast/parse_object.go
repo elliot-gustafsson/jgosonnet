@@ -73,6 +73,7 @@ func (p *parser) parseObject() (uint32, error) {
 				closeTok, err := p.nextToken()
 				if err != nil { return 0, err }
 				if closeTok.Kind != TokenBracketR { return 0, fmt.Errorf("expected ']'") }
+
 			} else if tok.Kind == TokenIdent || tok.Kind == TokenString {
 				p.nextToken()
 				strId := p.Interner.Intern(tok.Data)
@@ -81,8 +82,56 @@ func (p *parser) parseObject() (uint32, error) {
 				return 0, fmt.Errorf("unexpected token in object: %v", tok.Data)
 			}
 			
+			// Check if it's a method
+			isMethod := false
+			var params []uint32 // [nameId, defaultId, ...]
+			tok, err = p.peek()
+			if err != nil { return 0, err }
+			if tok.Kind == TokenParenL {
+				isMethod = true
+				p.nextToken() // consume '('
+				for {
+					ptok, err := p.peek()
+					if err != nil { return 0, err }
+					if ptok.Kind == TokenParenR {
+						p.nextToken()
+						break
+					}
+					
+					identTok, err := p.nextToken()
+					if err != nil { return 0, err }
+					if identTok.Kind != TokenIdent { return 0, fmt.Errorf("expected identifier in method param") }
+					
+					nameId := p.Interner.Intern(identTok.Data)
+					var defaultId uint32
+					
+					ptok, err = p.peek()
+					if err != nil { return 0, err }
+					if ptok.Kind == TokenOperator && ptok.Data == "=" {
+						p.nextToken()
+						defaultId, err = p.parseExpr(0)
+						if err != nil { return 0, err }
+					}
+					
+					params = append(params, nameId, defaultId)
+					
+					ptok, err = p.peek()
+					if err != nil { return 0, err }
+					if ptok.Kind == TokenComma {
+						p.nextToken()
+						continue
+					} else if ptok.Kind == TokenParenR {
+						p.nextToken()
+						break
+					} else {
+						return 0, fmt.Errorf("expected ',' or ')' in method params")
+					}
+				}
+			}
+
 			// separator: ':', '::', ':::', '+:', '+::', '+:::'
 			sepTok, err := p.nextToken()
+
 			if err != nil { return 0, err }
 			if sepTok.Kind != TokenColon && sepTok.Kind != TokenOperator {
 				return 0, fmt.Errorf("expected ':' in object field")
@@ -116,6 +165,17 @@ func (p *parser) parseObject() (uint32, error) {
 			bodyId, err := p.parseExpr(0)
 			if err != nil { return 0, err }
 			
+			if isMethod {
+				startIdx := p.emitSideTable(params...)
+				bodyId = p.emit(Node{
+					Type: NodeTypeFunction,
+					A:    bodyId,
+					B:    startIdx,
+					C:    uint32(len(params) / 2),
+				})
+			}
+
+			
 			fields = append(fields, objectField{keyId, bodyId, meta})
 		}
 		
@@ -146,25 +206,21 @@ func (p *parser) parseObject() (uint32, error) {
 
 	startIdx := len(p.SideTable)
 	
-	// manually grow and append to SideTable
-	var sidetable []uint32
 	if len(locals) > 0 {
-		sidetable = append(sidetable, uint32(len(locals)))
+		p.SideTable = append(p.SideTable, uint32(len(locals)))
 	}
 	if len(asserts) > 0 {
-		sidetable = append(sidetable, uint32(len(asserts)))
+		p.SideTable = append(p.SideTable, uint32(len(asserts)))
 	}
 	for _, l := range locals {
-		sidetable = append(sidetable, l.nameId, l.exprId)
+		p.SideTable = append(p.SideTable, l.nameId, l.exprId)
 	}
 	for _, a := range asserts {
-		sidetable = append(sidetable, a)
+		p.SideTable = append(p.SideTable, a)
 	}
 	for _, f := range fields {
-		sidetable = append(sidetable, f.keyId, f.bodyId, f.meta)
+		p.SideTable = append(p.SideTable, f.keyId, f.bodyId, f.meta)
 	}
-	
-	p.emitSideTable(sidetable...)
 	
 	return p.emit(Node{
 		Type:  NodeTypeObject,

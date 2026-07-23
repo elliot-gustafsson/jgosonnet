@@ -21,6 +21,41 @@ type parser struct {
 	Interner *interner.Interner
 }
 
+
+func ParseSnippet(name, data string, interner *interner.Interner) (*AST, error) {
+	p := parser{
+		lex: lexer{data: data},
+		Interner:  interner,
+		Nodes:     make([]Node, 1, max(64, len(data)/4)),
+		Locations: make([]NodeContext, 1, max(64, len(data)/4)),
+		SideTable: make([]uint32, 0, max(32, len(data)/8)),
+	}
+
+	rootIdx, err := p.parseExpr(0)
+	if err != nil {
+		return nil, err
+	}
+	
+	tok, err := p.peek()
+	if err != nil {
+		return nil, err
+	}
+	if tok.Kind != TokenEof {
+		return nil, fmt.Errorf("unexpected token after root expression: %v", tok.Data)
+	}
+
+	if len(p.Nodes) == 0 {
+		return nil, fmt.Errorf("empty snippet")
+	}
+
+	return &AST{
+		RootId:    rootIdx,
+		Nodes:     p.Nodes,
+		SideTable: p.SideTable,
+		Locations: p.Locations,
+	}, nil
+}
+
 func Parse(filename string, interner *interner.Interner) (*AST, error) {
 	rawData, err := os.ReadFile(filename)
 	if err != nil {
@@ -33,16 +68,16 @@ func Parse(filename string, interner *interner.Interner) (*AST, error) {
 		lex: lexer{data: data},
 
 		Interner:  interner,
-		Nodes:     make([]Node, 1, 8192),
-		Locations: make([]NodeContext, 1, 8192),
-		SideTable: make([]uint32, 0, 4096),
+		Nodes:     make([]Node, 1, max(64, len(data)/4)),
+		Locations: make([]NodeContext, 1, max(64, len(data)/4)),
+		SideTable: make([]uint32, 0, max(32, len(data)/8)),
 	}
 
 	rootIdx, err := p.parseExpr(0)
 	if err != nil {
 		return nil, err
 	}
-
+	
 	tok, err := p.peek()
 	if err != nil {
 		return nil, err
@@ -87,7 +122,7 @@ func (p *parser) peek() (Token, error) {
 func (p *parser) emit(n Node) uint32 {
 	id := uint32(len(p.Nodes))
 	p.Nodes = append(p.Nodes, n)
-	p.Locations = append(p.Locations, NodeContext{})
+	p.Locations = append(p.Locations, NodeContext{}) 
 	return id
 }
 
@@ -135,30 +170,49 @@ func (p *parser) parseExpr(prec int) (uint32, error) {
 		return p.parseLocal()
 	case TokenIf:
 		return p.parseIf()
+	case TokenFunction:
+		return p.parseFunction()
+	case TokenError:
+		expr, err := p.parseExpr(0)
+		if err != nil { return 0, err }
+		lhs = p.emit(Node{Type: NodeTypeError, A: expr})
+	case TokenImport:
+		strTok, err := p.nextToken()
+		if err != nil { return 0, err }
+		if strTok.Kind != TokenString { return 0, fmt.Errorf("expected string after import") }
+		strId := p.Interner.Intern(strTok.Data)
+		lhs = p.emit(Node{Type: NodeTypeImport, A: strId})
+	case TokenImportStr:
+		strTok, err := p.nextToken()
+		if err != nil { return 0, err }
+		if strTok.Kind != TokenString { return 0, fmt.Errorf("expected string after importstr") }
+		strId := p.Interner.Intern(strTok.Data)
+		lhs = p.emit(Node{Type: NodeTypeImportStr, A: strId})
 	case TokenBracketL:
 		lhs, err = p.parseArray()
-		if err != nil {
-			return 0, err
-		}
+		if err != nil { return 0, err }
 	case TokenBraceL:
 		lhs, err = p.parseObject()
-		if err != nil {
-			return 0, err
-		}
+		if err != nil { return 0, err }
+	case TokenParenL:
+		expr, err := p.parseExpr(0)
+		if err != nil { return 0, err }
+		tok, err := p.nextToken()
+		if err != nil { return 0, err }
+		if tok.Kind != TokenParenR { return 0, fmt.Errorf("expected ')' after expression") }
+		lhs = expr
+
 	case TokenOperator:
 		if tok.Data == "!" || tok.Data == "-" || tok.Data == "+" || tok.Data == "~" {
 			expr, err := p.parseExpr(12)
-			if err != nil {
-				return 0, err
-			}
+			if err != nil { return 0, err }
 			if tok.Data == "+" {
 				lhs = expr
 			} else {
 				nodeType := NodeTypeUnaryMinus
-				switch tok.Data {
-				case "!":
+				if tok.Data == "!" {
 					nodeType = NodeTypeUnaryNot
-				case "~":
+				} else if tok.Data == "~" {
 					nodeType = NodeTypeUnaryBitwiseNot
 				}
 				lhs = p.emit(Node{Type: nodeType, A: expr})
@@ -167,14 +221,12 @@ func (p *parser) parseExpr(prec int) (uint32, error) {
 			return 0, fmt.Errorf("unexpected unary operator '%s'", tok.Data)
 		}
 	default:
-		return 0, fmt.Errorf("unexpected token in expression: %v", tok.Data)
+		return 0, fmt.Errorf("unexpected token in expression: %v (%v)", tok.Data, tok.Kind)
 	}
 
 	for {
 		peekTok, err := p.peek()
-		if err != nil {
-			return 0, err
-		}
+		if err != nil { return 0, err }
 
 		if peekTok.Kind == TokenEof {
 			break
@@ -185,14 +237,13 @@ func (p *parser) parseExpr(prec int) (uint32, error) {
 		var isApply bool
 		var isIndex bool
 
-		switch peekTok.Kind {
-		case TokenOperator, TokenIn:
+		if peekTok.Kind == TokenOperator || peekTok.Kind == TokenIn {
 			isBinary = true
 			opPrec = getOpPrec(peekTok.Data)
-		case TokenParenL, TokenBraceL:
+		} else if peekTok.Kind == TokenParenL || peekTok.Kind == TokenBraceL {
 			isApply = true
 			opPrec = 13
-		case TokenBracketL, TokenDot:
+		} else if peekTok.Kind == TokenBracketL || peekTok.Kind == TokenDot {
 			isIndex = true
 			opPrec = 13
 		}
@@ -206,45 +257,37 @@ func (p *parser) parseExpr(prec int) (uint32, error) {
 		if isBinary {
 			rhsPrec := opPrec
 			rhs, err := p.parseExpr(rhsPrec)
-			if err != nil {
-				return 0, err
-			}
-
+			if err != nil { return 0, err }
+			
 			nodeType := getBinaryNodeType(peekTok.Data)
 			lhs = p.emit(Node{Type: nodeType, A: lhs, B: rhs})
 		} else if isApply {
 			if peekTok.Kind == TokenParenL {
-				return 0, fmt.Errorf("func apply not fully implemented yet")
+				lhs, err = p.parseApply(lhs)
+				if err != nil { return 0, err }
 			} else {
-				return 0, fmt.Errorf("object apply not fully implemented yet")
+								// foo { bar: 2 } is syntactic sugar for foo + { bar: 2 }
+				rhs, err := p.parseObject()
+				if err != nil { return 0, err }
+				lhs = p.emit(Node{Type: NodeTypeBinaryPlus, A: lhs, B: rhs})
 			}
 		} else if isIndex {
 			if peekTok.Kind == TokenDot {
 				identTok, err := p.nextToken()
-				if err != nil {
-					return 0, err
-				}
-				if identTok.Kind != TokenIdent {
-					return 0, fmt.Errorf("expected identifier after dot")
-				}
-
+				if err != nil { return 0, err }
+				if identTok.Kind != TokenIdent { return 0, fmt.Errorf("expected identifier after dot") }
+				
 				stringId := p.Interner.Intern(identTok.Data)
 				stringNode := p.emit(Node{Type: NodeTypeString, A: stringId})
 				lhs = p.emit(Node{Type: NodeTypeIndex, A: stringNode, B: lhs})
 			} else {
 				rhs, err := p.parseExpr(0)
-				if err != nil {
-					return 0, err
-				}
-
+				if err != nil { return 0, err }
+				
 				closeTok, err := p.nextToken()
-				if err != nil {
-					return 0, err
-				}
-				if closeTok.Kind != TokenBracketR {
-					return 0, fmt.Errorf("expected ']' after index")
-				}
-
+				if err != nil { return 0, err }
+				if closeTok.Kind != TokenBracketR { return 0, fmt.Errorf("expected ']' after index") }
+				
 				lhs = p.emit(Node{Type: NodeTypeIndex, A: rhs, B: lhs})
 			}
 		}
@@ -255,66 +298,39 @@ func (p *parser) parseExpr(prec int) (uint32, error) {
 
 func getOpPrec(op string) int {
 	switch op {
-	case "||":
-		return 2
-	case "&&":
-		return 3
-	case "|":
-		return 4
-	case "^":
-		return 5
-	case "&":
-		return 6
-	case "==", "!=":
-		return 7
-	case "<", ">", "<=", ">=", "in":
-		return 8
-	case "<<", ">>":
-		return 9
-	case "+", "-":
-		return 10
-	case "*", "/", "%":
-		return 11
+	case "||": return 2
+	case "&&": return 3
+	case "|": return 4
+	case "^": return 5
+	case "&": return 6
+	case "==", "!=": return 7
+	case "<", ">", "<=", ">=", "in": return 8
+	case "<<", ">>": return 9
+	case "+", "-": return 10
+	case "*", "/", "%": return 11
 	}
 	return 0
 }
 
 func getBinaryNodeType(op string) NodeType {
 	switch op {
-	case "*":
-		return NodeTypeBinaryMult
-	case "/":
-		return NodeTypeBinaryDiv
-	case "+":
-		return NodeTypeBinaryPlus
-	case "-":
-		return NodeTypeBinaryMinus
-	case "<<":
-		return NodeTypeBinaryShiftL
-	case ">>":
-		return NodeTypeBinaryShiftR
-	case ">":
-		return NodeTypeBinaryGreater
-	case ">=":
-		return NodeTypeBinaryGreaterEq
-	case "<":
-		return NodeTypeBinaryLess
-	case "<=":
-		return NodeTypeBinaryLessEq
-	case "==":
-		return NodeTypeBinaryEqual
-	case "!=":
-		return NodeTypeBinaryUnequal
-	case "&":
-		return NodeTypeBinaryBitwiseAnd
-	case "^":
-		return NodeTypeBinaryBitwiseXor
-	case "|":
-		return NodeTypeBinaryBitwiseOr
-	case "&&":
-		return NodeTypeBinaryAnd
-	case "||":
-		return NodeTypeBinaryOr
+	case "*": return NodeTypeBinaryMult
+	case "/": return NodeTypeBinaryDiv
+	case "+": return NodeTypeBinaryPlus
+	case "-": return NodeTypeBinaryMinus
+	case "<<": return NodeTypeBinaryShiftL
+	case ">>": return NodeTypeBinaryShiftR
+	case ">": return NodeTypeBinaryGreater
+	case ">=": return NodeTypeBinaryGreaterEq
+	case "<": return NodeTypeBinaryLess
+	case "<=": return NodeTypeBinaryLessEq
+	case "==": return NodeTypeBinaryEqual
+	case "!=": return NodeTypeBinaryUnequal
+	case "&": return NodeTypeBinaryBitwiseAnd
+	case "^": return NodeTypeBinaryBitwiseXor
+	case "|": return NodeTypeBinaryBitwiseOr
+	case "&&": return NodeTypeBinaryAnd
+	case "||": return NodeTypeBinaryOr
 	}
 	return NodeTypeError
 }

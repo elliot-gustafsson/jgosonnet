@@ -7,7 +7,7 @@ import (
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/ast"
 	"github.com/elliot-gustafsson/jgosonnet/internal/interner"
-	"github.com/google/go-jsonnet"
+	
 )
 
 type Importer struct {
@@ -67,15 +67,7 @@ func (t *AstImporter) ResolveSnippet(name, data string) (*ast.AST, error) {
 	entry := actual.(*cacheEntry)
 
 	entry.once.Do(func() {
-		node, err := jsonnet.SnippetToAST(name, data)
-		if err != nil {
-			entry.err = fmt.Errorf("failed to resolve snippet %s, err: %w", name, err)
-			return
-		}
-
-		builder := ast.NewAstBuilder(t.interner)
-
-		entry.tree, entry.err = builder.Parse(node)
+		entry.tree, entry.err = ast.ParseSnippet(name, data, t.interner)
 	})
 
 	return entry.tree, entry.err
@@ -87,7 +79,7 @@ func (t *AstImporter) ResolveImport(filePath string) (*ast.AST, error) {
 	entry := actual.(*cacheEntry)
 
 	entry.once.Do(func() {
-		fileData, err := os.ReadFile(filePath)
+		_, err := os.ReadFile(filePath)
 		if err != nil {
 			if !os.IsNotExist(err) {
 				entry.err = fmt.Errorf("failed importing file: %s, err: %w", filePath, err)
@@ -97,15 +89,7 @@ func (t *AstImporter) ResolveImport(filePath string) (*ast.AST, error) {
 			return
 		}
 
-		node, err := jsonnet.SnippetToAST(filePath, string(fileData))
-		if err != nil {
-			entry.err = fmt.Errorf("failed to resolve import %s, err: %w", filePath, err)
-			return
-		}
-
-		builder := ast.NewAstBuilder(t.interner)
-
-		entry.tree, entry.err = builder.Parse(node)
+		entry.tree, entry.err = ast.Parse(filePath, t.interner)
 	})
 
 	return entry.tree, entry.err

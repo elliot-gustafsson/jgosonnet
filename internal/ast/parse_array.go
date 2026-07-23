@@ -33,7 +33,8 @@ func (p *parser) parseArray() (uint32, error) {
 		}
 	}
 
-	startIdx := p.emitSideTable(elements...)
+	startIdx := uint32(len(p.SideTable))
+	p.SideTable = append(p.SideTable, elements...)
 	
 	return p.emit(Node{
 		Type: NodeTypeArray,

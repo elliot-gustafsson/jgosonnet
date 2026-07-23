@@ -44,7 +44,8 @@ func (p *parser) parseLocal() (uint32, error) {
 	bodyId, err := p.parseExpr(0)
 	if err != nil { return 0, err }
 
-	startIdx := p.emitSideTable(binds...)
+	startIdx := uint32(len(p.SideTable))
+	p.SideTable = append(p.SideTable, binds...)
 	numBinds := uint32(len(binds) / 2)
 
 	return p.emit(Node{
