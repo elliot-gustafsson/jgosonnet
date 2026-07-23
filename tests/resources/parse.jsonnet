@@ -1,16 +1,4 @@
-// |||
-
-//   aaaaa
-//   bbbbb
-//    cccc
-//   dddd
-
-
-// |||
-
-
 [
   'asdf',
-  local x = '';
-
+  local x = 'hello'; x
 ]

@@ -5,31 +5,23 @@ import (
 	"math"
 	"os"
 	"strconv"
-	"strings"
-	"unicode/utf8"
 	"unsafe"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/interner"
 )
 
 type parser struct {
-	data string
-	pos  uint32
+	lex       lexer
+	peekToken *Token
 
-	col  uint32
-	line uint32
-
-	Nodes []Node
-
+	Nodes     []Node
 	SideTable []uint32
-
 	Locations []NodeContext
 
 	Interner *interner.Interner
 }
 
 func Parse(filename string, interner *interner.Interner) (*AST, error) {
-
 	rawData, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
@@ -38,7 +30,7 @@ func Parse(filename string, interner *interner.Interner) (*AST, error) {
 	data := unsafe.String(unsafe.SliceData(rawData), len(rawData))
 
 	p := parser{
-		data: data,
+		lex: lexer{data: data},
 
 		Interner:  interner,
 		Nodes:     make([]Node, 1, 8192),
@@ -46,428 +38,283 @@ func Parse(filename string, interner *interner.Interner) (*AST, error) {
 		SideTable: make([]uint32, 0, 4096),
 	}
 
-	err = p.parse()
+	rootIdx, err := p.parseExpr(0)
 	if err != nil {
 		return nil, err
 	}
 
+	tok, err := p.peek()
+	if err != nil {
+		return nil, err
+	}
+	if tok.Kind != TokenEof {
+		return nil, fmt.Errorf("unexpected token after root expression: %v", tok.Data)
+	}
+
 	if len(p.Nodes) == 0 {
-		return nil, fmt.Errorf("empyy file")
+		return nil, fmt.Errorf("empty file")
 	}
 
 	return &AST{
-		RootId:    uint32(len(p.Nodes) - 1),
+		RootId:    rootIdx,
 		Nodes:     p.Nodes,
 		SideTable: p.SideTable,
 		Locations: p.Locations,
 	}, nil
 }
 
-func (t *parser) emit(n Node) uint32 {
-	id := uint32(len(t.Nodes))
-	t.Nodes = append(t.Nodes, n)
-	t.Locations = append(t.Locations, NodeContext{}) // TODO: add real ctx
+func (p *parser) nextToken() (Token, error) {
+	if p.peekToken != nil {
+		t := *p.peekToken
+		p.peekToken = nil
+		return t, nil
+	}
+	return p.lex.Next()
+}
+
+func (p *parser) peek() (Token, error) {
+	if p.peekToken != nil {
+		return *p.peekToken, nil
+	}
+	t, err := p.lex.Next()
+	if err != nil {
+		return Token{}, err
+	}
+	p.peekToken = &t
+	return t, nil
+}
+
+func (p *parser) emit(n Node) uint32 {
+	id := uint32(len(p.Nodes))
+	p.Nodes = append(p.Nodes, n)
+	p.Locations = append(p.Locations, NodeContext{})
 	return id
 }
 
-func (t *parser) parse() error {
-
-	for {
-		t.consumeWhitespace()
-
-		r := t.peekByte()
-
-		if r == 0 {
-			return nil
-		}
-
-		switch r {
-		default:
-			return fmt.Errorf("unhandled token: %c", r)
-
-		// Comments
-		case '/':
-			t.pos++ // consume first slash
-
-			next := t.peekByte()
-
-			if next == '/' {
-				t.pos++ // consume second slash
-				newLineIdx := strings.IndexByte(t.data[t.pos:], '\n')
-				if newLineIdx == -1 {
-					return nil // all comment
-				}
-				t.pos += uint32(newLineIdx) + 1 // jump to and consume newline
-				continue
-			}
-
-			if next == '*' {
-				t.pos++ // consume star
-				for {
-					// Search from current position
-					idx := strings.IndexByte(t.data[t.pos:], '*')
-					if idx == -1 {
-						// TODO: add location data
-						return fmt.Errorf("unterminated block comment")
-					}
-					t.pos += uint32(idx) // jump to the '*'
-
-					if t.peekByteOffset(1) == '/' {
-						t.pos += 2 // consume "*/"
-						break
-					}
-
-					t.pos++
-				}
-				continue
-			}
-
-			return fmt.Errorf("unexpected token '/'")
-		case '#':
-			t.pos++ // consume hash
-			newLineIdx := strings.IndexByte(t.data[t.pos:], '\n')
-			if newLineIdx == -1 {
-				return nil // all comment
-			}
-			t.pos += uint32(newLineIdx) + 1 // jump to and consume newline
-
-		// Numbers
-		case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
-			// t.pos++
-
-			err := t.parseNumber()
-			if err != nil {
-				return err
-			}
-
-		// Strings
-		case '"':
-			err := t.parseString('"')
-			if err != nil {
-				return err
-			}
-		case '\'':
-			err := t.parseString('\'')
-			if err != nil {
-				return err
-			}
-
-		// Tokens
-		case '|':
-
-			if t.sliceOffset(2) == "||" {
-				t.pos += 3 // comsume all three pipes
-				// TODO: this is broken... doesnt strip space prefix properly
-				err := t.parseBlockString()
-				if err != nil {
-					return err
-				}
-			}
-
-			// TODO: Handle other | stuff
-
-		case '@':
-			next := t.peekByteOffset(1)
-			if next == '"' || next == '\'' {
-				t.pos += 2 // Consume `@` and the quote
-				err := t.parseVerbatimString(next)
-				if err != nil {
-					return err
-				}
-				continue
-			}
-
-			// TODO: Handle other uses of `@` if any, or return error
-
-		// Array
-		case '[':
-
-		}
-
-	}
-
+func (p *parser) emitSideTable(vals ...uint32) uint32 {
+	start := uint32(len(p.SideTable))
+	p.SideTable = append(p.SideTable, vals...)
+	return start
 }
 
-func (t *parser) peekByte() byte {
-	if int(t.pos) >= len(t.data) {
-		return 0
-	}
-	return t.data[t.pos]
-}
-
-func (t *parser) peekByteOffset(offset uint32) byte {
-	if int(t.pos+offset) >= len(t.data) {
-		return 0
-	}
-	return t.data[t.pos+offset]
-}
-
-func (t *parser) sliceOffset(offset uint32) string {
-	if int(t.pos+offset) >= len(t.data) {
-		return ""
-	}
-	return t.data[t.pos : t.pos+offset]
-}
-
-func (t *parser) peek() rune {
-
-	if int(t.pos) >= len(t.data) {
-		return -1
-	}
-
-	r, _ := utf8.DecodeRuneInString(t.data[t.pos:])
-	return r
-}
-
-func (t *parser) consumeWhitespace() {
-	for int(t.pos) < len(t.data) {
-		c := t.data[t.pos]
-		if c == ' ' || c == '\t' || c == '\r' || c == '\n' {
-			t.pos++
-
-			if c == '\n' {
-				t.line++
-				t.col = 0
-			} else {
-				t.col++
-			}
-		} else {
-			break
-		}
-	}
-}
-
-func (t *parser) parseNumber() error {
-	start := t.pos
-	dataLen := uint32(len(t.data))
-
-	// Ensure the first character is a digit or leading minus/dot if you support that
-	if t.data[start] == '0' && start+1 < dataLen && t.data[start+1] >= '0' && t.data[start+1] <= '9' {
-		// reject if leading zero
-		return fmt.Errorf("leading zero is not allowed in numbers")
-	}
-
-	for t.pos < dataLen {
-		c := t.data[t.pos]
-
-		// Fast character class check for valid number components
-		if (c >= '0' && c <= '9') || c == '.' || c == 'e' || c == 'E' || c == '_' {
-			t.pos++
-		} else if c == '+' || c == '-' {
-			// Signs are ONLY valid immediately following an 'e' or 'E'
-			if t.pos > start && (t.data[t.pos-1] == 'e' || t.data[t.pos-1] == 'E') {
-				t.pos++
-			} else {
-				// It's a binary operator like `1 + 2`, so stop lexing the number
-				break
-			}
-		} else {
-			// We hit a space, bracket, or other syntax character
-			break
-		}
-	}
-
-	// Extract the zero-allocation substring
-	numStr := t.data[start:t.pos]
-
-	num, err := strconv.ParseFloat(numStr, 64)
+func (p *parser) parseExpr(prec int) (uint32, error) {
+	tok, err := p.nextToken()
 	if err != nil {
-		return fmt.Errorf("invalid number literal '%s'", numStr)
+		return 0, err
 	}
 
-	bits := math.Float64bits(num)
+	var lhs uint32
 
-	t.emit(Node{
-		Type: NodeTypeNumber,
-		A:    uint32(bits >> 32),
-		B:    uint32(bits),
-	})
-
-	return nil
-}
-
-func (t *parser) parseString(quoteType byte) error {
-	// quoteType is either '"' or '\''
-	start := t.pos
+	switch tok.Kind {
+	case TokenNumber:
+		num, err := strconv.ParseFloat(tok.Data, 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid number '%s'", tok.Data)
+		}
+		bits := math.Float64bits(num)
+		lhs = p.emit(Node{
+			Type: NodeTypeNumber,
+			A:    uint32(bits >> 32),
+			B:    uint32(bits),
+		})
+	case TokenString:
+		stringId := p.Interner.Intern(tok.Data)
+		lhs = p.emit(Node{Type: NodeTypeString, A: stringId})
+	case TokenTrue:
+		lhs = p.emit(Node{Type: NodeTypeTrue})
+	case TokenFalse:
+		lhs = p.emit(Node{Type: NodeTypeFalse})
+	case TokenNull:
+		lhs = p.emit(Node{Type: NodeTypeNull})
+	case TokenSelf:
+		lhs = p.emit(Node{Type: NodeTypeSelf})
+	case TokenIdent:
+		stringId := p.Interner.Intern(tok.Data)
+		lhs = p.emit(Node{Type: NodeTypeVar, A: stringId})
+	case TokenLocal:
+		return p.parseLocal()
+	case TokenIf:
+		return p.parseIf()
+	case TokenBracketL:
+		lhs, err = p.parseArray()
+		if err != nil {
+			return 0, err
+		}
+	case TokenBraceL:
+		lhs, err = p.parseObject()
+		if err != nil {
+			return 0, err
+		}
+	case TokenOperator:
+		if tok.Data == "!" || tok.Data == "-" || tok.Data == "+" || tok.Data == "~" {
+			expr, err := p.parseExpr(12)
+			if err != nil {
+				return 0, err
+			}
+			if tok.Data == "+" {
+				lhs = expr
+			} else {
+				nodeType := NodeTypeUnaryMinus
+				switch tok.Data {
+				case "!":
+					nodeType = NodeTypeUnaryNot
+				case "~":
+					nodeType = NodeTypeUnaryBitwiseNot
+				}
+				lhs = p.emit(Node{Type: nodeType, A: expr})
+			}
+		} else {
+			return 0, fmt.Errorf("unexpected unary operator '%s'", tok.Data)
+		}
+	default:
+		return 0, fmt.Errorf("unexpected token in expression: %v", tok.Data)
+	}
 
 	for {
-		idx := strings.IndexByte(t.data[t.pos:], quoteType)
-		if idx == -1 {
-			return fmt.Errorf("unterminated string literal")
+		peekTok, err := p.peek()
+		if err != nil {
+			return 0, err
 		}
 
-		absoluteIdx := t.pos + uint32(idx)
-
-		// count consecutive backslashes immediately preceding the quote
-		backslashes := 0
-		for j := absoluteIdx - 1; j >= start && t.data[j] == '\\'; j-- {
-			backslashes++
-		}
-
-		// consume the quote
-		t.pos = absoluteIdx + 1
-
-		// if even number of backslashes the quote is not escaped
-		if backslashes%2 == 0 {
+		if peekTok.Kind == TokenEof {
 			break
 		}
 
-	}
-	strVal := t.data[start : t.pos-1]
+		var opPrec int
+		var isBinary bool
+		var isApply bool
+		var isIndex bool
 
-	// TODO: do we need to unescape newlines here?
-
-	stringId := t.Interner.Intern(strVal)
-
-	t.emit(Node{
-		Type: NodeTypeString,
-		A:    stringId,
-	})
-
-	return nil
-}
-
-func (t *parser) parseBlockString() error {
-
-	start := t.pos
-
-	for {
-		// search for the first pipe
-		idx := strings.IndexByte(t.data[t.pos:], '|')
-		if idx == -1 {
-			return fmt.Errorf("unterminated block string")
+		switch peekTok.Kind {
+		case TokenOperator, TokenIn:
+			isBinary = true
+			opPrec = getOpPrec(peekTok.Data)
+		case TokenParenL, TokenBraceL:
+			isApply = true
+			opPrec = 13
+		case TokenBracketL, TokenDot:
+			isIndex = true
+			opPrec = 13
 		}
 
-		// jump to the found pipe
-		t.pos += uint32(idx)
-
-		// do we have enough characters left for "|||"?
-		if int(t.pos+2) >= len(t.data) {
-			return fmt.Errorf("unterminated block string")
-		}
-
-		if t.sliceOffset(3) == "|||" {
+		if (!isBinary && !isApply && !isIndex) || opPrec <= prec {
 			break
 		}
 
-		// False alarm.
-		// If it was a double pipe "||", we can skip past both!
-		if t.data[t.pos+1] == '|' {
-			t.pos += 2
-		} else {
-			t.pos++
+		_, _ = p.nextToken()
+
+		if isBinary {
+			rhsPrec := opPrec
+			rhs, err := p.parseExpr(rhsPrec)
+			if err != nil {
+				return 0, err
+			}
+
+			nodeType := getBinaryNodeType(peekTok.Data)
+			lhs = p.emit(Node{Type: nodeType, A: lhs, B: rhs})
+		} else if isApply {
+			if peekTok.Kind == TokenParenL {
+				return 0, fmt.Errorf("func apply not fully implemented yet")
+			} else {
+				return 0, fmt.Errorf("object apply not fully implemented yet")
+			}
+		} else if isIndex {
+			if peekTok.Kind == TokenDot {
+				identTok, err := p.nextToken()
+				if err != nil {
+					return 0, err
+				}
+				if identTok.Kind != TokenIdent {
+					return 0, fmt.Errorf("expected identifier after dot")
+				}
+
+				stringId := p.Interner.Intern(identTok.Data)
+				stringNode := p.emit(Node{Type: NodeTypeString, A: stringId})
+				lhs = p.emit(Node{Type: NodeTypeIndex, A: stringNode, B: lhs})
+			} else {
+				rhs, err := p.parseExpr(0)
+				if err != nil {
+					return 0, err
+				}
+
+				closeTok, err := p.nextToken()
+				if err != nil {
+					return 0, err
+				}
+				if closeTok.Kind != TokenBracketR {
+					return 0, fmt.Errorf("expected ']' after index")
+				}
+
+				lhs = p.emit(Node{Type: NodeTypeIndex, A: rhs, B: lhs})
+			}
 		}
 	}
 
-	rawBlock := t.data[start:t.pos]
-	t.pos += 3 // consume the three pipes
-
-	lastNL := strings.LastIndexByte(rawBlock, '\n')
-	var indentStr string
-	if lastNL != -1 {
-		indentStr = rawBlock[lastNL+1:]
-		rawBlock = rawBlock[:lastNL+1]
-	}
-
-	if len(rawBlock) > 0 && rawBlock[0] == '\n' {
-		rawBlock = rawBlock[1:]
-	}
-
-	if len(indentStr) == 0 {
-		stringId := t.Interner.Intern(rawBlock)
-		t.emit(Node{Type: NodeTypeString, A: stringId})
-		return nil
-	}
-
-	indentLen := len(indentStr)
-	out := make([]byte, 0, len(rawBlock))
-	pos := 0
-
-	for pos < len(rawBlock) {
-		// Find the end of the current line
-		nextNL := strings.IndexByte(rawBlock[pos:], '\n')
-		var line string
-
-		if nextNL == -1 {
-			line = rawBlock[pos:]
-			pos = len(rawBlock)
-		} else {
-			line = rawBlock[pos : pos+nextNL]
-			pos += nextNL + 1
-		}
-
-		// Strip the indent if the line starts with it
-		// (Jsonnet spec: only strip if the line has the exact indent prefix.
-		// If it's a blank line or differently indented, leave it alone or handle errors based on spec strictness).
-		if strings.HasPrefix(line, indentStr) {
-			out = append(out, line[indentLen:]...)
-		} else {
-			out = append(out, line...)
-		}
-
-		// Add the newline back
-		if nextNL != -1 {
-			out = append(out, '\n')
-		}
-	}
-
-	finalStr := unsafe.String(unsafe.SliceData(out), len(out))
-
-	stringId := t.Interner.Intern(finalStr)
-
-	t.emit(Node{
-		Type: NodeTypeString,
-		A:    stringId,
-	})
-
-	return nil
+	return lhs, nil
 }
 
-func (t *parser) parseVerbatimString(quoteType byte) error {
-	// quoteType is either '"' or '\''
-	start := t.pos
-
-	for {
-		// Fast SIMD search for the quote
-		idx := strings.IndexByte(t.data[t.pos:], quoteType)
-		if idx == -1 {
-			return fmt.Errorf("unterminated verbatim string literal")
-		}
-
-		absoluteIdx := t.pos + uint32(idx)
-
-		// Peek at the NEXT character after the quote
-		if int(absoluteIdx+1) < len(t.data) && t.data[absoluteIdx+1] == quoteType {
-			// It's a double quote (e.g. "" or '')!
-			// This is how verbatim strings escape quotes.
-			// Skip over BOTH quotes and keep searching.
-			t.pos = absoluteIdx + 2
-			continue
-		}
-
-		// It's a single quote! We found the end of the string.
-		t.pos = absoluteIdx + 1
-		break
+func getOpPrec(op string) int {
+	switch op {
+	case "||":
+		return 2
+	case "&&":
+		return 3
+	case "|":
+		return 4
+	case "^":
+		return 5
+	case "&":
+		return 6
+	case "==", "!=":
+		return 7
+	case "<", ">", "<=", ">=", "in":
+		return 8
+	case "<<", ">>":
+		return 9
+	case "+", "-":
+		return 10
+	case "*", "/", "%":
+		return 11
 	}
+	return 0
+}
 
-	// Extract the string contents
-	strVal := t.data[start : t.pos-1]
-
-	// IMPORTANT: You must process `strVal` to replace double quotes with single quotes.
-	// E.g., `""` becomes `"`, and `''` becomes `'`.
-	// Since this is relatively rare, we only do the allocation/replace if necessary.
-	if quoteType == '"' && strings.Contains(strVal, `""`) {
-		strVal = strings.ReplaceAll(strVal, `""`, `"`)
-	} else if quoteType == '\'' && strings.Contains(strVal, `''`) {
-		strVal = strings.ReplaceAll(strVal, `''`, `'`)
+func getBinaryNodeType(op string) NodeType {
+	switch op {
+	case "*":
+		return NodeTypeBinaryMult
+	case "/":
+		return NodeTypeBinaryDiv
+	case "+":
+		return NodeTypeBinaryPlus
+	case "-":
+		return NodeTypeBinaryMinus
+	case "<<":
+		return NodeTypeBinaryShiftL
+	case ">>":
+		return NodeTypeBinaryShiftR
+	case ">":
+		return NodeTypeBinaryGreater
+	case ">=":
+		return NodeTypeBinaryGreaterEq
+	case "<":
+		return NodeTypeBinaryLess
+	case "<=":
+		return NodeTypeBinaryLessEq
+	case "==":
+		return NodeTypeBinaryEqual
+	case "!=":
+		return NodeTypeBinaryUnequal
+	case "&":
+		return NodeTypeBinaryBitwiseAnd
+	case "^":
+		return NodeTypeBinaryBitwiseXor
+	case "|":
+		return NodeTypeBinaryBitwiseOr
+	case "&&":
+		return NodeTypeBinaryAnd
+	case "||":
+		return NodeTypeBinaryOr
 	}
-
-	stringId := t.Interner.Intern(strVal)
-
-	t.emit(Node{
-		Type: NodeTypeString,
-		A:    stringId,
-	})
-
-	return nil
+	return NodeTypeError
 }
