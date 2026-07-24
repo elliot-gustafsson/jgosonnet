@@ -350,8 +350,7 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 	}
 
 	if len(node.Asserts) > 0 {
-		layer.Asserts = ctx.State.Registry.NodesBufs.Alloc(len(node.Asserts), len(node.Asserts))
-		copy(layer.Asserts, node.Asserts)
+		layer.AssertsId = ctx.State.Registry.NodeSlices.Alloc(node.Asserts)
 	}
 
 	for _, v := range node.Locals {

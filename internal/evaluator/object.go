@@ -29,7 +29,7 @@ type Layer struct {
 	LocalKeys  []uint32
 	LocalNodes ast.Nodes
 
-	Asserts ast.Nodes
+	AssertsId uint32
 
 	ParentScopeId uint32
 }
@@ -682,6 +682,10 @@ func runAssertions(obj *Object, ctx Context) error {
 	for i := len(layers) - 1; i >= 0; i-- {
 		layer := layers[i]
 
+		if layer.AssertsId == 0 {
+			continue
+		}
+
 		evalCtx := ctx
 		evalCtx.SuperOffset = int32(len(layers) - 1 - i)
 
@@ -690,7 +694,9 @@ func runAssertions(obj *Object, ctx Context) error {
 			return err
 		}
 
-		for _, n := range layer.Asserts {
+		asserts := ctx.State.Registry.NodeSlices.Get(layer.AssertsId)
+
+		for _, n := range asserts {
 			val, err := EvaluateNode(n, scopeId, ctx)
 			if err != nil {
 				return err
