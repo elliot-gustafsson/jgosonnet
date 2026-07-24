@@ -11,7 +11,7 @@ import (
 
 const (
 	MaxPlanLinearKeys  = 96  // Threshold for compileObjectPlan map fallback
-	MaxLayerLinearKeys = 256 // Threshold for Layer.Index map fallback
+	MaxLayerLinearKeys = 128 // Threshold for Layer.Index map fallback
 
 	MaskVisibility = 0x03 // Binary 00000011
 	FlagPlusSuper  = 0x04 // Binary 00000100
@@ -389,18 +389,20 @@ func CompileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 func CompileObjectPlanEx(obj *Object, ctx Context, naturalSort bool) []FieldPlan {
 	plans := compileObjectPlan(obj, ctx)
 
+	interner := ctx.State.Interner
+
 	if naturalSort {
 		slices.SortFunc(plans, func(a, b FieldPlan) int {
-			aName := ctx.State.Interner.Get(a.KeyId)
-			bName := ctx.State.Interner.Get(b.KeyId)
+			aName := interner.Get(a.KeyId)
+			bName := interner.Get(b.KeyId)
 			return naturalStringSort(aName, bName)
 		})
 		return plans
 	}
 
 	slices.SortFunc(plans, func(a, b FieldPlan) int {
-		aName := ctx.State.Interner.Get(a.KeyId)
-		bName := ctx.State.Interner.Get(b.KeyId)
+		aName := interner.Get(a.KeyId)
+		bName := interner.Get(b.KeyId)
 		return strings.Compare(aName, bName)
 
 	})

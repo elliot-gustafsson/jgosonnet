@@ -4,12 +4,13 @@ import (
 	"io"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
+	"github.com/elliot-gustafsson/jgosonnet/internal/interner"
 	"github.com/google/go-jsonnet"
 	"github.com/google/go-jsonnet/ast"
 )
 
 type ContextState struct {
-	Interner    *Interner
+	Interner    *interner.Interner
 	Registry    *Registry
 	Environment *Environment
 }

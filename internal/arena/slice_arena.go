@@ -46,11 +46,6 @@ func (a *SliceArena[T]) Make(length int) ([]T, uint32) {
 		a.activeIdx++
 		a.offset = 0
 		// do we already have a block allocated?
-		var targetSlice []T
-
-		if length == 0 {
-			return targetSlice, a.headers.Alloc(targetSlice)
-		}
 		if a.activeIdx < len(a.elementBlocks) {
 			currBlock = a.elementBlocks[a.activeIdx]
 		} else {

@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
+	"github.com/elliot-gustafsson/jgosonnet/internal/interner"
 	"github.com/elliot-gustafsson/jgosonnet/internal/stdlib"
 )
 
@@ -228,14 +229,14 @@ func (t *Evaluator) EvaluateYamlMulti(file string) (map[string]string, error) {
 
 type EvaluationEngine struct {
 	Registry *evaluator.Registry
-	Interner *evaluator.Interner
+	Interner *interner.Interner
 }
 
 var enginePool = sync.Pool{
 	New: func() any {
 		return &EvaluationEngine{
 			Registry: evaluator.NewRegistry(),
-			Interner: evaluator.NewInterner(),
+			Interner: interner.NewInterner(),
 		}
 	},
 }

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
+	"github.com/elliot-gustafsson/jgosonnet/internal/interner"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -356,7 +357,7 @@ func TestFormat(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := evaluator.Context{
 				State: &evaluator.ContextState{
-					Interner: evaluator.NewInterner(),
+					Interner: interner.NewInterner(),
 					Registry: evaluator.NewRegistry(),
 				},
 			}
@@ -434,7 +435,7 @@ func TestFormatStrings(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := evaluator.Context{
 				State: &evaluator.ContextState{
-					Interner: evaluator.NewInterner(),
+					Interner: interner.NewInterner(),
 					Registry: evaluator.NewRegistry(),
 				},
 			}
@@ -561,7 +562,7 @@ func TestFormatIntegers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := evaluator.Context{
 				State: &evaluator.ContextState{
-					Interner: evaluator.NewInterner(),
+					Interner: interner.NewInterner(),
 					Registry: evaluator.NewRegistry(),
 				},
 			}
@@ -694,7 +695,7 @@ func TestFormatOctal(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := evaluator.Context{
 				State: &evaluator.ContextState{
-					Interner: evaluator.NewInterner(),
+					Interner: interner.NewInterner(),
 					Registry: evaluator.NewRegistry(),
 				},
 			}
@@ -940,7 +941,7 @@ func TestFormatHex(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := evaluator.Context{
 				State: &evaluator.ContextState{
-					Interner: evaluator.NewInterner(),
+					Interner: interner.NewInterner(),
 					Registry: evaluator.NewRegistry(),
 				},
 			}
@@ -983,7 +984,7 @@ func TestFormatFloat(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := evaluator.Context{
 				State: &evaluator.ContextState{
-					Interner: evaluator.NewInterner(),
+					Interner: interner.NewInterner(),
 					Registry: evaluator.NewRegistry(),
 				},
 			}
