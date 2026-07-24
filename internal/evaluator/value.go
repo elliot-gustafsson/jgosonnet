@@ -102,16 +102,32 @@ func (t Function) Length() int {
 	return t.argsCount
 }
 
+// Value represents a NaN-boxed 64-bit value.
+// Bit layout for non-float types:
+//
+// 63                   51 50         40 39       32 31                              0
+// |----------------------|-------------|-----------|--------------------------------|
+// |  Float NaN Boundary  |    Flags    | ValueType |         RefId / Payload        |
+// |       (13 bits)      |  (11 bits)  |  (8 bits) |            (32 bits)           |
+// |----------------------|-------------|-----------|--------------------------------|
+//
+// - Bits 63-51: Reserved for IEEE-754 Quiet NaN float64 detection.
+// - Bits 50-40: Available for custom boolean flags (e.g., FlagStringConst).
+// - Bits 39-32: ValueType enum.
+// - Bits 31-0 : uint32 Arena ID (or 1/0 for booleans).
 type Value uint64
 
 const (
-	nanTag uint64 = 0xFFF8000000000000
+	nanTag         uint64 = 0xFFF8000000000000
+	floatThreshold uint64 = 1 << 19
 
 	ValueNone Value = 0
+
+	ValueFlagStringConst uint64 = 1 << 40
 )
 
 func box(t ValueType, refId uint32) Value {
-	// pack the yype into bits 32-47, and the refId into bits 0-31
+	// pack the type into bits 32-47, and the refId into bits 0-31
 	return Value((uint64(t) << 32) | uint64(refId))
 }
 
@@ -134,6 +150,10 @@ func MakeNull() Value {
 func MakeString(v string, ctx Context) Value {
 	id := ctx.State.Registry.Strings.Alloc(v)
 	return box(ValueTypeString, id)
+}
+
+func MakeStringConst(id uint32) Value {
+	return Value(uint64(box(ValueTypeString, id)) | ValueFlagStringConst)
 }
 
 func MakeStringConcat(v1, v2 string, ctx Context) Value {
@@ -191,9 +211,8 @@ func MakeTombstoneValue(scope int) Value {
 
 func (v Value) Type() ValueType {
 	t := uint64(v) >> 32
-	if t > math.MaxUint8 {
+	if t >= floatThreshold {
 		return ValueTypeNumber
-
 	}
 	return ValueType(t)
 }
@@ -203,6 +222,9 @@ func (v Value) RefId() uint32 {
 }
 
 func (v Value) String(ctx Context) string {
+	if (uint64(v) & ValueFlagStringConst) != 0 {
+		return ctx.State.Interner.Get(v.RefId())
+	}
 	return ctx.State.Registry.Strings.Get(v.RefId())
 }
 
@@ -416,35 +438,39 @@ func (v Value) IsLiteral() bool {
 }
 
 func (v Value) IsNull() bool {
-	return uint64(v)>>32 == uint64(ValueTypeNull)
+	return ValueType(uint64(v)>>32) == ValueTypeNull
 }
 
 func (v Value) IsString() bool {
-	return uint64(v)>>32 == uint64(ValueTypeString)
+	return ValueType(uint64(v)>>32) == ValueTypeString
 }
 
 func (v Value) IsNumber() bool {
-	return uint64(v) >= (1 << 48)
+	return (uint64(v) >> 32) >= floatThreshold
 }
 
 func (v Value) IsBool() bool {
-	return uint64(v)>>32 == uint64(ValueTypeBool)
+	return ValueType(uint64(v)>>32) == ValueTypeBool
 }
 
 func (v Value) IsThunk() bool {
-	return uint64(v)>>32 == uint64(ValueTypeThunk)
+	return ValueType(uint64(v)>>32) == ValueTypeThunk
 }
 
 func (v Value) IsObject() bool {
-	return uint64(v)>>32 == uint64(ValueTypeObject)
+	return ValueType(uint64(v)>>32) == ValueTypeObject
 }
 
 func (v Value) IsFunction() bool {
-	return uint64(v)>>32 == uint64(ValueTypeFunction)
+	return ValueType(uint64(v)>>32) == ValueTypeFunction
 }
 
 func (v Value) IsArray() bool {
-	return uint64(v)>>32 == uint64(ValueTypeArray)
+	return ValueType(uint64(v)>>32) == ValueTypeArray
+}
+
+func (v Value) IsStringConst() bool {
+	return ValueType(uint64(v)>>32) == ValueTypeString && (uint64(v)&ValueFlagStringConst) != 0
 }
 
 func (v Value) IsEmpty(ctx Context) bool {
@@ -499,9 +525,14 @@ func (a Value) Equal(b Value, ctx Context) (bool, error) {
 	case ValueTypeNull:
 		return true, nil
 	case ValueTypeString:
-		if a.RefId() == b.RefId() {
+		if a.IsStringConst() && b.IsStringConst() {
+			return a.RefId() == b.RefId(), nil
+		}
+
+		if !a.IsStringConst() && !b.IsStringConst() && a.RefId() == b.RefId() {
 			return true, nil
 		}
+
 		return a.String(ctx) == b.String(ctx), nil
 	case ValueTypeNumber:
 		return a.Number() == b.Number(), nil
@@ -564,8 +595,14 @@ func (a Value) Compare(b Value, ctx Context) (int, error) {
 	case ValueTypeNull:
 		return 0, nil
 	case ValueTypeString:
-		if a.RefId() == b.RefId() {
-			return 0, nil
+		if a.IsStringConst() && b.IsStringConst() {
+			if a.RefId() == b.RefId() {
+				return 0, nil
+			}
+		} else if !a.IsStringConst() && !b.IsStringConst() {
+			if a.RefId() == b.RefId() {
+				return 0, nil
+			}
 		}
 		return cmp.Compare(a.String(ctx), b.String(ctx)), nil
 	case ValueTypeNumber:

@@ -99,7 +99,8 @@ func CreateFileScope(filename string, baseStd Value, ctx Context) uint32 {
 func evaluateNodeLazy(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 	switch node := n.(type) {
 	case *ast.LiteralString:
-		return MakeString(node.Value, ctx), nil
+		id := ctx.State.Interner.Intern(node.Value)
+		return MakeStringConst(id), nil
 	case *ast.LiteralNull:
 		return MakeNull(), nil
 	case *ast.LiteralBoolean:
@@ -127,7 +128,8 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 	default:
 		return ValueNone, fmt.Errorf("unhandled node type: %T", node)
 	case *ast.LiteralString:
-		return MakeString(node.Value, ctx), nil
+		id := ctx.State.Interner.Intern(node.Value)
+		return MakeStringConst(id), nil
 	case *ast.LiteralNull:
 		return MakeNull(), nil
 	case *ast.LiteralBoolean:
@@ -371,23 +373,32 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 
 	index := 0
 	for _, v := range node.Fields {
-		name, err := EvaluateNode(v.Name, scopeId, ctx)
-		if err != nil {
-			return ValueNone, err
+		var nameStr string
+
+		// Fast path literal string, most keys are just static strings
+		if ls, ok := v.Name.(*ast.LiteralString); ok {
+
+			nameStr = ls.Value
+		} else {
+			var err error
+			name, err := EvaluateNode(v.Name, scopeId, ctx)
+			if err != nil {
+				return ValueNone, err
+			}
+
+			if name.IsNull() {
+				// Omitted field
+				continue
+			}
+
+			if !name.IsString() {
+				return ValueNone, fmt.Errorf("unexpected field name type %s, expected string", name.Type().String())
+			}
+
+			nameStr = name.String(ctx)
 		}
 
-		if name.IsNull() {
-			// Omitted field
-			continue
-		}
-
-		if !name.IsString() {
-			return ValueNone, fmt.Errorf("unexpected field name type %s, expected string", name.Type().String())
-		}
-
-		n := name.String(ctx)
-
-		keyId := ctx.State.Interner.Intern(n)
+		keyId := ctx.State.Interner.Intern(nameStr)
 
 		layer.Keys = append(layer.Keys, keyId)
 		layer.Nodes = append(layer.Nodes, v.Body)
@@ -591,10 +602,13 @@ func handleIndex(node *ast.Index, scopeId uint32, ctx Context) (Value, error) {
 			return ValueNone, MakeRuntimeError(fmt.Errorf("unexpected index type for indexing object, expected string, got %s", index.Type().String()))
 		}
 
-		// TODO: can we optimize this? Since the index is a string we can take the id directly. If DataString is implemented that wont work...
-		name := index.String(ctx)
-
-		keyId := ctx.State.Interner.Intern(name)
+		var keyId uint32
+		if index.IsStringConst() {
+			keyId = index.RefId()
+		} else {
+			name := index.String(ctx)
+			keyId = ctx.State.Interner.Intern(name)
+		}
 
 		obj := target.Object(ctx)
 
@@ -607,7 +621,7 @@ func handleIndex(node *ast.Index, scopeId uint32, ctx Context) (Value, error) {
 			return ValueNone, err
 		}
 		if val.IsNone() {
-			return ValueNone, MakeRuntimeError(fmt.Errorf("Field does not exist: %s", name))
+			return ValueNone, MakeRuntimeError(fmt.Errorf("Field does not exist: %s", index.String(ctx)))
 		}
 		val, err = val.Eval(subCtx)
 		if err != nil {
@@ -639,9 +653,13 @@ func handleSuperIndex(node *ast.SuperIndex, scopeId uint32, ctx Context) (Value,
 		return ValueNone, errors.New("ctx.Self not set")
 	}
 
-	name := index.String(ctx)
-
-	keyId := ctx.State.Interner.Intern(name)
+	var keyId uint32
+	if index.IsStringConst() {
+		keyId = index.RefId()
+	} else {
+		name := index.String(ctx)
+		keyId = ctx.State.Interner.Intern(name)
+	}
 
 	obj := ctx.Self.Object(ctx)
 
@@ -653,7 +671,7 @@ func handleSuperIndex(node *ast.SuperIndex, scopeId uint32, ctx Context) (Value,
 	}
 
 	if val.IsNone() {
-		return ValueNone, MakeRuntimeError(fmt.Errorf("Field does not exist: %s", name))
+		return ValueNone, MakeRuntimeError(fmt.Errorf("Field does not exist: %s", index.String(ctx)))
 	}
 
 	val, err = val.Eval(ctx)

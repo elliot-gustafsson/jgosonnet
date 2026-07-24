@@ -1,6 +1,7 @@
 package evaluator
 
 import (
+	"cmp"
 	"fmt"
 	"math"
 	"slices"
@@ -403,7 +404,7 @@ func CompileObjectPlanEx(obj *Object, ctx Context, naturalSort bool) []FieldPlan
 	slices.SortFunc(plans, func(a, b FieldPlan) int {
 		aName := interner.Get(a.KeyId)
 		bName := interner.Get(b.KeyId)
-		return strings.Compare(aName, bName)
+		return cmp.Compare(aName, bName)
 
 	})
 
