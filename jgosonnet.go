@@ -81,7 +81,7 @@ func (t *Evaluator) EvaluateJson(file string) (string, error) {
 	}
 
 	var b strings.Builder
-	b.Grow(1024 * 1024)
+	b.Grow(16 * 1024)
 
 	c := &evaluator.JsonManifestConfig{
 		IndentStep: "   ",
@@ -130,7 +130,7 @@ func (t *Evaluator) EvaluateJsonMulti(file string) (map[string]string, error) {
 	for key, v := range root {
 
 		var b strings.Builder
-		b.Grow(64 * 1024)
+		b.Grow(16 * 1024)
 
 		err = evaluator.ManifestJson(&b, v, evalCtx, c)
 		if err != nil {
@@ -157,7 +157,7 @@ func (t *Evaluator) EvaluateYaml(file string) (string, error) {
 	}
 
 	var b strings.Builder
-	b.Grow(1024 * 1024)
+	b.Grow(16 * 1024)
 
 	c := evaluator.YamlManifestConfig{
 		IndentArrayInObjects: true,
@@ -209,7 +209,7 @@ func (t *Evaluator) EvaluateYamlMulti(file string) (map[string]string, error) {
 	for key, v := range root {
 
 		var b strings.Builder
-		b.Grow(64 * 1024)
+		b.Grow(16 * 1024)
 
 		err = evaluator.ManifestYaml(&b, v, evalCtx, c)
 		if err != nil {

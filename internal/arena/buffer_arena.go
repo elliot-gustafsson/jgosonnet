@@ -31,19 +31,11 @@ func (a *BufferArena[T]) Alloc(length, capacity int) []T {
 		return make([]T, length, capacity)
 	}
 
-	currBlock := a.elementBlocks[a.activeIdx]
-	if a.offset+capacity > len(currBlock) {
-		a.activeIdx++
-		a.offset = 0
-		// do we already have a block allocated?
-		if a.activeIdx < len(a.elementBlocks) {
-			currBlock = a.elementBlocks[a.activeIdx]
-		} else {
-			currBlock = make([]T, a.blockSize)
-			a.elementBlocks = append(a.elementBlocks, currBlock)
-		}
+	if a.offset+capacity > a.blockSize {
+		a.grow()
 	}
 
+	currBlock := a.elementBlocks[a.activeIdx]
 	// slice off the requested memory
 	targetSlice := currBlock[a.offset : a.offset+length : a.offset+capacity]
 
@@ -64,4 +56,14 @@ func (a *BufferArena[T]) Reset() {
 	}
 	a.activeIdx = 0
 	a.offset = 0
+}
+
+//go:noinline
+func (a *BufferArena[T]) grow() {
+	a.activeIdx++
+	a.offset = 0
+	if a.activeIdx < len(a.elementBlocks) {
+		return
+	}
+	a.elementBlocks = append(a.elementBlocks, make([]T, a.blockSize))
 }

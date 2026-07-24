@@ -163,16 +163,19 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 			return ValueNone, TypeErrorSpecific(ValueTypeFunction, val.Type())
 		}
 
-		args := ctx.State.Registry.NamedValueBufs.Alloc(0, len(node.Arguments.Positional)+len(node.Arguments.Named))
-		for _, a := range node.Arguments.Positional {
+		posCount := len(node.Arguments.Positional)
+		nameCount := len(node.Arguments.Named)
+
+		args := ctx.State.Registry.NamedValueBufs.Alloc(posCount+nameCount, posCount+nameCount)
+		for i, a := range node.Arguments.Positional {
 			// v, err := EvaluateNodeStrict(a.Expr, scopeId, ctx)
 			v, err := evaluateNodeLazy(a.Expr, scopeId, ctx)
 			if err != nil {
 				return ValueNone, err
 			}
-			args = append(args, NamedValue{Value: v})
+			args[i] = NamedValue{Value: v}
 		}
-		for _, a := range node.Arguments.Named {
+		for i, a := range node.Arguments.Named {
 			// a.Name
 			// v, err := EvaluateNodeStrict(a.Arg, scopeId, ctx)
 			v, err := evaluateNodeLazy(a.Arg, scopeId, ctx)
@@ -180,7 +183,7 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 				return ValueNone, err
 			}
 			nameKeyId := ctx.State.Interner.Intern(string(a.Name))
-			args = append(args, NamedValue{nameKeyId, v})
+			args[i+posCount] = NamedValue{nameKeyId, v}
 		}
 
 		res, err := val.Function(ctx).Exec(args, ctx)
@@ -452,8 +455,8 @@ func handleBinary(node *ast.Binary, scopeId uint32, ctx Context) (Value, error) 
 		if !right.IsBool() {
 			return ValueNone, fmt.Errorf("unexpected type %s for && op, expected boolean", right.Type().String())
 		}
-		res := left.Bool() && right.Bool()
-		return MakeBool(res), nil
+
+		return right, nil
 
 	case ast.BopOr:
 		if !left.IsBool() {
@@ -472,8 +475,9 @@ func handleBinary(node *ast.Binary, scopeId uint32, ctx Context) (Value, error) 
 		if !right.IsBool() {
 			return ValueNone, fmt.Errorf("unexpected type %s for || op, expected boolean", right.Type().String())
 		}
-		res := left.Bool() || right.Bool()
-		return MakeBool(res), nil
+
+		return right, nil
+
 	default:
 		right, err := EvaluateNode(node.Right, scopeId, ctx)
 		if err != nil {

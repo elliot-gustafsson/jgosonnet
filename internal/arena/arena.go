@@ -18,11 +18,7 @@ func NewArena[T any]() *Arena[T] {
 
 func (a *Arena[T]) Alloc(val T) uint32 {
 	if a.offset >= blockSize {
-		a.current++
-		a.offset = 0
-		if a.current >= len(a.blocks) {
-			a.blocks = append(a.blocks, new([blockSize]T))
-		}
+		a.grow()
 	}
 
 	a.blocks[a.current][a.offset] = val
@@ -34,11 +30,7 @@ func (a *Arena[T]) Alloc(val T) uint32 {
 
 func (a *Arena[T]) New() (*T, uint32) {
 	if a.offset >= blockSize {
-		a.current++
-		a.offset = 0
-		if a.current >= len(a.blocks) {
-			a.blocks = append(a.blocks, new([blockSize]T))
-		}
+		a.grow()
 	}
 
 	ptr := &a.blocks[a.current][a.offset]
@@ -73,4 +65,13 @@ func (a *Arena[T]) Reset() {
 
 	a.current = 0
 	a.offset = 1 // Re-burn index 0 so it can be used as a "nil" check
+}
+
+//go:noinline
+func (a *Arena[T]) grow() {
+	a.current++
+	a.offset = 0
+	if a.current >= len(a.blocks) {
+		a.blocks = append(a.blocks, new([blockSize]T))
+	}
 }

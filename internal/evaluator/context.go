@@ -5,7 +5,6 @@ import (
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
 	"github.com/elliot-gustafsson/jgosonnet/internal/interner"
-	"github.com/google/go-jsonnet"
 	"github.com/google/go-jsonnet/ast"
 )
 
@@ -117,12 +116,15 @@ func (c Context) NewScope(parentId uint32, length int) (*Scope, uint32) {
 func (c Context) GetScopeBind(scopeId, key uint32) (Value, bool) {
 	currId := scopeId
 
-	for {
-		scope := c.State.Registry.Scopes.GetPtr(currId)
+	scopes := c.State.Registry.Scopes
 
-		for i := len(scope.Bindings) - 1; i >= 0; i-- {
-			if scope.Bindings[i].Key == key {
-				return scope.Bindings[i].Value, true
+	for {
+		scope := scopes.GetPtr(currId)
+		bindings := scope.Bindings
+
+		for i := len(bindings) - 1; i >= 0; i-- {
+			if bindings[i].Key == key {
+				return bindings[i].Value, true
 			}
 		}
 
@@ -137,43 +139,6 @@ func (c Context) GetScopeBind(scopeId, key uint32) (Value, bool) {
 		currId = scope.ParentId
 	}
 	return ValueNone, false
-}
-
-type ExtVar interface {
-	Eval(scopeId uint32, ctx Context) (Value, error)
-}
-
-type ExtString struct {
-	Key, Val string
-	v        Value
-}
-
-func (t *ExtString) Eval(scopeId uint32, ctx Context) (Value, error) {
-	if !t.v.IsNone() {
-		return t.v, nil
-	}
-	return MakeString(t.Val, ctx), nil
-}
-
-type ExtCode struct {
-	Key, Val string
-	n        ast.Node
-	v        Value
-}
-
-func (t *ExtCode) Eval(scopeId uint32, ctx Context) (Value, error) {
-	if !t.v.IsNone() {
-		return t.v, nil
-	}
-
-	if t.n == nil {
-		n, err := jsonnet.SnippetToAST(t.Key, t.Val)
-		if err != nil {
-			return ValueNone, err
-		}
-		t.n = n
-	}
-	return EvaluateNode(t.n, scopeId, ctx)
 }
 
 type Environment struct {

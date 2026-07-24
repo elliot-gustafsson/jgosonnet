@@ -28,11 +28,8 @@ func (a *SliceArena[T]) Alloc(items []T) uint32 {
 }
 
 func (a *SliceArena[T]) Make(length int) ([]T, uint32) {
-
-	var targetSlice []T
-
 	if length == 0 {
-		return targetSlice, a.headers.Alloc(targetSlice)
+		return nil, a.headers.Alloc(nil)
 	}
 
 	if length > a.blockSize {
@@ -41,20 +38,12 @@ func (a *SliceArena[T]) Make(length int) ([]T, uint32) {
 		return jumboBlock, a.headers.Alloc(jumboBlock)
 	}
 
-	currBlock := a.elementBlocks[a.activeIdx]
-	if a.offset+length > len(currBlock) {
-		a.activeIdx++
-		a.offset = 0
-		// do we already have a block allocated?
-		if a.activeIdx < len(a.elementBlocks) {
-			currBlock = a.elementBlocks[a.activeIdx]
-		} else {
-			currBlock = make([]T, a.blockSize)
-			a.elementBlocks = append(a.elementBlocks, currBlock)
-		}
+	if a.offset+length > a.blockSize {
+		a.grow()
 	}
 
-	targetSlice = currBlock[a.offset : a.offset+length : a.offset+length]
+	currBlock := a.elementBlocks[a.activeIdx]
+	targetSlice := currBlock[a.offset : a.offset+length : a.offset+length]
 	a.offset += length
 
 	return targetSlice, a.headers.Alloc(targetSlice)
@@ -78,4 +67,14 @@ func (a *SliceArena[T]) Reset() {
 	a.offset = 0
 
 	a.headers.Reset()
+}
+
+//go:noinline
+func (a *SliceArena[T]) grow() {
+	a.activeIdx++
+	a.offset = 0
+	if a.activeIdx < len(a.elementBlocks) {
+		return
+	}
+	a.elementBlocks = append(a.elementBlocks, make([]T, a.blockSize))
 }
