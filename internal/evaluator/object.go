@@ -605,7 +605,7 @@ func manifestObject(obj *Object, ctx Context) (map[string]any, error) {
 	return res, nil
 }
 
-func ManifestObjectRoot(obj *Object, ctx Context) (map[string]Value, error) {
+func ManifestObjectRoot(obj *Object, ctx Context) ([]NamedValue, error) {
 
 	err := runAssertions(obj, ctx)
 	if err != nil {
@@ -614,7 +614,7 @@ func ManifestObjectRoot(obj *Object, ctx Context) (map[string]Value, error) {
 
 	plans := CompileObjectPlan(obj, ctx)
 
-	res := make(map[string]Value, len(plans))
+	res := ctx.State.Registry.NamedValueBufs.Alloc(0, len(plans))
 	for _, plan := range plans {
 		// if len(values) == 0 {
 		// 	continue
@@ -630,8 +630,7 @@ func ManifestObjectRoot(obj *Object, ctx Context) (map[string]Value, error) {
 			return nil, err
 		}
 
-		name := ctx.State.Interner.Get(keyId)
-		res[name] = value
+		res = append(res, NamedValue{keyId, value})
 	}
 
 	return res, nil

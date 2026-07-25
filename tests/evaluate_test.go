@@ -267,27 +267,34 @@ func TestEvaluatorParallel(t *testing.T) {
 
 	jobCh := make(chan string)
 
-	for range 4 {
+	for range 6 {
 		wg.Go(func() {
 
 			for c := range jobCh {
 
 				fmt.Println("running", c)
 
-				stuff, err := interpreter.EvaluateYamlMulti(filepath.Join(infraDir, c+".jsonnet"))
-				assert.NoError(t, err)
+				stuff, err := interpreter.EvaluateYamlMultiIter(filepath.Join(infraDir, c+".jsonnet"))
 				if err != nil {
-					return
+					t.Fatal(err.Error())
 				}
 
 				dir := filepath.Join(infraDir, "manifests", c)
-				for k, v := range stuff {
+				for fo, err := range stuff {
 
-					f, err := os.Create(filepath.Join(dir, k+".yaml"))
-					assert.NoError(t, err)
+					if err != nil {
+						t.Fatal(err.Error())
+					}
 
-					_, err = f.WriteString(v)
-					assert.NoError(t, err)
+					f, err := os.Create(filepath.Join(dir, fo.Filename+".yaml"))
+					if err != nil {
+						t.Fatal(err.Error())
+					}
+
+					_, err = f.WriteString(fo.Content)
+					if err != nil {
+						t.Fatal(err.Error())
+					}
 				}
 
 				fmt.Println("done", c)

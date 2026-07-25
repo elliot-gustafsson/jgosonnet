@@ -3,6 +3,7 @@ package jgosonnet
 import (
 	"fmt"
 	"io"
+	"iter"
 	"os"
 	"strings"
 	"sync"
@@ -25,6 +26,11 @@ type Evaluator struct {
 type NativeFunction struct {
 	Args map[string]any
 	Fn   func(args []any) (any, error)
+}
+
+type FileOutput struct {
+	Filename string
+	Content  string
 }
 
 func NewEvaluator() *Evaluator {
@@ -101,22 +107,10 @@ func (t *Evaluator) EvaluateJson(file string) (string, error) {
 }
 
 func (t *Evaluator) EvaluateJsonMulti(file string) (map[string]string, error) {
-	value, ctx, cleanup, err := t.evaluate(file)
+	root, ctx, cleanup, err := t.evaluateMulti(file)
 	defer cleanup()
 	if err != nil {
-		return nil, wrapEvaluationErr(err)
-	}
-
-	if !value.IsObject() {
-		return nil, wrapEvaluationErr(evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, value.Type()))
-	}
-
-	evalCtx := ctx
-	evalCtx.Self = value
-
-	root, err := evaluator.ManifestObjectRoot(value.Object(evalCtx), evalCtx)
-	if err != nil {
-		return nil, wrapManifestationErr(err)
+		return nil, err
 	}
 
 	c := &evaluator.JsonManifestConfig{
@@ -127,12 +121,12 @@ func (t *Evaluator) EvaluateJsonMulti(file string) (map[string]string, error) {
 	}
 
 	res := make(map[string]string, len(root))
-	for key, v := range root {
+	for _, v := range root {
 
 		var b strings.Builder
 		b.Grow(16 * 1024)
 
-		err = evaluator.ManifestJson(&b, v, evalCtx, c)
+		err = evaluator.ManifestJson(&b, v.Value, ctx, c)
 		if err != nil {
 			return nil, wrapManifestationErr(err)
 		}
@@ -140,7 +134,7 @@ func (t *Evaluator) EvaluateJsonMulti(file string) (map[string]string, error) {
 		b.WriteByte('\n')
 
 		// Clone string due to string arena being reset in defer
-		kClone := strings.Clone(key)
+		kClone := strings.Clone(ctx.State.Interner.Get(v.Key))
 
 		res[kClone] = b.String()
 	}
@@ -148,7 +142,53 @@ func (t *Evaluator) EvaluateJsonMulti(file string) (map[string]string, error) {
 	return res, nil
 }
 
-// NOTE: Maybe fully compliant, use with caution
+// The caller MUST range over the returned iterator to execute the manifestation and release
+// underlying evaluation resources back to the pool.
+func (t *Evaluator) EvaluateJsonMultiIter(file string) (iter.Seq2[FileOutput, error], error) {
+	root, ctx, cleanup, err := t.evaluateMulti(file)
+	if err != nil {
+		cleanup()
+		return nil, err
+	}
+
+	c := &evaluator.JsonManifestConfig{
+		IndentStep: "   ",
+		Newline:    "\n",
+		KeyValSep:  ": ",
+		SpaceComma: true,
+	}
+
+	iterator := func(yield func(FileOutput, error) bool) {
+		defer cleanup() // deferred until the caller finishes iterating
+
+		for _, v := range root {
+			var b strings.Builder
+			b.Grow(16 * 1024)
+
+			err := evaluator.ManifestJson(&b, v.Value, ctx, c)
+			if err != nil {
+				yield(FileOutput{}, wrapManifestationErr(err))
+				return
+			}
+			b.WriteByte('\n')
+
+			// Clone string due to string arena being reset in defer
+			kClone := strings.Clone(ctx.State.Interner.Get(v.Key))
+
+			out := FileOutput{
+				Filename: kClone,
+				Content:  b.String(),
+			}
+
+			if !yield(out, nil) {
+				return // Caller broke early
+			}
+		}
+	}
+
+	return iterator, nil
+}
+
 func (t *Evaluator) EvaluateYaml(file string) (string, error) {
 	value, ctx, cleanup, err := t.evaluate(file)
 	defer cleanup()
@@ -177,24 +217,12 @@ func (t *Evaluator) EvaluateYaml(file string) (string, error) {
 	return b.String(), nil
 }
 
-// NOTE: Maybe fully compliant, use with caution
 func (t *Evaluator) EvaluateYamlMulti(file string) (map[string]string, error) {
-	value, ctx, cleanup, err := t.evaluate(file)
+
+	root, ctx, cleanup, err := t.evaluateMulti(file)
 	defer cleanup()
 	if err != nil {
-		return nil, wrapEvaluationErr(err)
-	}
-
-	if !value.IsObject() {
-		return nil, wrapEvaluationErr(evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, value.Type()))
-	}
-
-	evalCtx := ctx
-	evalCtx.Self = value
-
-	root, err := evaluator.ManifestObjectRoot(value.Object(evalCtx), evalCtx)
-	if err != nil {
-		return nil, wrapManifestationErr(err)
+		return nil, err
 	}
 
 	c := evaluator.YamlManifestConfig{
@@ -206,12 +234,12 @@ func (t *Evaluator) EvaluateYamlMulti(file string) (map[string]string, error) {
 	}
 
 	res := make(map[string]string, len(root))
-	for key, v := range root {
+	for _, v := range root {
 
 		var b strings.Builder
 		b.Grow(16 * 1024)
 
-		err = evaluator.ManifestYaml(&b, v, evalCtx, c)
+		err = evaluator.ManifestYaml(&b, v.Value, ctx, c)
 		if err != nil {
 			return nil, wrapManifestationErr(err)
 		}
@@ -219,12 +247,61 @@ func (t *Evaluator) EvaluateYamlMulti(file string) (map[string]string, error) {
 		b.WriteByte('\n')
 
 		// Clone string due to string arena being reset in defer
-		kClone := strings.Clone(key)
+		kClone := strings.Clone(ctx.State.Interner.Get(v.Key))
 
 		res[kClone] = b.String()
 	}
 
 	return res, nil
+}
+
+// The caller MUST range over the returned iterator to execute the manifestation and release
+// underlying evaluation resources back to the pool.
+func (t *Evaluator) EvaluateYamlMultiIter(file string) (iter.Seq2[FileOutput, error], error) {
+
+	root, ctx, cleanup, err := t.evaluateMulti(file)
+	if err != nil {
+		cleanup()
+		return nil, err
+	}
+
+	c := evaluator.YamlManifestConfig{
+		IndentArrayInObjects: true,
+		NaturalSort:          true,
+		FormatIntegers:       true,
+		UseBlockScalars:      true,
+		Modern:               true,
+	}
+
+	iterator := func(yield func(FileOutput, error) bool) {
+		defer cleanup() // deferred until the caller finishes iterating
+
+		for _, v := range root {
+			var b strings.Builder
+			b.Grow(16 * 1024)
+
+			err := evaluator.ManifestYaml(&b, v.Value, ctx, c)
+			if err != nil {
+				yield(FileOutput{}, wrapManifestationErr(err))
+				return
+			}
+			b.WriteByte('\n')
+
+			// Clone string due to string arena being reset in defer
+			kClone := strings.Clone(ctx.State.Interner.Get(v.Key))
+
+			out := FileOutput{
+				Filename: kClone,
+				Content:  b.String(),
+			}
+
+			if !yield(out, nil) {
+				return
+			}
+		}
+	}
+
+	return iterator, nil
 }
 
 type EvaluationEngine struct {
@@ -308,6 +385,28 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 	}
 
 	return value, ctx, cleanup, nil
+}
+
+func (t *Evaluator) evaluateMulti(file string) ([]evaluator.NamedValue, evaluator.Context, func(), error) {
+	value, ctx, cleanup, err := t.evaluate(file)
+	// defer cleanup()
+	if err != nil {
+		return nil, evaluator.Context{}, cleanup, wrapEvaluationErr(err)
+	}
+
+	if !value.IsObject() {
+		return nil, evaluator.Context{}, cleanup, wrapEvaluationErr(evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, value.Type()))
+	}
+
+	evalCtx := ctx
+	evalCtx.Self = value
+
+	root, err := evaluator.ManifestObjectRoot(value.Object(evalCtx), evalCtx)
+	if err != nil {
+		return nil, evaluator.Context{}, cleanup, wrapManifestationErr(err)
+	}
+
+	return root, ctx, cleanup, nil
 }
 
 func wrapEvaluationErr(err error) error {
