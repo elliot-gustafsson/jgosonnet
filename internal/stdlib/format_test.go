@@ -362,7 +362,10 @@ func TestFormat(t *testing.T) {
 				},
 			}
 			val := toValue(tt.args, ctx)
-			got, err := formatString(tt.format, val, ctx)
+			var buf []byte
+			var err error
+			buf, err = formatString(buf, tt.format, val, ctx)
+			got := string(buf)
 			if err != nil {
 				assert.EqualError(t, err, tt.expectedErr)
 				assert.Equal(t, "", got)
@@ -440,7 +443,10 @@ func TestFormatStrings(t *testing.T) {
 				},
 			}
 			val := toValue(tt.args, ctx)
-			got, err := formatString(tt.format, val, ctx)
+			var buf []byte
+			var err error
+			buf, err = formatString(buf, tt.format, val, ctx)
+			got := string(buf)
 			if err != nil {
 				assert.EqualError(t, err, tt.expectedErr)
 				assert.Equal(t, "", got)
@@ -567,7 +573,10 @@ func TestFormatIntegers(t *testing.T) {
 				},
 			}
 			val := toValue(tt.args, ctx)
-			got, err := formatString(tt.format, val, ctx)
+			var buf []byte
+			var err error
+			buf, err = formatString(buf, tt.format, val, ctx)
+			got := string(buf)
 			if err != nil {
 				assert.EqualError(t, err, tt.expectedErr)
 				assert.Equal(t, "", got)
@@ -700,7 +709,10 @@ func TestFormatOctal(t *testing.T) {
 				},
 			}
 			val := toValue(tt.args, ctx)
-			got, err := formatString(tt.format, val, ctx)
+			var buf []byte
+			var err error
+			buf, err = formatString(buf, tt.format, val, ctx)
+			got := string(buf)
 			if err != nil {
 				assert.EqualError(t, err, tt.expectedErr)
 				assert.Equal(t, "", got)
@@ -946,7 +958,10 @@ func TestFormatHex(t *testing.T) {
 				},
 			}
 			val := toValue(tt.args, ctx)
-			got, err := formatString(tt.format, val, ctx)
+			var buf []byte
+			var err error
+			buf, err = formatString(buf, tt.format, val, ctx)
+			got := string(buf)
 			if err != nil {
 				assert.EqualError(t, err, tt.expectedErr)
 				assert.Equal(t, "", got)
@@ -989,7 +1004,10 @@ func TestFormatFloat(t *testing.T) {
 				},
 			}
 			val := toValue(tt.args, ctx)
-			got, err := formatString(tt.format, val, ctx)
+			var buf []byte
+			var err error
+			buf, err = formatString(buf, tt.format, val, ctx)
+			got := string(buf)
 			if err != nil {
 				assert.EqualError(t, err, tt.expectedErr)
 				assert.Equal(t, "", got)

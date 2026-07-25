@@ -71,6 +71,17 @@ func (a *StringArena) AllocConcat(s1, s2 string) uint32 {
 	return a.headers.Alloc(res)
 }
 
+func (a *StringArena) AllocBytes(b []byte) uint32 {
+	length := len(b)
+
+	if length == 0 {
+		return a.headers.Alloc("")
+	}
+
+	res := unsafe.String(unsafe.SliceData(b), length)
+	return a.headers.Alloc(res)
+}
+
 func (a *StringArena) Get(id uint32) string {
 	return a.headers.GetValue(id)
 }

@@ -152,6 +152,10 @@ func MakeString(v string, ctx Context) Value {
 	return box(ValueTypeString, id)
 }
 
+func MakeStringValue(id uint32) Value {
+	return box(ValueTypeString, id)
+}
+
 func MakeStringConst(id uint32) Value {
 	return Value(uint64(box(ValueTypeString, id)) | ValueFlagStringConst)
 }

@@ -30,11 +30,16 @@ func std_format(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 		return evaluator.ValueNone, err
 	}
 
-	str, err := formatString(format, arg, ctx)
+	buf := make([]byte, 0, len(format)+64)
+
+	buf, err = formatString(buf, format, arg, ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	return evaluator.MakeString(str, ctx), nil
+
+	id := ctx.State.Registry.Strings.AllocBytes(buf)
+
+	return evaluator.MakeStringValue(id), nil
 }
 
 const (
@@ -51,12 +56,8 @@ const (
 // - Named args:      Sprintf("Value: %(val)d", map[string]any{"val": 10})
 // - Flags:           %#0- +
 // - Width/Prec:      %10.5f, %*.2f (dynamic width), %.*f (dynamic prec)
-func formatString(str string, data evaluator.Value, ctx evaluator.Context) (string, error) {
+func formatString(b []byte, str string, data evaluator.Value, ctx evaluator.Context) ([]byte, error) {
 	n := len(str)
-
-	var buf strings.Builder
-	// Pre-allocate the length of the format string + reasonable padding buffer
-	buf.Grow(n + 64)
 
 	// 1. Normalize input data into List or Map
 	var args []evaluator.Value
@@ -76,7 +77,7 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 
 	switch data.Type() {
 	default:
-		return "", fmt.Errorf("unsupported data type passed to format: %s, expected string, array, object", data.Type().String())
+		return nil, fmt.Errorf("unsupported data type passed to format: %s, expected string, array, object", data.Type().String())
 	case evaluator.ValueTypeArray:
 		args = data.Array(ctx)
 	case evaluator.ValueTypeObject:
@@ -93,10 +94,10 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 		if str[i] != '%' {
 			next := strings.IndexByte(str[i:], '%')
 			if next == -1 {
-				buf.WriteString(str[i:])
+				b = append(b, str[i:]...)
 				break
 			}
-			buf.WriteString(str[i : i+next])
+			b = append(b, str[i:i+next]...)
 			i += next
 		}
 
@@ -105,12 +106,12 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 		}
 
 		if i >= n {
-			return "", fmt.Errorf("incomplete format string")
+			return nil, fmt.Errorf("incomplete format string")
 		}
 
 		// Handle "%%" (Literal Percent)
 		if str[i] == '%' {
-			buf.WriteByte('%')
+			b = append(b, '%')
 			i++
 			continue
 		}
@@ -121,7 +122,7 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 		if str[i] == '(' {
 			end := strings.IndexByte(str[i:], ')')
 			if end == -1 {
-				return "", fmt.Errorf("incomplete format key")
+				return nil, fmt.Errorf("incomplete format key")
 			}
 			key = str[i+1 : i+end]
 			hasKey = true
@@ -130,7 +131,7 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 
 		// Validate Mode (Named vs Positional)
 		if useNamed && !hasKey {
-			return "", fmt.Errorf("format requires a mapping (%%(key)s) when a dictionary is passed")
+			return nil, fmt.Errorf("format requires a mapping (%%(key)s) when a dictionary is passed")
 		}
 		// if !useNamed && hasKey {
 		// 	return "", fmt.Errorf("format requires a tuple/list (no named keys) when a list is passed")
@@ -165,15 +166,15 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 		if i < n && str[i] == '*' {
 			// Dynamic Width
 			if useNamed {
-				return "", fmt.Errorf("* width not supported with mapping")
+				return nil, fmt.Errorf("* width not supported with mapping")
 			}
 			if argIdx >= len(args) {
-				return "", fmt.Errorf("not enough arguments for format string")
+				return nil, fmt.Errorf("not enough arguments for format string")
 			}
 			if v := args[argIdx]; v.IsNumber() {
 				widthVal = int(v.Number())
 			} else {
-				return "", fmt.Errorf("width requires integer, got %s", v.Type().String())
+				return nil, fmt.Errorf("width requires integer, got %s", v.Type().String())
 			}
 			argIdx++
 			i++
@@ -197,15 +198,15 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 			if i < n && str[i] == '*' {
 				// Dynamic Precision
 				if useNamed {
-					return "", fmt.Errorf("* precision not supported with mapping")
+					return nil, fmt.Errorf("* precision not supported with mapping")
 				}
 				if argIdx >= len(args) {
-					return "", fmt.Errorf("not enough arguments for format string")
+					return nil, fmt.Errorf("not enough arguments for format string")
 				}
 				if v := args[argIdx]; v.IsNumber() {
 					precVal = int(v.Number())
 				} else {
-					return "", fmt.Errorf("precision requires integer, got %s", v.Type().String())
+					return nil, fmt.Errorf("precision requires integer, got %s", v.Type().String())
 				}
 				argIdx++
 				i++
@@ -234,7 +235,7 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 
 		// 6. Parse Verb
 		if i >= n {
-			return "", fmt.Errorf("incomplete format string")
+			return nil, fmt.Errorf("incomplete format string")
 		}
 		verb, size := utf8.DecodeRuneInString(str[i:])
 		i += size
@@ -248,15 +249,15 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 			subCtx.Self = data
 			val, _, err := dict.GetField(keyId, subCtx)
 			if err != nil {
-				return "", err
+				return nil, err
 			}
 			if val.IsNone() {
-				return "", fmt.Errorf("key '%s' not found", key)
+				return nil, fmt.Errorf("key '%s' not found", key)
 			}
 			currentArg = val
 		} else {
 			if argIdx >= len(args) {
-				return "", fmt.Errorf("not enough arguments for format string")
+				return nil, fmt.Errorf("not enough arguments for format string")
 			}
 			currentArg = args[argIdx]
 			argIdx++
@@ -264,7 +265,7 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 
 		currentArg, err := currentArg.Eval(ctx)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
 		width := 0
@@ -285,72 +286,70 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 
 			strVal, err := currentArg.ToString(ctx)
 			if err != nil {
-				return "", err
+				return nil, err
 			}
 
 			if width == 0 && flags == 0 {
-				buf.WriteString(strVal)
+				b = append(b, strVal...)
 				continue
 			}
 
 			// note: jsonnet doesnt support precision on strings
-			writeFormatString(&buf, strVal, width, flags)
+			b = writeFormatString(b, strVal, width, flags)
 
 		case 'd', 'i', 'u': // Integer types
 
 			if !currentArg.IsNumber() {
-				return "", fmt.Errorf("format %%%c requires number", verb)
+				return nil, fmt.Errorf("format %%%c requires number", verb)
 			}
 			num := int64(currentArg.Number())
 
 			if width == 0 && flags == 0 {
-				var dst [64]byte
-				buf.Write(strconv.AppendInt(dst[:0], num, 10))
+				b = strconv.AppendInt(b, num, 10)
 				continue
 			}
 
 			// note: jsonnet doesnt support precision on integer types
-			writeFormatInteger(&buf, num, width, flags)
+			b = writeFormatInteger(b, num, width, flags)
 
 		case 'o': // Octal
 
 			if !currentArg.IsNumber() {
-				return "", fmt.Errorf("format %%%c requires number", verb)
+				return nil, fmt.Errorf("format %%%c requires number", verb)
 			}
 			num := int64(currentArg.Number())
 
 			if width == 0 && prec == -1 && flags == 0 {
-				var dst [64]byte
-				buf.Write(strconv.AppendInt(dst[:0], num, 8))
+				b = strconv.AppendInt(b, num, 8)
 				continue
 			}
 
-			writeFormatOctal(&buf, num, width, prec, flags)
+			b = writeFormatOctal(b, num, width, prec, flags)
 
 		case 'x', 'X': // Hex
 
 			if !currentArg.IsNumber() {
-				return "", fmt.Errorf("format %%%c requires number", verb)
+				return nil, fmt.Errorf("format %%%c requires number", verb)
 			}
 			num := int64(currentArg.Number())
 			uppercase := verb == 'X'
 
 			if width == 0 && prec == -1 && flags == 0 {
-				var dst [64]byte
-				res := strconv.AppendInt(dst[:0], num, 16)
+				idx := len(b)
+
+				b = strconv.AppendInt(b, num, 16)
 				if uppercase {
-					toUppercase(res)
+					toUppercase(b[idx:])
 				}
-				buf.Write(res)
 				continue
 			}
 
-			writeFormatHex(&buf, num, width, flags, uppercase)
+			b = writeFormatHex(b, num, width, flags, uppercase)
 
 		case 'f', 'F', 'e', 'E', 'g', 'G': // Float types
 
 			if !currentArg.IsNumber() {
-				return "", fmt.Errorf("format %%%c requires number", verb)
+				return nil, fmt.Errorf("format %%%c requires number", verb)
 			}
 
 			var uppercase bool
@@ -372,16 +371,16 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 
 			num := currentArg.Number()
 			if width == 0 && flags == 0 {
-				var dst [128]byte
-				res := strconv.AppendFloat(dst[:0], num, fmt, prec, 64)
+				idx := len(b)
+
+				b = strconv.AppendFloat(b, num, fmt, prec, 64)
 				if uppercase {
-					toUppercase(res)
+					toUppercase(b[idx:])
 				}
-				buf.Write(res)
 				continue
 			}
 
-			writeFormatFloat(&buf, num, fmt, width, prec, flags, uppercase)
+			b = writeFormatFloat(b, num, fmt, width, prec, flags, uppercase)
 
 		case 'c':
 			// Character
@@ -390,7 +389,7 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 			case currentArg.IsNumber():
 				n := currentArg.Number()
 				if n > codepointMax {
-					return "", fmt.Errorf("invalid unicode codepoint, got %v", n)
+					return nil, fmt.Errorf("invalid unicode codepoint, got %v", n)
 				}
 				char = rune(n)
 			case currentArg.IsString():
@@ -401,29 +400,29 @@ func formatString(str string, data evaluator.Value, ctx evaluator.Context) (stri
 				}
 				fallthrough
 			default:
-				return "", fmt.Errorf("format %%c requires integer or char")
+				return nil, fmt.Errorf("format %%c requires integer or char")
 			}
 
 			if width == 0 && flags == 0 {
-				buf.WriteRune(char)
+				b = utf8.AppendRune(b, char)
 				continue
 			}
 
-			writeFormatChar(&buf, char, width, flags)
+			b = writeFormatChar(b, char, width, flags)
 
 		default:
-			return "", evaluator.MakeRuntimeError(fmt.Errorf("Unrecognised conversion type: %s", string(verb)))
+			return nil, evaluator.MakeRuntimeError(fmt.Errorf("Unrecognised conversion type: %s", string(verb)))
 		}
 	}
 
 	if !useNamed && argIdx < len(args) {
-		return "", fmt.Errorf("not all arguments converted during string formatting")
+		return nil, fmt.Errorf("not all arguments converted during string formatting")
 	}
 
-	return buf.String(), nil
+	return b, nil
 }
 
-func writePad(b *strings.Builder, zeroPad bool, count int) {
+func writePad(b []byte, zeroPad bool, count int) []byte {
 	const (
 		spaces = "                                                                "
 		zeros  = "0000000000000000000000000000000000000000000000000000000000000000"
@@ -438,54 +437,58 @@ func writePad(b *strings.Builder, zeroPad bool, count int) {
 
 	for count > 0 {
 		if count <= len(chunk) {
-			b.WriteString(chunk[:count])
+			b = append(b, chunk[:count]...)
 			break
 		}
 
-		b.WriteString(chunk)
+		b = append(b, chunk...)
 		count -= len(chunk)
 	}
 
+	return b
 }
 
-func writePadded(buf *strings.Builder, content []byte, prefix string, padLen int, flags uint8) {
+func writePadded(b []byte, content []byte, prefix string, padLen int, flags uint8) []byte {
 	leftJustify := flags&FormatFlagLeftJustify != 0
 	zeroPad := !leftJustify && flags&FormatFlagZeroPad != 0
 
 	// right justified, space padded
 	if !leftJustify && !zeroPad && padLen > 0 {
-		writePad(buf, false, padLen)
+		b = writePad(b, false, padLen)
 	}
 
 	if prefix != "" {
-		buf.WriteString(prefix)
+		b = append(b, prefix...)
 	}
 
 	// right justified, zero padded
 	if zeroPad && padLen > 0 {
-		writePad(buf, true, padLen)
+		b = writePad(b, true, padLen)
 	}
 
-	buf.Write(content)
+	b = append(b, content...)
 
 	// left justified, space padded
 	if leftJustify && padLen > 0 {
-		writePad(buf, false, padLen)
+		b = writePad(b, false, padLen)
 	}
+
+	return b
 }
 
 //go:noinline
-func writeFormatString(buf *strings.Builder, s string, width int, flags uint8) {
+func writeFormatString(b []byte, s string, width int, flags uint8) []byte {
 	padLen := width - utf8.RuneCountInString(s)
 
 	content := unsafe.Slice(unsafe.StringData(s), len(s))
 
 	flags &^= FormatFlagZeroPad
-	writePadded(buf, content, "", padLen, flags)
+	return writePadded(b, content, "", padLen, flags)
 }
 
 //go:noinline
-func writeFormatInteger(buf *strings.Builder, num int64, width int, flags uint8) {
+func writeFormatInteger(b []byte, num int64, width int, flags uint8) []byte {
+
 	var dst [64]byte
 
 	var prefix string
@@ -503,11 +506,12 @@ func writeFormatInteger(buf *strings.Builder, num int64, width int, flags uint8)
 	res := strconv.AppendUint(dst[:0], u, 10)
 
 	padLen := width - len(res) - len(prefix)
-	writePadded(buf, res, prefix, padLen, flags)
+	return writePadded(b, res, prefix, padLen, flags)
 }
 
 //go:noinline
-func writeFormatOctal(buf *strings.Builder, num int64, width, prec int, flags uint8) {
+func writeFormatOctal(b []byte, num int64, width, prec int, flags uint8) []byte {
+
 	var dst [64]byte
 
 	u := uint64(num)
@@ -544,11 +548,12 @@ func writeFormatOctal(buf *strings.Builder, num int64, width, prec int, flags ui
 	}
 
 	padLen := width - len(res) - len(prefix)
-	writePadded(buf, res, prefix, padLen, flags)
+	return writePadded(b, res, prefix, padLen, flags)
 }
 
 //go:noinline
-func writeFormatHex(buf *strings.Builder, num int64, width int, flags uint8, uppercase bool) {
+func writeFormatHex(b []byte, num int64, width int, flags uint8, uppercase bool) []byte {
+
 	var dst [64]byte
 
 	u := uint64(num)
@@ -596,11 +601,12 @@ func writeFormatHex(buf *strings.Builder, num int64, width int, flags uint8, upp
 	}
 
 	padLen := width - len(res) - len(prefix)
-	writePadded(buf, res, prefix, padLen, flags)
+	return writePadded(b, res, prefix, padLen, flags)
 }
 
 //go:noinline
-func writeFormatFloat(buf *strings.Builder, num float64, fmt byte, width, prec int, flags uint8, uppercase bool) {
+func writeFormatFloat(b []byte, num float64, fmt byte, width, prec int, flags uint8, uppercase bool) []byte {
+
 	var dst [128]byte
 
 	res := strconv.AppendFloat(dst[:0], num, fmt, prec, 64)
@@ -649,17 +655,18 @@ func writeFormatFloat(buf *strings.Builder, num float64, fmt byte, width, prec i
 	}
 
 	padLen := width - len(res) - len(prefix)
-	writePadded(buf, res, prefix, padLen, flags)
+	return writePadded(b, res, prefix, padLen, flags)
 }
 
 //go:noinline
-func writeFormatChar(buf *strings.Builder, c rune, width int, flags uint8) {
+func writeFormatChar(b []byte, c rune, width int, flags uint8) []byte {
+
 	var dst [utf8.UTFMax]byte
 	n := utf8.EncodeRune(dst[:], c)
 
 	padLen := width - 1
 	flags &^= FormatFlagZeroPad
-	writePadded(buf, dst[:n], "", padLen, flags)
+	return writePadded(b, dst[:n], "", padLen, flags)
 }
 
 func toUppercase(x []byte) {
