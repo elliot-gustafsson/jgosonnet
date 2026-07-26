@@ -74,10 +74,6 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, indentLevel int,
 		return nil
 	case ValueTypeString:
 		data := value.String(ctx)
-		if data == "" {
-			b.WriteString(`""`)
-			return nil
-		}
 		writeJsonString(b, data)
 		return nil
 	case ValueTypeArray:
@@ -215,6 +211,29 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, indentLevel int,
 }
 
 func writeIndent(b *strings.Builder, indentLevel int, step string) {
+	if step == "" {
+		return
+	}
+
+	// 64 spaces
+	const maxIndentSpaces = "                                                                "
+
+	if step == " " || step == "  " || step == "   " || step == "    " {
+		totalSpaces := indentLevel * len(step)
+
+		for totalSpaces > 0 {
+			if totalSpaces <= len(maxIndentSpaces) {
+				b.WriteString(maxIndentSpaces[:totalSpaces])
+				break
+			}
+
+			b.WriteString(maxIndentSpaces)
+			totalSpaces -= len(maxIndentSpaces)
+		}
+		return
+
+	}
+
 	for range indentLevel {
 		b.WriteString(step)
 	}
@@ -239,6 +258,13 @@ const (
 )
 
 func writeJsonString(b *strings.Builder, s string) {
+	if len(s) == 0 {
+		b.WriteString(`""`)
+		return
+	}
+
+	_ = s[len(s)-1]
+
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		if c < 0x20 || c == '"' || c == '\\' {
@@ -289,6 +315,7 @@ func writeJsonString(b *strings.Builder, s string) {
 	}
 
 	// Fast path: No escapes needed. Just wrap in double quotes
+	b.Grow(len(s) + 2)
 	b.WriteByte('"')
 	b.WriteString(s)
 	b.WriteByte('"')
