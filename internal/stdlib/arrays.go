@@ -46,7 +46,7 @@ func std_makeArray(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 		return evaluator.ValueNone, err
 	}
 
-	allArgs := make([]evaluator.NamedValue, size)
+	allArgs := ctx.State.Registry.NamedValueBufs.Alloc(size, size)
 
 	res, arrVal := evaluator.MakeArraySized(size, ctx)
 	for i := range size {
@@ -554,7 +554,7 @@ func std_map(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 		return evaluator.ValueNone, err
 	}
 
-	allArgs := make([]evaluator.NamedValue, len(arr))
+	allArgs := ctx.State.Registry.NamedValueBufs.Alloc(len(arr), len(arr))
 
 	res, arrVal := evaluator.MakeArraySized(len(arr), ctx)
 	for i, v := range arr {
@@ -584,21 +584,7 @@ func std_mapWithIndex(args []evaluator.NamedValue, ctx evaluator.Context) (evalu
 		return evaluator.ValueNone, err
 	}
 
-	// Create the array once and mutate it to reduce objects on the heap
-	// mapperFuncInput := []evaluator.NamedValue{{}, {}}
-
-	// res := make([]evaluator.Value, 0, len(arr))
-	// for i, v := range arr {
-	// 	mapperFuncInput[0] = evaluator.NamedValue{Value: evaluator.MakeNumber(float64(i))}
-	// 	mapperFuncInput[1] = evaluator.NamedValue{Value: v}
-	// 	out, err := mapFunc.Exec(mapperFuncInput, ctx)
-	// 	if err != nil {
-	// 		return evaluator.ValueNone, err
-	// 	}
-	// 	res = append(res, out)
-	// }
-
-	allArgs := make([]evaluator.NamedValue, len(arr)*2)
+	allArgs := ctx.State.Registry.NamedValueBufs.Alloc(len(arr)*2, len(arr)*2)
 
 	res, arrVal := evaluator.MakeArraySized(len(arr), ctx)
 	for i, v := range arr {

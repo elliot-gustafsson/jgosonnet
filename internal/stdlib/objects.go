@@ -237,7 +237,7 @@ func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	mapCtx := ctx
 	mapCtx.Self = resObjVal
 
-	allArgs := make([]evaluator.NamedValue, len(keys)*2)
+	allArgs := ctx.State.Registry.NamedValueBufs.Alloc(len(keys)*2, len(keys)*2)
 	for i, k := range keys {
 		v := vals[i]
 		idx := i * 2

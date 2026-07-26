@@ -219,15 +219,13 @@ func f(f evaluator.Func, params ...param) func(evaluator.Context) evaluator.Func
 		var fn evaluator.Func
 		fn = func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
-			// TODO: Argument x already provided
-
 			if len(args) > len(argIds) {
 				return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("function expected %d positional argument(s), but got %d", len(argIds), len(args)))
 			}
 
 			var onNamedArgs bool
 
-			orderedArgs := make([]evaluator.NamedValue, len(argIds))
+			orderedArgs := ctx.State.Registry.NamedValueBufs.Alloc(len(argIds), len(argIds))
 			posIdx := 0
 
 			for _, na := range args {
@@ -247,6 +245,10 @@ func f(f evaluator.Func, params ...param) func(evaluator.Context) evaluator.Func
 				found := false
 				for j, aid := range argIds {
 					if aid == na.Key {
+						if !orderedArgs[j].Value.IsNone() {
+							argName := ctx.State.Interner.Get(na.Key)
+							return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("Argument %s already provided", argName))
+						}
 						orderedArgs[j] = na
 						found = true
 						break

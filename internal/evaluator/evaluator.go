@@ -524,6 +524,8 @@ func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, err
 
 		s, childScopeId := ctx.NewScope(scopeId, paramCount)
 
+		// TODO: Throw err on argument x already provided
+
 		posIndex := 0
 		for i := range paramCount {
 			keyId := paramKeyIds[i]
