@@ -37,9 +37,9 @@ func std_format(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 		return evaluator.ValueNone, err
 	}
 
-	id := ctx.State.Registry.Strings.AllocBytes(buf)
+	ptr := ctx.State.Registry.Strings.AllocBytesPtr(buf)
 
-	return evaluator.MakeStringValue(id), nil
+	return evaluator.MakeStringValue(ptr), nil
 }
 
 const (

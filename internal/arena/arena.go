@@ -28,6 +28,17 @@ func (a *Arena[T]) Alloc(val T) uint32 {
 	return id
 }
 
+func (a *Arena[T]) AllocPtr(val T) *T {
+	if a.offset >= blockSize {
+		a.grow()
+	}
+
+	a.blocks[a.current][a.offset] = val
+
+	a.offset++
+	return &a.blocks[a.current][a.offset]
+}
+
 func (a *Arena[T]) New() (*T, uint32) {
 	if a.offset >= blockSize {
 		a.grow()

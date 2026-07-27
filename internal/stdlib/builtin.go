@@ -13,17 +13,21 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 		return evaluator.ValueNone, err
 	}
 
-	layers := make([]*evaluator.Layer, 0, len(inputArr))
-	for _, v := range inputArr {
-
+	objs := make([]*evaluator.Object, len(inputArr))
+	totalLayers := 0
+	for i, v := range inputArr {
 		obj, err := v.EvalObject(ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
 
-		for _, l := range obj.GetLayers(ctx) {
-			layers = append(layers, l)
-		}
+		objs[i] = obj
+		totalLayers += len(obj.GetLayers(ctx))
+	}
+
+	layers := make([]*evaluator.Layer, 0, totalLayers)
+	for _, o := range objs {
+		layers = append(layers, o.GetLayers(ctx)...)
 	}
 
 	objId := evaluator.NewObject(layers, ctx)
@@ -43,7 +47,7 @@ func builtin_flatMapArray(args []evaluator.NamedValue, ctx evaluator.Context) (e
 		return evaluator.ValueNone, err
 	}
 
-	mapperFuncInput := []evaluator.NamedValue{{}}
+	mapperFuncInput := ctx.State.Registry.NamedValueBufs.Alloc(1, 1)
 
 	subArrays := make([][]evaluator.Value, len(inputArr))
 	totalLen := 0

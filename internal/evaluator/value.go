@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"unsafe"
 
 	"github.com/google/go-jsonnet/ast"
 )
@@ -22,10 +23,6 @@ const (
 	ValueTypeFunction
 	ValueTypeThunk
 )
-
-func (t ValueType) IsLiteral() bool {
-	return t == ValueTypeString || t == ValueTypeNumber || t == ValueTypeBool || t == ValueTypeNull
-}
 
 func (t ValueType) String() string {
 	switch t {
@@ -105,30 +102,35 @@ func (t Function) Length() int {
 // Value represents a NaN-boxed 64-bit value.
 // Bit layout for non-float types:
 //
-// 63                   51 50         40 39       32 31                              0
-// |----------------------|-------------|-----------|--------------------------------|
-// |  Float NaN Boundary  |    Flags    | ValueType |         RefId / Payload        |
-// |       (13 bits)      |  (11 bits)  |  (8 bits) |            (32 bits)           |
-// |----------------------|-------------|-----------|--------------------------------|
+// 63                   52| 51 |50       47 46                              0
+// |----------------------|----|-----------|--------------------------------|
+// |  Float NaN Boundary  |Flag| ValueType |             Payload            |
+// |       (12 bits)      |(1b)|  (4 bits) |            (47 bits)           |
+// |----------------------|----|-----------|--------------------------------|
 //
-// - Bits 63-51: Reserved for IEEE-754 Quiet NaN float64 detection.
-// - Bits 50-40: Available for custom boolean flags (e.g., FlagStringConst).
-// - Bits 39-32: ValueType enum.
-// - Bits 31-0 : uint32 Arena ID (or 1/0 for booleans).
+// - Bits 63-52: Reserved for IEEE-754 Quiet NaN float64 detection.
+// - Bits 51: Flag.
+// - Bits 50-47: ValueType enum.
+// - Bits 46-0 : uintptr data (or 1/0 for booleans).
 type Value uint64
 
 const (
-	nanTag         uint64 = 0xFFF8000000000000
-	floatThreshold uint64 = 1 << 19
+	nanTag      = 0xFFF0000000000000 // XOR mask
+	flagMask    = 0x0008000000000000 // Bit 51
+	typeMask    = 0x0007800000000000 // Bits 50-47
+	payloadMask = 0x00007FFFFFFFFFFF // Bits 46-0
+
+	typeShift = 47
 
 	ValueNone Value = 0
-
-	ValueFlagStringConst uint64 = 1 << 40
 )
 
-func box(t ValueType, refId uint32) Value {
-	// pack the type into bits 32-47, and the refId into bits 0-31
-	return Value((uint64(t) << 32) | uint64(refId))
+func boxPtr(t ValueType, ptr unsafe.Pointer) Value {
+	return Value((uint64(t) << typeShift) | uint64(uintptr(ptr)))
+}
+
+func box(t ValueType, val uint32) Value {
+	return Value((uint64(t) << typeShift) | (uint64(val) & payloadMask))
 }
 
 type NamedValue struct {
@@ -148,16 +150,16 @@ func MakeNull() Value {
 }
 
 func MakeString(v string, ctx Context) Value {
-	id := ctx.State.Registry.Strings.Alloc(v)
-	return box(ValueTypeString, id)
+	ptr := ctx.State.Registry.Strings.AllocPtr(v)
+	return boxPtr(ValueTypeString, unsafe.Pointer(ptr))
 }
 
-func MakeStringValue(id uint32) Value {
-	return box(ValueTypeString, id)
+func MakeStringValue(p *string) Value {
+	return boxPtr(ValueTypeString, unsafe.Pointer(p))
 }
 
 func MakeStringConst(id uint32) Value {
-	return Value(uint64(box(ValueTypeString, id)) | ValueFlagStringConst)
+	return box(ValueTypeString, id) | flagMask
 }
 
 func MakeStringConcat(v1, v2 string, ctx Context) Value {
@@ -213,11 +215,17 @@ func MakeTombstoneValue(scope int) Value {
 	return box(ValueTypeNone, uint32(scope))
 }
 
+func (v Value) UnboxPointer() unsafe.Pointer {
+	// return unsafe.Pointer(uintptr(uint64(v) & payloadMask))
+	addr := uintptr(uint64(v) & payloadMask)
+	return *(*unsafe.Pointer)(unsafe.Pointer(&addr))
+}
+
 func (v Value) Type() ValueType {
-	t := uint64(v) >> 32
-	if t >= floatThreshold {
-		return ValueTypeNumber
-	}
+	// if uint64(v) >= nonFloatThreshold {
+	// 	return ValueTypeNumber
+	// }
+	t := (uint64(v) & typeMask) >> typeShift
 	return ValueType(t)
 }
 
@@ -226,10 +234,8 @@ func (v Value) RefId() uint32 {
 }
 
 func (v Value) String(ctx Context) string {
-	if (uint64(v) & ValueFlagStringConst) != 0 {
-		return ctx.State.Interner.Get(v.RefId())
-	}
-	return ctx.State.Registry.Strings.Get(v.RefId())
+	ptr := (*string)(v.UnboxPointer())
+	return *ptr
 }
 
 func (v Value) Number() float64 {
@@ -237,8 +243,8 @@ func (v Value) Number() float64 {
 }
 
 func (v Value) Bool() bool {
-	// Because MakeBool stored 1 or 0 in the RefId slot
-	return uint32(v) == 1
+	// Because MakeBool stored 1 or 0 in the least significant bit
+	return uint8(v) == 1
 }
 
 func (v Value) Array(ctx Context) []Value {
@@ -286,6 +292,16 @@ func (v Value) evalThunk(ctx Context) (Value, error) {
 	thunk = v.Thunk(ctx)
 	thunk.Value = evaledVal
 	return evaledVal, nil
+}
+
+func (v Value) AsStringConst() uint32 {
+	const header uint64 = (uint64(ValueTypeString) << typeShift) | flagMask
+
+	// zero out payload and compare headers
+	if uint64(v)&^payloadMask == header {
+		return uint32(v)
+	}
+	return 0
 }
 
 type RuntimeError struct {
@@ -434,47 +450,39 @@ func (v Value) ToString(ctx Context) (string, error) {
 }
 
 func (v Value) IsNone() bool {
-	return v == 0
-}
-
-func (v Value) IsLiteral() bool {
-	return v.Type().IsLiteral()
+	return v == ValueNone
 }
 
 func (v Value) IsNull() bool {
-	return ValueType(uint64(v)>>32) == ValueTypeNull
+	return uint64(v&typeMask) == uint64(ValueTypeNull)<<typeShift
 }
 
 func (v Value) IsString() bool {
-	return ValueType(uint64(v)>>32) == ValueTypeString
+	return uint64(v&typeMask) == uint64(ValueTypeString)<<typeShift
 }
 
 func (v Value) IsNumber() bool {
-	return (uint64(v) >> 32) >= floatThreshold
+	return (uint64(v) & nanTag) != nanTag
 }
 
 func (v Value) IsBool() bool {
-	return ValueType(uint64(v)>>32) == ValueTypeBool
+	return uint64(v&typeMask) == uint64(ValueTypeBool)<<typeShift
 }
 
 func (v Value) IsThunk() bool {
-	return ValueType(uint64(v)>>32) == ValueTypeThunk
+	return uint64(v&typeMask) == uint64(ValueTypeThunk)<<typeShift
 }
 
 func (v Value) IsObject() bool {
-	return ValueType(uint64(v)>>32) == ValueTypeObject
+	return uint64(v&typeMask) == uint64(ValueTypeObject)<<typeShift
 }
 
 func (v Value) IsFunction() bool {
-	return ValueType(uint64(v)>>32) == ValueTypeFunction
+	return uint64(v&typeMask) == uint64(ValueTypeFunction)<<typeShift
 }
 
 func (v Value) IsArray() bool {
-	return ValueType(uint64(v)>>32) == ValueTypeArray
-}
-
-func (v Value) IsStringConst() bool {
-	return ValueType(uint64(v)>>32) == ValueTypeString && (uint64(v)&ValueFlagStringConst) != 0
+	return uint64(v&typeMask) == uint64(ValueTypeArray)<<typeShift
 }
 
 func (v Value) IsEmpty(ctx Context) bool {
@@ -529,11 +537,7 @@ func (a Value) Equal(b Value, ctx Context) (bool, error) {
 	case ValueTypeNull:
 		return true, nil
 	case ValueTypeString:
-		if a.IsStringConst() && b.IsStringConst() {
-			return a.RefId() == b.RefId(), nil
-		}
-
-		if !a.IsStringConst() && !b.IsStringConst() && a.RefId() == b.RefId() {
+		if a == b {
 			return true, nil
 		}
 
@@ -599,15 +603,15 @@ func (a Value) Compare(b Value, ctx Context) (int, error) {
 	case ValueTypeNull:
 		return 0, nil
 	case ValueTypeString:
-		if a.IsStringConst() && b.IsStringConst() {
-			if a.RefId() == b.RefId() {
-				return 0, nil
-			}
-		} else if !a.IsStringConst() && !b.IsStringConst() {
-			if a.RefId() == b.RefId() {
-				return 0, nil
-			}
-		}
+		// if a.IsStringConst() && b.IsStringConst() {
+		// 	if a.RefId() == b.RefId() {
+		// 		return 0, nil
+		// 	}
+		// } else if !a.IsStringConst() && !b.IsStringConst() {
+		// 	if a.RefId() == b.RefId() {
+		// 		return 0, nil
+		// 	}
+		// }
 		return cmp.Compare(a.String(ctx), b.String(ctx)), nil
 	case ValueTypeNumber:
 		return cmp.Compare(a.Number(), b.Number()), nil

@@ -604,10 +604,8 @@ func handleIndex(node *ast.Index, scopeId uint32, ctx Context) (Value, error) {
 			return ValueNone, MakeRuntimeError(fmt.Errorf("unexpected index type for indexing object, expected string, got %s", index.Type().String()))
 		}
 
-		var keyId uint32
-		if index.IsStringConst() {
-			keyId = index.RefId()
-		} else {
+		keyId := index.AsStringConst()
+		if keyId == 0 {
 			name := index.String(ctx)
 			keyId = ctx.State.Interner.Intern(name)
 		}
@@ -655,10 +653,8 @@ func handleSuperIndex(node *ast.SuperIndex, scopeId uint32, ctx Context) (Value,
 		return ValueNone, errors.New("ctx.Self not set")
 	}
 
-	var keyId uint32
-	if index.IsStringConst() {
-		keyId = index.RefId()
-	} else {
+	keyId := index.AsStringConst()
+	if keyId == 0 {
 		name := index.String(ctx)
 		keyId = ctx.State.Interner.Intern(name)
 	}

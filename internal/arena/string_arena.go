@@ -46,6 +46,30 @@ func (a *StringArena) Alloc(s string) uint32 {
 	return a.headers.Alloc(res)
 }
 
+func (a *StringArena) AllocPtr(s string) *string {
+	length := len(s)
+
+	if length == 0 {
+		return a.headers.AllocPtr("")
+	}
+
+	if length > a.blockSize {
+		return a.headers.AllocPtr(s)
+	}
+
+	if a.offset+length > a.blockSize {
+		a.grow()
+	}
+
+	targetBytes := a.elementBlocks[a.activeIdx][a.offset : a.offset+length]
+	a.offset += length
+
+	copy(targetBytes, s)
+
+	res := unsafe.String(unsafe.SliceData(targetBytes), length)
+	return a.headers.AllocPtr(res)
+}
+
 func (a *StringArena) AllocConcat(s1, s2 string) uint32 {
 	length := len(s1) + len(s2)
 
@@ -80,6 +104,17 @@ func (a *StringArena) AllocBytes(b []byte) uint32 {
 
 	res := unsafe.String(unsafe.SliceData(b), length)
 	return a.headers.Alloc(res)
+}
+
+func (a *StringArena) AllocBytesPtr(b []byte) *string {
+	length := len(b)
+
+	if length == 0 {
+		return a.headers.AllocPtr("")
+	}
+
+	res := unsafe.String(unsafe.SliceData(b), length)
+	return a.headers.AllocPtr(res)
 }
 
 func (a *StringArena) Get(id uint32) string {

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/elliot-gustafsson/jgosonnet"
+	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 	"github.com/google/go-jsonnet"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/yaml.v3"
@@ -466,5 +467,56 @@ func BenchmarkEvaluatorLoop(b *testing.B) {
 
 	println()
 	println("jgosonnet:", jgosonnetDur.String())
+
+}
+
+func TestUnsafeStuff(t *testing.T) {
+
+	// registry := evaluator.NewRegistry()
+
+	// ctx := evaluator.Context{
+	// 	State: &evaluator.ContextState{
+	// 		Registry: registry,
+	// 	},
+	// }
+
+	something := "something"
+
+	// ptr :=
+
+	// addr := uint64(uintptr(unsafe.Pointer(ptr)))
+
+	// // 0000000000000000 001101010001011001101100011101100111011100110000
+
+	// fmt.Printf("Binary: %064b\n\n", addr)
+
+	// unsafe.Pointer(uintptr(uint64(v) & payloadMask))
+
+	// value := evaluator.MakeNull()
+	// assert.Equal(t, true, value.IsNull())
+
+	// assert.Equal(t, true, evaluator.MakeBool(true).Bool())
+	// assert.Equal(t, false, evaluator.MakeBool(false).Bool())
+	// n := evaluator.MakeNumber(math.Inf(-1))
+	// assert.Equal(t, true, n.IsNumber())
+	// assert.Equal(t, 10.32, n.Number())
+
+	// assert.Equal(t, "something", evaluator.MakeStringValuePtr(&something).String(ctx))
+
+	// TODO: have string consts have an uint32 id to a spot in the arena. Comparing a slice of []uint32 is faster than []*string due to uint32 being 4 bytes vs *string vering 8 bytes.
+
+	c := evaluator.MakeStringConst(16)
+
+	// isS := c.IsString()
+
+	// assert.Equal(t, true, isS)
+
+	cType := c.Type().String()
+	cVal := c.AsStringConst()
+
+	assert.Equal(t, "string", cType)
+	assert.Equal(t, uint32(16), cVal)
+
+	assert.NotNil(t, something)
 
 }
