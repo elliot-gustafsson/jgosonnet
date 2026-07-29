@@ -16,28 +16,28 @@ func NewArena[T any]() *Arena[T] {
 	}
 }
 
-func (a *Arena[T]) Alloc(val T) uint32 {
+func (a *Arena[T]) Alloc(val T) (id uint32) {
 	if a.offset >= blockSize {
 		a.grow()
 	}
 
 	a.blocks[a.current][a.offset] = val
 
-	id := uint32(a.current*blockSize + a.offset)
+	id = uint32(a.current*blockSize + a.offset)
 	a.offset++
-	return id
+	return
 }
 
-func (a *Arena[T]) New() (*T, uint32) {
+func (a *Arena[T]) New() (ptr *T, id uint32) {
 	if a.offset >= blockSize {
 		a.grow()
 	}
 
-	ptr := &a.blocks[a.current][a.offset]
+	ptr = &a.blocks[a.current][a.offset]
 
-	id := uint32(a.current*blockSize + a.offset)
+	id = uint32(a.current*blockSize + a.offset)
 	a.offset++
-	return ptr, id
+	return
 }
 
 func (a *Arena[T]) GetPtr(id uint32) *T {

@@ -1,6 +1,8 @@
 package stdlib
 
 import (
+	"unsafe"
+
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 )
 
@@ -251,10 +253,8 @@ func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 		n.Func = mapFunc
 		n.Args = allArgs[idx : idx+2]
 
-		thunk := evaluator.NewThunk(n, 0, mapCtx)
-
 		layer.Keys = append(layer.Keys, k)
-		layer.Values = append(layer.Values, evaluator.MakeThunk(thunk, mapCtx))
+		layer.Values = append(layer.Values, evaluator.NewThunk(evaluator.ThunkTypeGoCallback, unsafe.Pointer(n), 0, mapCtx))
 		layer.Meta = append(layer.Meta, evaluator.DefaultFieldMeta)
 
 	}

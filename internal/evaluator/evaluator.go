@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unsafe"
 
 	"github.com/google/go-jsonnet/ast"
 )
@@ -98,9 +99,12 @@ func CreateFileScope(filename string, baseStd Value, ctx Context) uint32 {
 
 func evaluateNodeLazy(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 	switch node := n.(type) {
+	default:
+		return ValueNone, fmt.Errorf("unhandled node type: %T (lazy eval)", node)
 	case *ast.LiteralString:
-		id := ctx.State.Interner.Intern(node.Value)
-		return MakeStringConst(id), nil
+		// id := ctx.State.Interner.Intern(node.Value)
+		// return MakeStringConst(id), nil
+		return MakeString(node.Value, ctx), nil
 	case *ast.LiteralNull:
 		return MakeNull(), nil
 	case *ast.LiteralBoolean:
@@ -112,14 +116,41 @@ func evaluateNodeLazy(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 		}
 		return MakeNumber(num), nil
 	case *ast.Self:
-		// if ctx.Self.IsNone() {
-		// 	return ValueNone, errors.New("self not set")
-		// }
 		return ctx.Self, nil
+
+	case *ast.DesugaredObject:
+		return NewThunk(ThunkTypeObject, unsafe.Pointer(node), scopeId, ctx), nil
+	case *ast.Array:
+		return NewThunk(ThunkTypeArray, unsafe.Pointer(node), scopeId, ctx), nil
 	case *ast.Local:
-		return handleLocal(node, scopeId, ctx)
-	default:
-		return MakeThunk(NewThunk(node, scopeId, ctx), ctx), nil
+		return NewThunk(ThunkTypeLocal, unsafe.Pointer(node), scopeId, ctx), nil
+	case *ast.Apply:
+		return NewThunk(ThunkTypeApply, unsafe.Pointer(node), scopeId, ctx), nil
+	case *ast.Index:
+		return NewThunk(ThunkTypeIndex, unsafe.Pointer(node), scopeId, ctx), nil
+	case *ast.Var:
+		return NewThunk(ThunkTypeVar, unsafe.Pointer(node), scopeId, ctx), nil
+	case *ast.Function:
+		return NewThunk(ThunkTypeFunction, unsafe.Pointer(node), scopeId, ctx), nil
+	case *ast.Conditional:
+		return NewThunk(ThunkTypeConditional, unsafe.Pointer(node), scopeId, ctx), nil
+	case *ast.Binary:
+		return NewThunk(ThunkTypeBinary, unsafe.Pointer(node), scopeId, ctx), nil
+	case *ast.Unary:
+		return NewThunk(ThunkTypeUnary, unsafe.Pointer(node), scopeId, ctx), nil
+	case *ast.Import:
+		return NewThunk(ThunkTypeImport, unsafe.Pointer(node), scopeId, ctx), nil
+	case *ast.ImportStr:
+		return NewThunk(ThunkTypeImportStr, unsafe.Pointer(node), scopeId, ctx), nil
+	case *ast.SuperIndex:
+		return NewThunk(ThunkTypeSuperIndex, unsafe.Pointer(node), scopeId, ctx), nil
+	case *ast.InSuper:
+		return NewThunk(ThunkTypeInSuper, unsafe.Pointer(node), scopeId, ctx), nil
+	case *ast.Error:
+		return NewThunk(ThunkTypeError, unsafe.Pointer(node), scopeId, ctx), nil
+
+	case *GoCallbackNode:
+		return NewThunk(ThunkTypeGoCallback, unsafe.Pointer(node), scopeId, ctx), nil
 	}
 }
 
@@ -128,8 +159,9 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 	default:
 		return ValueNone, fmt.Errorf("unhandled node type: %T", node)
 	case *ast.LiteralString:
-		id := ctx.State.Interner.Intern(node.Value)
-		return MakeStringConst(id), nil
+		// id := ctx.State.Interner.Intern(node.Value)
+		// return MakeStringConst(id), nil
+		return MakeString(node.Value, ctx), nil
 	case *ast.LiteralNull:
 		return MakeNull(), nil
 	case *ast.LiteralBoolean:
@@ -143,179 +175,37 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 	case *ast.DesugaredObject:
 		return handleDesugaredObject(node, scopeId, ctx)
 	case *ast.Array:
-		arr, val := MakeArraySized(len(node.Elements), ctx)
-		for i := range node.Elements {
-			ev, err := evaluateNodeLazy(node.Elements[i].Expr, scopeId, ctx)
-			if err != nil {
-				return ValueNone, err
-			}
-			arr[i] = ev
-		}
-		return val, nil
+		return handleArray(node, scopeId, ctx)
 	case *ast.Local:
 		return handleLocal(node, scopeId, ctx)
 	case *ast.Apply:
-
-		val, err := EvaluateNode(node.Target, scopeId, ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-
-		if !val.IsFunction() {
-			return ValueNone, TypeErrorSpecific(ValueTypeFunction, val.Type())
-		}
-
-		posCount := len(node.Arguments.Positional)
-		nameCount := len(node.Arguments.Named)
-
-		args := ctx.State.Registry.NamedValueBufs.Alloc(posCount+nameCount, posCount+nameCount)
-		for i, a := range node.Arguments.Positional {
-			// v, err := EvaluateNodeStrict(a.Expr, scopeId, ctx)
-			v, err := evaluateNodeLazy(a.Expr, scopeId, ctx)
-			if err != nil {
-				return ValueNone, err
-			}
-			args[i] = NamedValue{Value: v}
-		}
-		for i, a := range node.Arguments.Named {
-			// a.Name
-			// v, err := EvaluateNodeStrict(a.Arg, scopeId, ctx)
-			v, err := evaluateNodeLazy(a.Arg, scopeId, ctx)
-			if err != nil {
-				return ValueNone, err
-			}
-			nameKeyId := ctx.State.Interner.Intern(string(a.Name))
-			args[i+posCount] = NamedValue{nameKeyId, v}
-		}
-
-		res, err := val.Function(ctx).Exec(args, ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-		return res, nil
+		return handleApply(node, scopeId, ctx)
 	case *ast.Index:
 		return handleIndex(node, scopeId, ctx)
 	case *ast.Var:
-		name := string(node.Id)
-
-		keyId := ctx.State.Interner.Intern(name)
-
-		val, found := ctx.GetScopeBind(scopeId, keyId)
-		if !found {
-			return ValueNone, MakeRuntimeError(fmt.Errorf("variable not found in scope, name: %s", name))
-		}
-
-		return val, nil
+		return handleVar(node, scopeId, ctx)
 	case *ast.Function:
 		return handleFunction(node, scopeId, ctx)
 	case *ast.Conditional:
-		cond, err := EvaluateNode(node.Cond, scopeId, ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-		if !cond.IsBool() {
-			return ValueNone, TypeErrorSpecific(ValueTypeBool, cond.Type())
-		}
-
-		if cond.Bool() {
-			bt, err := EvaluateNode(node.BranchTrue, scopeId, ctx)
-			if err != nil {
-				return ValueNone, err
-			}
-			return bt, nil
-		}
-
-		bf, err := EvaluateNode(node.BranchFalse, scopeId, ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-		return bf, nil
+		return handleConditional(node, scopeId, ctx)
 	case *ast.Binary:
 		return handleBinary(node, scopeId, ctx)
 	case *ast.Unary:
-		unary, err := EvaluateNode(node.Expr, scopeId, ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-
-		switch node.Op {
-		default:
-			return ValueNone, fmt.Errorf("unhandler unary type: %s", node.Op.String())
-		case ast.UopNot:
-			if !unary.IsBool() {
-				return ValueNone, fmt.Errorf("unexpected unary type %s for op %s, expected boolean", unary.Type().String(), node.Op.String())
-			}
-			return MakeBool(!unary.Bool()), nil
-		case ast.UopMinus:
-			if !unary.IsNumber() {
-				return ValueNone, fmt.Errorf("unexpected unary type %s for op %s, expected number", unary.Type().String(), node.Op.String())
-			}
-			res := -unary.Number()
-			return MakeNumber(res), nil
-		case ast.UopBitwiseNot:
-			if !unary.IsNumber() {
-				return ValueNone, fmt.Errorf("unexpected unary type %s for op %s, expected number", unary.Type().String(), node.Op.String())
-			}
-			val32 := int64(unary.Number())
-			notVal32 := ^val32
-			return MakeNumber(float64(notVal32)), nil
-		}
+		return handleUnary(node, scopeId, ctx)
 	case *ast.Import:
-		return handleImport(node, scopeId, ctx)
+		return handleImport(node, ctx)
 	case *ast.ImportStr:
-
-		// TODO: make string cache
-		// importer := ctx.Environment.Importer
-
-		// TODO: take full path here?
-		filePath := string(node.File.Value)
-
-		// currentFileDir := filepath.Dir(node.NodeBase.LocRange.FileName)
-
-		// fp := filepath.Join(currentFileDir, filePath)
-		fp := filePath
-		// fmt.Println(currentFileDir)
-
-		// val := importer.Get(fp)
-		// if !val.IsNone() {
-		// 	return val, nil
-		// }
-
-		fileData, err := os.ReadFile(fp)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return ValueNone, err
-			}
-			return ValueNone, fmt.Errorf("failed importing file: %s, err: %w", fp, err)
-		}
-
-		res := MakeString(string(fileData), ctx)
-
-		// importer.Set(fp, res)
-
-		return res, nil
+		return handleImportStr(node, ctx)
 	case *ast.Self:
-		// if ctx.Self.IsNone() {
-		// 	return ValueNone, errors.New("self not set")
-		// }
 		return ctx.Self, nil
 	case *ast.SuperIndex:
 		return handleSuperIndex(node, scopeId, ctx)
+	case *ast.InSuper:
+		return handleInSuper(node, scopeId, ctx)
 	case *ast.Error:
-		msg, err := EvaluateNode(node.Expr, scopeId, ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-		if !msg.IsString() {
-			return ValueNone, TypeErrorSpecific(ValueTypeString, msg.Type())
-		}
-		return ValueNone, MakeRuntimeError(errors.New(msg.String(ctx)))
+		return handleError(node, scopeId, ctx)
 	case *GoCallbackNode:
-		res, err := node.Func.Exec(node.Args, ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-		return res, nil
+		return node.Func.Exec(node.Args, ctx)
 	}
 }
 
@@ -331,6 +221,18 @@ func (n *GoCallbackNode) SetFreeVariables(ast.Identifiers) {}
 func (n *GoCallbackNode) SetContext(ast.Context)           {}
 func (n *GoCallbackNode) OpenFodder() *ast.Fodder          { return nil }
 
+func handleArray(node *ast.Array, scopeId uint32, ctx Context) (Value, error) {
+	arr, val := MakeArraySized(len(node.Elements), ctx)
+	for i := range node.Elements {
+		ev, err := evaluateNodeLazy(node.Elements[i].Expr, scopeId, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		arr[i] = ev
+	}
+	return val, nil
+}
+
 func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Context) (Value, error) {
 
 	fieldCount := len(node.Fields)
@@ -341,32 +243,26 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 	layer.ParentScopeId = scopeId
 
 	if fieldCount > 0 {
-		layer.Keys = ctx.State.Registry.Uint32Bufs.Alloc(0, fieldCount)
-		layer.Nodes = ctx.State.Registry.NodesBufs.Alloc(0, fieldCount)
-		layer.Meta = ctx.State.Registry.Uint8Bufs.Alloc(0, fieldCount)
+		layer.Keys = ctx.State.Registry.Uint32Bufs.Alloc(fieldCount, fieldCount)
+		layer.Nodes = ctx.State.Registry.NodeBufs.Alloc(fieldCount, fieldCount)
+		layer.Meta = ctx.State.Registry.Uint8Bufs.Alloc(fieldCount, fieldCount)
 	}
 
 	if localsCount > 0 {
-		layer.LocalKeys = ctx.State.Registry.Uint32Bufs.Alloc(0, localsCount)
-		layer.LocalNodes = ctx.State.Registry.NodesBufs.Alloc(0, localsCount)
+		layer.LocalKeys = ctx.State.Registry.Uint32Bufs.Alloc(localsCount, localsCount)
+		layer.LocalNodes = ctx.State.Registry.NodeBufs.Alloc(localsCount, localsCount)
 	}
 
 	if len(node.Asserts) > 0 {
 		layer.AssertsId = ctx.State.Registry.NodeSlices.Alloc(node.Asserts)
 	}
 
-	for _, v := range node.Locals {
-
-		name := string(v.Variable)
-		keyId := ctx.State.Interner.Intern(name)
-
-		layer.LocalKeys = append(layer.LocalKeys, keyId)
-		layer.LocalNodes = append(layer.LocalNodes, v.Body)
-
+	for i, v := range node.Locals {
+		layer.LocalKeys[i] = ctx.State.Interner.Intern(string(v.Variable))
+		layer.LocalNodes[i] = v.Body
 	}
 
 	useMap := fieldCount > MaxLayerLinearKeys
-
 	if useMap {
 		layer.Index = make(map[uint32]int, fieldCount)
 	}
@@ -400,15 +296,20 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 
 		keyId := ctx.State.Interner.Intern(nameStr)
 
-		layer.Keys = append(layer.Keys, keyId)
-		layer.Nodes = append(layer.Nodes, v.Body)
-		layer.Meta = append(layer.Meta, CreateFieldMeta(v.Hide, v.PlusSuper))
+		layer.Keys[index] = keyId
+		layer.Nodes[index] = v.Body
+		layer.Meta[index] = CreateFieldMeta(v.Hide, v.PlusSuper)
 
 		if useMap {
 			layer.Index[keyId] = index
-			index++
 		}
+		index++
+	}
 
+	if index < fieldCount {
+		layer.Keys = layer.Keys[:index]
+		layer.Nodes = layer.Nodes[:index]
+		layer.Meta = layer.Meta[:index]
 	}
 
 	layers := ctx.State.Registry.LayerBufs.Alloc(1, 1)
@@ -438,6 +339,46 @@ func handleLocal(node *ast.Local, scopeId uint32, ctx Context) (Value, error) {
 		return ValueNone, err
 	}
 	return val, nil
+}
+
+func handleApply(node *ast.Apply, scopeId uint32, ctx Context) (Value, error) {
+	val, err := EvaluateNode(node.Target, scopeId, ctx)
+	if err != nil {
+		return ValueNone, err
+	}
+
+	if !val.IsFunction() {
+		return ValueNone, TypeErrorSpecific(ValueTypeFunction, val.Type())
+	}
+
+	posCount := len(node.Arguments.Positional)
+	nameCount := len(node.Arguments.Named)
+
+	args := ctx.State.Registry.NamedValueBufs.Alloc(posCount+nameCount, posCount+nameCount)
+	for i, a := range node.Arguments.Positional {
+		// v, err := EvaluateNodeStrict(a.Expr, scopeId, ctx)
+		v, err := evaluateNodeLazy(a.Expr, scopeId, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		args[i] = NamedValue{Value: v}
+	}
+	for i, a := range node.Arguments.Named {
+		// a.Name
+		// v, err := EvaluateNodeStrict(a.Arg, scopeId, ctx)
+		v, err := evaluateNodeLazy(a.Arg, scopeId, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		nameKeyId := ctx.State.Interner.Intern(string(a.Name))
+		args[i+posCount] = NamedValue{nameKeyId, v}
+	}
+
+	res, err := val.Function(ctx).Exec(args, ctx)
+	if err != nil {
+		return ValueNone, err
+	}
+	return res, nil
 }
 
 func handleBinary(node *ast.Binary, scopeId uint32, ctx Context) (Value, error) {
@@ -502,6 +443,49 @@ func handleBinary(node *ast.Binary, scopeId uint32, ctx Context) (Value, error) 
 		return res, nil
 	}
 
+}
+
+func handleUnary(node *ast.Unary, scopeId uint32, ctx Context) (Value, error) {
+	unary, err := EvaluateNode(node.Expr, scopeId, ctx)
+	if err != nil {
+		return ValueNone, err
+	}
+
+	switch node.Op {
+	default:
+		return ValueNone, fmt.Errorf("unhandler unary type: %s", node.Op.String())
+	case ast.UopNot:
+		if !unary.IsBool() {
+			return ValueNone, fmt.Errorf("unexpected unary type %s for op %s, expected boolean", unary.Type().String(), node.Op.String())
+		}
+		return MakeBool(!unary.Bool()), nil
+	case ast.UopMinus:
+		if !unary.IsNumber() {
+			return ValueNone, fmt.Errorf("unexpected unary type %s for op %s, expected number", unary.Type().String(), node.Op.String())
+		}
+		res := -unary.Number()
+		return MakeNumber(res), nil
+	case ast.UopBitwiseNot:
+		if !unary.IsNumber() {
+			return ValueNone, fmt.Errorf("unexpected unary type %s for op %s, expected number", unary.Type().String(), node.Op.String())
+		}
+		val32 := int64(unary.Number())
+		notVal32 := ^val32
+		return MakeNumber(float64(notVal32)), nil
+	}
+}
+
+func handleVar(node *ast.Var, scopeId uint32, ctx Context) (Value, error) {
+	name := string(node.Id)
+
+	keyId := ctx.State.Interner.Intern(name)
+
+	val, found := ctx.GetScopeBind(scopeId, keyId)
+	if !found {
+		return ValueNone, MakeRuntimeError(fmt.Errorf("variable not found in scope, name: %s", name))
+	}
+
+	return val, nil
 }
 
 func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, error) {
@@ -573,6 +557,30 @@ func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, err
 	}
 
 	return MakeFunction(f, ctx), nil
+}
+
+func handleConditional(node *ast.Conditional, scopeId uint32, ctx Context) (Value, error) {
+	cond, err := EvaluateNode(node.Cond, scopeId, ctx)
+	if err != nil {
+		return ValueNone, err
+	}
+	if !cond.IsBool() {
+		return ValueNone, TypeErrorSpecific(ValueTypeBool, cond.Type())
+	}
+
+	if cond.Bool() {
+		bt, err := EvaluateNode(node.BranchTrue, scopeId, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		return bt, nil
+	}
+
+	bf, err := EvaluateNode(node.BranchFalse, scopeId, ctx)
+	if err != nil {
+		return ValueNone, err
+	}
+	return bf, nil
 }
 
 func handleIndex(node *ast.Index, scopeId uint32, ctx Context) (Value, error) {
@@ -684,18 +692,52 @@ func handleSuperIndex(node *ast.SuperIndex, scopeId uint32, ctx Context) (Value,
 	return val, nil
 }
 
-func handleImport(node *ast.Import, scopeId uint32, ctx Context) (Value, error) {
-	fileVal, err := EvaluateNode(node.File, scopeId, ctx)
+func handleInSuper(node *ast.InSuper, scopeId uint32, ctx Context) (Value, error) {
+	index, err := EvaluateNode(node.Index, scopeId, ctx)
 	if err != nil {
 		return ValueNone, err
 	}
-	if !fileVal.IsString() {
-		return ValueNone, fmt.Errorf("(%T) unexpected file data type '%s'", node, fileVal.Type().String())
+
+	if ctx.Self.IsNone() {
+		return ValueNone, errors.New("ctx.Self not set")
 	}
 
-	file := fileVal.String(ctx)
+	var keyId uint32
+	if index.IsStringConst() {
+		keyId = index.RefId()
+	} else {
+		name := index.String(ctx)
+		keyId = ctx.State.Interner.Intern(name)
+	}
 
-	currentFileDir := filepath.Dir(node.NodeBase.LocRange.FileName)
+	obj := ctx.Self.Object(ctx)
+
+	targetOffset := ctx.SuperOffset + 1
+
+	val, _, err := obj.GetFieldWithOffset(keyId, ctx, int(targetOffset))
+	if err != nil {
+		return ValueNone, err
+	}
+
+	return MakeBool(!val.IsNone()), nil
+}
+
+func handleError(node *ast.Error, scopeId uint32, ctx Context) (Value, error) {
+	msg, err := EvaluateNode(node.Expr, scopeId, ctx)
+	if err != nil {
+		return ValueNone, err
+	}
+	if !msg.IsString() {
+		return ValueNone, TypeErrorSpecific(ValueTypeString, msg.Type())
+	}
+	return ValueNone, MakeRuntimeError(errors.New(msg.String(ctx)))
+}
+
+func handleImport(node *ast.Import, ctx Context) (Value, error) {
+
+	// TODO: optimize import loop below
+
+	file := node.File.Value
 
 	var importedNode ast.Node
 	var finalPath string
@@ -704,7 +746,7 @@ func handleImport(node *ast.Import, scopeId uint32, ctx Context) (Value, error) 
 
 	dirs := []string{""}
 	if !filepath.IsAbs(file) {
-		dirs = []string{currentFileDir}
+		dirs = []string{filepath.Dir(node.NodeBase.LocRange.FileName)}
 		dirs = append(dirs, importer.JPaths...)
 	}
 
@@ -756,4 +798,37 @@ func handleImport(node *ast.Import, scopeId uint32, ctx Context) (Value, error) 
 
 	return v, nil
 
+}
+
+func handleImportStr(node *ast.ImportStr, ctx Context) (Value, error) {
+	// TODO: make string cache
+	// importer := ctx.Environment.Importer
+
+	// TODO: take full path here?
+	filePath := string(node.File.Value)
+
+	// currentFileDir := filepath.Dir(node.NodeBase.LocRange.FileName)
+
+	// fp := filepath.Join(currentFileDir, filePath)
+	fp := filePath
+	// fmt.Println(currentFileDir)
+
+	// val := importer.Get(fp)
+	// if !val.IsNone() {
+	// 	return val, nil
+	// }
+
+	fileData, err := os.ReadFile(fp)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return ValueNone, err
+		}
+		return ValueNone, fmt.Errorf("failed importing file: %s, err: %w", fp, err)
+	}
+
+	res := unsafe.String(unsafe.SliceData(fileData), len(fileData))
+
+	// importer.Set(fp, res)
+
+	return MakeString(res, ctx), nil
 }

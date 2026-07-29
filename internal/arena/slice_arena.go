@@ -20,11 +20,11 @@ func NewSliceArena[T any](elementBlockSize int) *SliceArena[T] {
 	}
 }
 
-func (a *SliceArena[T]) Alloc(items []T) uint32 {
+func (a *SliceArena[T]) Alloc(items []T) (id uint32) {
 	length := len(items)
 	slice, id := a.Make(length)
 	copy(slice, items)
-	return id
+	return
 }
 
 func (a *SliceArena[T]) Make(length int) ([]T, uint32) {

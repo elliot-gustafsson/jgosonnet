@@ -71,10 +71,8 @@ func (i *Interner) Get(id uint32) string {
 }
 
 func (i *Interner) Reset() {
-	i.table = make([]entry, defaultInternerSize)
-	i.strings = make([]string, 1, 8192)
-	i.strings[0] = ""
-	i.mask = defaultInternerMask
+	clear(i.table)
+	i.strings = i.strings[:1]
 	i.count = 0
 }
 

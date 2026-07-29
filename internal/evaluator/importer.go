@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"unsafe"
 
 	"github.com/google/go-jsonnet"
 	"github.com/google/go-jsonnet/ast"
@@ -18,7 +19,7 @@ type Importer struct {
 }
 
 type AstImporter struct {
-	cacheMu  sync.Mutex
+	cacheMu  sync.RWMutex
 	astCache map[string]ast.Node
 }
 
@@ -57,31 +58,38 @@ func (i *Importer) ResolveImport(filePath string) (ast.Node, error) {
 
 func (t *AstImporter) ResolveSnippet(name, data string) (ast.Node, error) {
 
-	t.cacheMu.Lock()
+	t.cacheMu.RLock()
 	importedNode, exist := t.astCache[name]
-	t.cacheMu.Unlock()
+	t.cacheMu.RUnlock()
 
 	if exist {
 		return importedNode, nil
 	}
 
-	importedNode, err := jsonnet.SnippetToAST(name, string(data))
+	importedNode, err := jsonnet.SnippetToAST(name, data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve snippet %s, err: %w", name, err)
 	}
 
 	t.cacheMu.Lock()
+	defer t.cacheMu.Unlock()
+
+	// Double check import cache again
+	existing, exist := t.astCache[name]
+	if exist {
+		return existing, nil
+	}
+
 	t.astCache[name] = importedNode
-	t.cacheMu.Unlock()
 
 	return importedNode, nil
 }
 
 func (t *AstImporter) ResolveImport(filePath string) (ast.Node, error) {
 
-	t.cacheMu.Lock()
+	t.cacheMu.RLock()
 	importedNode, exist := t.astCache[filePath]
-	t.cacheMu.Unlock()
+	t.cacheMu.RUnlock()
 
 	if exist {
 		return importedNode, nil
@@ -95,14 +103,23 @@ func (t *AstImporter) ResolveImport(filePath string) (ast.Node, error) {
 		return nil, fmt.Errorf("failed importing file: %s, err: %w", filePath, err)
 	}
 
-	importedNode, err = jsonnet.SnippetToAST(filePath, string(fileData))
+	dataStr := unsafe.String(unsafe.SliceData(fileData), len(fileData))
+
+	importedNode, err = jsonnet.SnippetToAST(filePath, dataStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve import %s, err: %w", filePath, err)
 	}
 
 	t.cacheMu.Lock()
+	defer t.cacheMu.Unlock()
+
+	// Double check import cache again
+	existing, exist := t.astCache[filePath]
+	if exist {
+		return existing, nil
+	}
+
 	t.astCache[filePath] = importedNode
-	t.cacheMu.Unlock()
 
 	return importedNode, nil
 }

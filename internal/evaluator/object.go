@@ -133,26 +133,25 @@ type Object struct {
 	AssertionState uint8
 }
 
-func (t *Object) GetField(key uint32, ctx Context) (Value, bool, error) {
-	return t.getField(key, ctx, 0)
-}
+func (t *Object) GetField(key uint32, ctx Context) (val Value, vis bool, err error) {
+	val, vis, ok := t.Cache.Get(key)
+	if ok {
+		return
+	}
+	val, vis, err = t.getField(key, ctx, 0)
 
-func (t *Object) GetSuperField(key uint32, ctx Context) (Value, bool, error) {
-	return t.getField(key, ctx, 1)
+	if err == nil {
+		t.Cache.Set(key, val, vis)
+	}
+	return
 }
 
 func (t *Object) GetFieldWithOffset(key uint32, ctx Context, offset int) (Value, bool, error) {
 	return t.getField(key, ctx, offset)
 }
 
+//go:noinline
 func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visible bool, err error) {
-
-	if offset == 0 {
-		value, visible, ok := t.Cache.Get(key)
-		if ok {
-			return value, visible, nil
-		}
-	}
 
 	err = runAssertions(t, ctx)
 	if err != nil {
@@ -241,10 +240,6 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 	}
 
 	visible = currentVisibility != ast.ObjectFieldHidden
-
-	if offset == 0 {
-		t.Cache.Set(key, res, visible)
-	}
 
 	return res, visible, nil
 }
@@ -651,7 +646,7 @@ func getValue(obj *Object, layerId, fieldId int, ctx Context) (Value, error) {
 		n := l.Nodes[fieldId]
 
 		evalCtx := ctx
-		evalCtx.SuperOffset = int32(len(layers) - 1 - layerId)
+		evalCtx.SuperOffset = uint32(len(layers) - 1 - layerId)
 
 		scopeId, err := obj.getScope(layerId, l, evalCtx)
 		if err != nil {
@@ -687,7 +682,7 @@ func runAssertions(obj *Object, ctx Context) error {
 		}
 
 		evalCtx := ctx
-		evalCtx.SuperOffset = int32(len(layers) - 1 - i)
+		evalCtx.SuperOffset = uint32(len(layers) - 1 - i)
 
 		scopeId, err := obj.getScope(i, layer, evalCtx)
 		if err != nil {

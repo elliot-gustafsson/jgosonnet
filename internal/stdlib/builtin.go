@@ -25,9 +25,12 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 		totalLayers += len(obj.GetLayers(ctx))
 	}
 
-	layers := make([]*evaluator.Layer, 0, totalLayers)
+	layers := make([]*evaluator.Layer, totalLayers)
+	index := 0
 	for _, o := range objs {
-		layers = append(layers, o.GetLayers(ctx)...)
+		objLayers := o.GetLayers(ctx)
+		copy(layers[index:], objLayers)
+		index += len(objLayers)
 	}
 
 	objId := evaluator.NewObject(layers, ctx)
@@ -49,7 +52,7 @@ func builtin_flatMapArray(args []evaluator.NamedValue, ctx evaluator.Context) (e
 
 	mapperFuncInput := ctx.State.Registry.NamedValueBufs.Alloc(1, 1)
 
-	subArrays := make([][]evaluator.Value, len(inputArr))
+	subArrayValues := make([]evaluator.Value, len(inputArr))
 	totalLen := 0
 	for i, v := range inputArr {
 		mapperFuncInput[0] = evaluator.NamedValue{Value: v}
@@ -60,15 +63,17 @@ func builtin_flatMapArray(args []evaluator.NamedValue, ctx evaluator.Context) (e
 		if !out.IsArray() {
 			return evaluator.ValueNone, fmt.Errorf("unexpected response type of builtin_flatMapArray map func call: %s, expected array", out.Type().String())
 		}
+		subArrayValues[i] = out
+		totalLen += len(out.Array(ctx))
+	}
+
+	res, val := evaluator.MakeArraySized(totalLen, ctx)
+	index := 0
+	for _, out := range subArrayValues {
 		arr := out.Array(ctx)
-		subArrays[i] = arr
-		totalLen += len(arr)
+		copy(res[index:], arr)
+		index += len(arr)
 	}
 
-	res := make([]evaluator.Value, 0, totalLen)
-	for _, arr := range subArrays {
-		res = append(res, arr...)
-	}
-
-	return evaluator.MakeArray(res, ctx), nil
+	return val, nil
 }

@@ -19,7 +19,7 @@ type Context struct {
 
 	Self Value // self
 
-	SuperOffset int32
+	SuperOffset uint32
 }
 
 type Registry struct {
@@ -32,7 +32,6 @@ type Registry struct {
 	Scopes *arena.Arena[Scope]
 	Layers *arena.Arena[Layer]
 
-	Nodes           *arena.Arena[ast.Node]
 	GoCallbackNodes *arena.Arena[GoCallbackNode]
 
 	NodeSlices *arena.SliceArena[ast.Node]
@@ -41,7 +40,7 @@ type Registry struct {
 	Uint32Bufs     *arena.BufferArena[uint32]
 	LayerBufs      *arena.BufferArena[*Layer]
 	NamedValueBufs *arena.BufferArena[NamedValue]
-	NodesBufs      *arena.BufferArena[ast.Node]
+	NodeBufs       *arena.BufferArena[ast.Node]
 
 	LayerRefBufs  *arena.BufferArena[LayerRef]
 	FieldPlanBufs *arena.BufferArena[FieldPlan]
@@ -68,7 +67,6 @@ func NewRegistry() *Registry {
 		Scopes: arena.NewArena[Scope](),
 		Layers: arena.NewArena[Layer](),
 
-		Nodes:           arena.NewArena[ast.Node](),
 		GoCallbackNodes: arena.NewArena[GoCallbackNode](),
 
 		NodeSlices: arena.NewSliceArena[ast.Node](128),
@@ -77,7 +75,7 @@ func NewRegistry() *Registry {
 		Uint32Bufs:     arena.NewBufferArena[uint32](bufferArenaBlockSize),
 		LayerBufs:      arena.NewBufferArena[*Layer](bufferArenaBlockSize),
 		NamedValueBufs: arena.NewBufferArena[NamedValue](bufferArenaBlockSize),
-		NodesBufs:      arena.NewBufferArena[ast.Node](bufferArenaBlockSize),
+		NodeBufs:       arena.NewBufferArena[ast.Node](bufferArenaBlockSize),
 
 		LayerRefBufs:  arena.NewBufferArena[LayerRef](bufferArenaBlockSize),
 		FieldPlanBufs: arena.NewBufferArena[FieldPlan](bufferArenaBlockSize),
@@ -94,7 +92,6 @@ func (t *Registry) Reset() {
 	t.Scopes.Reset()
 	t.Layers.Reset()
 
-	t.Nodes.Reset()
 	t.GoCallbackNodes.Reset()
 
 	t.NodeSlices.Reset()
@@ -103,7 +100,7 @@ func (t *Registry) Reset() {
 	t.Uint32Bufs.Reset()
 	t.LayerBufs.Reset()
 	t.NamedValueBufs.Reset()
-	t.NodesBufs.Reset()
+	t.NodeBufs.Reset()
 
 	t.LayerRefBufs.Reset()
 	t.FieldPlanBufs.Reset()
@@ -119,7 +116,7 @@ func (c Context) NewScope(parentId uint32, length int) (*Scope, uint32) {
 	return s, id
 }
 
-func (c Context) GetScopeBind(scopeId, key uint32) (Value, bool) {
+func (c Context) GetScopeBind(scopeId, key uint32) (val Value, found bool) {
 	currId := scopeId
 
 	scopes := c.State.Registry.Scopes
@@ -130,7 +127,8 @@ func (c Context) GetScopeBind(scopeId, key uint32) (Value, bool) {
 
 		for i := len(bindings) - 1; i >= 0; i-- {
 			if bindings[i].Key == key {
-				return bindings[i].Value, true
+				val, found = bindings[i].Value, true
+				return
 			}
 		}
 
@@ -144,7 +142,7 @@ func (c Context) GetScopeBind(scopeId, key uint32) (Value, bool) {
 
 		currId = scope.ParentId
 	}
-	return ValueNone, false
+	return
 }
 
 type Environment struct {

@@ -19,7 +19,7 @@ func NewBufferArena[T any](elementBlockSize int) *BufferArena[T] {
 }
 
 // Alloc mimics make([]T, length, capacity).
-func (a *BufferArena[T]) Alloc(length, capacity int) []T {
+func (a *BufferArena[T]) Alloc(length, capacity int) (buf []T) {
 	if capacity < length {
 		capacity = length
 	}
@@ -37,12 +37,12 @@ func (a *BufferArena[T]) Alloc(length, capacity int) []T {
 
 	currBlock := a.elementBlocks[a.activeIdx]
 	// slice off the requested memory
-	targetSlice := currBlock[a.offset : a.offset+length : a.offset+capacity]
+	buf = currBlock[a.offset : a.offset+length : a.offset+capacity]
 
 	// move the arena offset forward by the capacity claimed
 	a.offset += capacity
 
-	return targetSlice
+	return
 }
 
 func (a *BufferArena[T]) Reset() {

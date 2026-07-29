@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unsafe"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 )
@@ -57,7 +58,7 @@ func std_makeArray(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 		n.Func = mapperFunc
 		n.Args = allArgs[i : i+1]
 
-		res[i] = evaluator.MakeThunk(evaluator.NewThunk(n, 0, ctx), ctx)
+		res[i] = evaluator.NewThunk(evaluator.ThunkTypeGoCallback, unsafe.Pointer(n), 0, ctx)
 
 	}
 
@@ -565,7 +566,7 @@ func std_map(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 		n.Func = mapFunc
 		n.Args = allArgs[i : i+1]
 
-		res[i] = evaluator.MakeThunk(evaluator.NewThunk(n, 0, ctx), ctx)
+		res[i] = evaluator.NewThunk(evaluator.ThunkTypeGoCallback, unsafe.Pointer(n), 0, ctx)
 
 	}
 
@@ -597,7 +598,7 @@ func std_mapWithIndex(args []evaluator.NamedValue, ctx evaluator.Context) (evalu
 		n.Func = mapFunc
 		n.Args = allArgs[idx : idx+2]
 
-		res[i] = evaluator.MakeThunk(evaluator.NewThunk(n, 0, ctx), ctx)
+		res[i] = evaluator.NewThunk(evaluator.ThunkTypeGoCallback, unsafe.Pointer(n), 0, ctx)
 
 	}
 

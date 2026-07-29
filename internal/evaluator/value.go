@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"math"
 	"strings"
-
-	"github.com/google/go-jsonnet/ast"
 )
 
 type ValueType uint8
@@ -49,26 +47,6 @@ func (t ValueType) String() string {
 		return "thunk"
 	default:
 		return fmt.Sprintf("unknown (%d)", t)
-	}
-}
-
-type ThunkEvalFunc func(Context) (Value, error)
-
-type Thunk struct {
-	NodeId              uint32
-	ScopeId             uint32
-	CapturedSelf        Value
-	CapturedSuperOffset int32
-
-	Value Value
-}
-
-func NewThunk(node ast.Node, scopeId uint32, ctx Context) Thunk {
-	return Thunk{
-		NodeId:              ctx.State.Registry.Nodes.Alloc(node),
-		ScopeId:             scopeId,
-		CapturedSelf:        ctx.Self,
-		CapturedSuperOffset: ctx.SuperOffset,
 	}
 }
 
@@ -143,74 +121,88 @@ type CachedValue struct {
 	Visible bool
 }
 
-func MakeNull() Value {
-	return box(ValueTypeNull, 0)
+func MakeNull() (rv Value) {
+	rv = box(ValueTypeNull, 0)
+	return
 }
 
-func MakeString(v string, ctx Context) Value {
+func MakeString(v string, ctx Context) (rv Value) {
 	id := ctx.State.Registry.Strings.Alloc(v)
-	return box(ValueTypeString, id)
+	rv = box(ValueTypeString, id)
+	return
 }
 
-func MakeStringValue(id uint32) Value {
-	return box(ValueTypeString, id)
+func MakeStringValue(id uint32) (rv Value) {
+	rv = box(ValueTypeString, id)
+	return
 }
 
 func MakeStringConst(id uint32) Value {
 	return Value(uint64(box(ValueTypeString, id)) | ValueFlagStringConst)
 }
 
-func MakeStringConcat(v1, v2 string, ctx Context) Value {
+func MakeStringConcat(v1, v2 string, ctx Context) (rv Value) {
 	id := ctx.State.Registry.Strings.AllocConcat(v1, v2)
-	return box(ValueTypeString, id)
+	rv = box(ValueTypeString, id)
+	return
 }
 
-func MakeNumber(v float64) Value {
+func MakeNumber(v float64) (rv Value) {
 	bits := math.Float64bits(v)
 	if math.IsNaN(v) {
 		bits = 0x7FF8000000000000
 	}
-	return Value(bits ^ nanTag)
+	rv = Value(bits ^ nanTag)
+	return
 }
 
-func MakeBool(v bool) Value {
+func MakeBool(v bool) (rv Value) {
 	if v {
-		return box(ValueTypeBool, 1)
+		rv = box(ValueTypeBool, 1)
+		return
 	}
-	return box(ValueTypeBool, 0)
+	rv = box(ValueTypeBool, 0)
+	return
 }
 
-func MakeObject(v Object, ctx Context) Value {
+func MakeObject(v Object, ctx Context) (rv Value) {
 	refId := ctx.State.Registry.Objects.Alloc(v)
-	return box(ValueTypeObject, refId)
+	rv = box(ValueTypeObject, refId)
+	return
 }
 
-func MakeObjectValue(id uint32) Value {
-	return box(ValueTypeObject, id)
+func MakeObjectValue(id uint32) (rv Value) {
+	rv = box(ValueTypeObject, id)
+	return
 }
 
-func MakeArray(v []Value, ctx Context) Value {
+func MakeArray(v []Value, ctx Context) (rv Value) {
 	refId := ctx.State.Registry.Arrays.Alloc(v)
-	return box(ValueTypeArray, refId)
+	rv = box(ValueTypeArray, refId)
+	return
 }
 
-func MakeArraySized(l int, ctx Context) ([]Value, Value) {
+func MakeArraySized(l int, ctx Context) (arr []Value, rv Value) {
 	arr, refId := ctx.State.Registry.Arrays.Make(l)
-	return arr, box(ValueTypeArray, refId)
+	rv = box(ValueTypeArray, refId)
+	return
 }
 
-func MakeFunction(v Function, ctx Context) Value {
+func MakeFunction(v Function, ctx Context) (rv Value) {
 	refId := ctx.State.Registry.Functions.Alloc(v)
-	return box(ValueTypeFunction, refId)
+	rv = box(ValueTypeFunction, refId)
+	return
 }
 
-func MakeThunk(v Thunk, ctx Context) Value {
+func MakeThunk(v Thunk, ctx Context) (rv Value) {
 	refId := ctx.State.Registry.Thunks.Alloc(v)
-	return box(ValueTypeThunk, refId)
+	rv = box(ValueTypeThunk, refId)
+	return
 }
 
-func MakeTombstoneValue(scope int) Value {
-	return box(ValueTypeNone, uint32(scope))
+func MakeTombstoneValue(scope int) (rv Value) {
+	rv = box(ValueTypeNone, uint32(scope))
+	return
 }
 
 func (v Value) Type() ValueType {
@@ -257,11 +249,13 @@ func (v Value) Thunk(ctx Context) *Thunk {
 	return ctx.State.Registry.Thunks.GetPtr(v.RefId())
 }
 
-func (v Value) Eval(ctx Context) (Value, error) {
+func (v Value) Eval(ctx Context) (rv Value, err error) {
 	if !v.IsThunk() {
-		return v, nil
+		rv = v
+		return
 	}
-	return v.evalThunk(ctx)
+	rv, err = v.evalThunk(ctx)
+	return
 }
 
 //go:noinline
@@ -272,20 +266,7 @@ func (v Value) evalThunk(ctx Context) (Value, error) {
 		return thunk.Value, nil
 	}
 
-	evalCtx := ctx
-	evalCtx.Self = thunk.CapturedSelf
-	evalCtx.SuperOffset = thunk.CapturedSuperOffset
-
-	node := ctx.State.Registry.Nodes.GetValue(thunk.NodeId)
-
-	evaledVal, err := EvaluateNode(node, thunk.ScopeId, evalCtx)
-	if err != nil {
-		return ValueNone, err
-	}
-
-	thunk = v.Thunk(ctx)
-	thunk.Value = evaledVal
-	return evaledVal, nil
+	return thunk.Eval(ctx)
 }
 
 type RuntimeError struct {

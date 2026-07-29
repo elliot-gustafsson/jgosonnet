@@ -332,80 +332,81 @@ func TestEvaluatorSerial(t *testing.T) {
 	// 	"sto3-prod001",
 	// }
 	x := []string{
-		// "it-it001",
-		// "it-rancher",
-		// "mimir-alerts-dashboards",
-		// "sto1-acce001",
-		// "sto1-build001",
-		// "sto1-dev-analytics001",
-		// "sto1-dev001",
-		// "sto1-harvester001",
-		// "sto1-infra-edge001",
-		// "sto1-infra-public001",
-		// "sto1-infra001",
-		// "sto1-lb001",
-		// "sto1-prod-analytics001",
-		// "sto1-prod-gpu001",
+		"it-it001",
+		"it-rancher",
+		"sto1-acce001",
+		"sto1-build001",
+		"sto1-dev-analytics001",
+		"sto1-dev001",
+		"sto1-harvester001",
+		"sto1-infra-edge001",
+		"sto1-infra-public001",
+		"sto1-infra001",
+		"sto1-lb001",
+		"sto1-prod-analytics001",
+		"sto1-prod-gpu001",
 		"sto1-prod001",
-		// "sto1-rancher",
-		// "sto2-acce001",
-		// "sto2-build001",
-		// "sto2-dev-gpu001",
-		// "sto2-dev001",
-		// "sto2-harvester001",
-		// "sto2-infra-edge001",
-		// "sto2-infra-public001",
-		// "sto2-infra001",
-		// "sto2-lb001",
-		// "sto2-prod-analytics001",
-		// "sto2-prod-gpu001",
+		"sto1-rancher",
+		"sto2-acce001",
+		"sto2-build001",
+		"sto2-dev-gpu001",
+		"sto2-dev001",
+		"sto2-harvester001",
+		"sto2-infra-edge001",
+		"sto2-infra-public001",
+		"sto2-infra001",
+		"sto2-lb001",
+		"sto2-prod-analytics001",
+		"sto2-prod-gpu001",
 		"sto2-prod001",
-		// "sto2-rancher",
-		// "sto3-acce001",
-		// "sto3-build-gpu001",
-		// "sto3-build001",
-		// "sto3-dev001",
-		// "sto3-harvester001",
-		// "sto3-infra-edge001",
-		// "sto3-infra-public001",
-		// "sto3-infra001",
-		// "sto3-lb001",
-		// "sto3-prod-analytics001",
-		// "sto3-prod-gpu001",
+		"sto2-rancher",
+		"sto3-acce001",
+		"sto3-build-gpu001",
+		"sto3-build001",
+		"sto3-dev001",
+		"sto3-harvester001",
+		"sto3-infra-edge001",
+		"sto3-infra-public001",
+		"sto3-infra001",
+		"sto3-lb001",
+		"sto3-prod-analytics001",
+		"sto3-prod-gpu001",
 		"sto3-prod001",
-		// "sto3-rancher",
-		// "vms",
+		"sto3-rancher",
 	}
 	interpreter := jgosonnet.NewEvaluator()
 	interpreter.JPaths([]string{filepath.Join(infraDir, "vendor")})
 
-	wg := sync.WaitGroup{}
+	f, err := os.Create("cpu.prof")
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+	defer f.Close()
+	err = pprof.StartCPUProfile(f)
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+	defer pprof.StopCPUProfile()
 
 	jgosonnetStart := time.Now()
 
 	for _, c := range x {
 		fmt.Println("running", c)
 
-		stuff, err := interpreter.EvaluateYamlMulti(filepath.Join(infraDir, c+".jsonnet"))
-		assert.NoError(t, err)
+		stuff, err := interpreter.EvaluateYamlMultiIter(filepath.Join(infraDir, c+".jsonnet"))
 		if err != nil {
-			return
+			t.Fatal(err.Error())
 		}
 
-		dir := filepath.Join(infraDir, "manifests", c)
-		for k, v := range stuff {
-
-			f, err := os.Create(filepath.Join(dir, k+".yaml"))
-			assert.NoError(t, err)
-
-			_, err = f.WriteString(v)
-			assert.NoError(t, err)
+		// dir := filepath.Join(infraDir, "manifests", c)
+		for _, err := range stuff {
+			if err != nil {
+				t.Fatal(err.Error())
+			}
 		}
 
 		fmt.Println("done", c)
 	}
-
-	wg.Wait()
 
 	jgosonnetDur := time.Since(jgosonnetStart)
 
