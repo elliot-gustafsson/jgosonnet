@@ -5,7 +5,9 @@ import (
 	"math"
 	"unicode/utf8"
 
+	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
+	"github.com/elliot-gustafsson/jgosonnet/internal/utils"
 )
 
 type param struct {
@@ -225,7 +227,7 @@ func f(f evaluator.Func, params ...param) func(evaluator.Context) evaluator.Func
 
 			var onNamedArgs bool
 
-			orderedArgs := ctx.State.Registry.NamedValueBufs.Alloc(len(argIds), len(argIds))
+			orderedArgs := arena.Alloc[evaluator.NamedValue](ctx.State.Registry.Allocator, len(argIds))
 			posIdx := 0
 
 			for _, na := range args {
@@ -276,16 +278,13 @@ func f(f evaluator.Func, params ...param) func(evaluator.Context) evaluator.Func
 func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
 
 	fieldCount := len(functions) + len(constants)
+	allocator := ctx.State.Registry.Allocator
 
-	layer := &evaluator.Layer{
-		Keys:   make([]uint32, 0, fieldCount),
-		Values: make([]evaluator.Value, 0, fieldCount),
-		Meta:   make([]uint8, 0, fieldCount),
-
-		Index: make(map[uint32]int, fieldCount),
-	}
-
-	objId := evaluator.NewObject([]*evaluator.Layer{layer}, ctx)
+	layer, _ := ctx.State.Registry.Layers.New()
+	layer.Keys = arena.Alloc[uint32](allocator, fieldCount)
+	layer.Values = arena.Alloc[evaluator.Value](allocator, fieldCount)
+	layer.Meta = arena.Alloc[uint8](allocator, fieldCount)
+	layer.Index = utils.NewEmptyDescriptorTable(allocator, fieldCount)
 
 	index := 0
 	for name, f := range functions {
@@ -293,11 +292,10 @@ func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
 
 		fVal := f(ctx)
 
-		v := evaluator.MakeFunction(fVal, ctx)
-		layer.Keys = append(layer.Keys, keyId)
-		layer.Values = append(layer.Values, v)
-		layer.Meta = append(layer.Meta, 0)
-		layer.Index[keyId] = index
+		layer.Keys[index] = keyId
+		layer.Values[index] = evaluator.MakeFunction(fVal, ctx)
+
+		layer.Index.Append(keyId)
 
 		index++
 	}
@@ -305,13 +303,17 @@ func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
 	for name, v := range constants {
 		keyId := ctx.State.Interner.Intern(name)
 
-		layer.Keys = append(layer.Keys, keyId)
-		layer.Values = append(layer.Values, v)
-		layer.Meta = append(layer.Meta, 0)
-		layer.Index[keyId] = index
+		layer.Keys[index] = keyId
+		layer.Values[index] = v
+
+		layer.Index.Append(keyId)
 
 		index++
 	}
+
+	layers := ctx.State.Registry.LayerBufs.Alloc(1, 1)
+	layers[0] = layer
+	objId := evaluator.NewObject(layers, ctx)
 
 	val := evaluator.MakeObjectValue(objId)
 

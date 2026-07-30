@@ -9,6 +9,8 @@ import (
 	"strings"
 	"unsafe"
 
+	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
+	"github.com/elliot-gustafsson/jgosonnet/internal/utils"
 	"github.com/google/go-jsonnet/ast"
 )
 
@@ -235,6 +237,8 @@ func handleArray(node *ast.Array, scopeId uint32, ctx Context) (Value, error) {
 
 func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Context) (Value, error) {
 
+	allocator := ctx.State.Registry.Allocator
+
 	fieldCount := len(node.Fields)
 	localsCount := len(node.Locals)
 
@@ -243,18 +247,18 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 	layer.ParentScopeId = scopeId
 
 	if fieldCount > 0 {
-		layer.Keys = ctx.State.Registry.Uint32Bufs.Alloc(fieldCount, fieldCount)
-		layer.Nodes = ctx.State.Registry.NodeBufs.Alloc(fieldCount, fieldCount)
-		layer.Meta = ctx.State.Registry.Uint8Bufs.Alloc(fieldCount, fieldCount)
+		layer.Keys = arena.Alloc[uint32](allocator, fieldCount)
+		layer.Nodes = arena.Alloc[ast.Node](allocator, fieldCount)
+		layer.Meta = arena.Alloc[uint8](allocator, fieldCount)
 	}
 
 	if localsCount > 0 {
-		layer.LocalKeys = ctx.State.Registry.Uint32Bufs.Alloc(localsCount, localsCount)
-		layer.LocalNodes = ctx.State.Registry.NodeBufs.Alloc(localsCount, localsCount)
+		layer.LocalKeys = arena.Alloc[uint32](allocator, localsCount)
+		layer.LocalNodes = arena.Alloc[ast.Node](allocator, localsCount)
 	}
 
 	if len(node.Asserts) > 0 {
-		layer.AssertsId = ctx.State.Registry.NodeSlices.Alloc(node.Asserts)
+		layer.packAsserts(node.Asserts)
 	}
 
 	for i, v := range node.Locals {
@@ -264,7 +268,7 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 
 	useMap := fieldCount > MaxLayerLinearKeys
 	if useMap {
-		layer.Index = make(map[uint32]int, fieldCount)
+		layer.Index = utils.NewEmptyDescriptorTable(allocator, fieldCount)
 	}
 
 	index := 0
@@ -301,7 +305,7 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 		layer.Meta[index] = CreateFieldMeta(v.Hide, v.PlusSuper)
 
 		if useMap {
-			layer.Index[keyId] = index
+			layer.Index.Append(keyId)
 		}
 		index++
 	}
@@ -354,7 +358,7 @@ func handleApply(node *ast.Apply, scopeId uint32, ctx Context) (Value, error) {
 	posCount := len(node.Arguments.Positional)
 	nameCount := len(node.Arguments.Named)
 
-	args := ctx.State.Registry.NamedValueBufs.Alloc(posCount+nameCount, posCount+nameCount)
+	args := arena.Alloc[NamedValue](ctx.State.Registry.Allocator, posCount+nameCount)
 	for i, a := range node.Arguments.Positional {
 		// v, err := EvaluateNodeStrict(a.Expr, scopeId, ctx)
 		v, err := evaluateNodeLazy(a.Expr, scopeId, ctx)
@@ -492,7 +496,7 @@ func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, err
 
 	paramCount := len(node.Parameters)
 
-	paramKeyIds := ctx.State.Registry.Uint32Bufs.Alloc(paramCount, paramCount)
+	paramKeyIds := arena.Alloc[uint32](ctx.State.Registry.Allocator, paramCount)
 	for i, p := range node.Parameters {
 		paramKeyIds[i] = ctx.State.Interner.Intern(string(p.Name))
 	}

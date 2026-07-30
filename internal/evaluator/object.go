@@ -6,7 +6,10 @@ import (
 	"math"
 	"slices"
 	"strings"
+	"unsafe"
 
+	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
+	"github.com/elliot-gustafsson/jgosonnet/internal/utils"
 	"github.com/google/go-jsonnet/ast"
 )
 
@@ -25,12 +28,12 @@ type Layer struct {
 	Values []Value
 	Meta   []uint8
 
-	Index map[uint32]int
+	Index *utils.DescriptorTable
 
 	LocalKeys  []uint32
 	LocalNodes ast.Nodes
 
-	AssertsId uint32
+	AssertsPtr uintptr
 
 	ParentScopeId uint32
 }
@@ -38,8 +41,8 @@ type Layer struct {
 func (l *Layer) findField(key uint32) (layerId int) {
 
 	if l.Index != nil {
-		if i, ok := l.Index[key]; ok {
-			return i
+		if i, ok := l.Index.Get(key); ok {
+			return int(i)
 		}
 	} else {
 		keys := l.Keys
@@ -51,6 +54,36 @@ func (l *Layer) findField(key uint32) (layerId int) {
 	}
 
 	return -1
+}
+
+func (l *Layer) packAsserts(s []ast.Node) {
+	if len(s) > math.MaxUint16 {
+		panic("asserts length exceeds uint16 max (65535)")
+	}
+
+	ptr := uintptr(unsafe.Pointer(unsafe.SliceData(s)))
+
+	const addrMask = (1 << 48) - 1
+	l.AssertsPtr = (uintptr(len(s)) << 48) | (ptr & addrMask)
+}
+
+func (l *Layer) unpackAsserts() []ast.Node {
+	if l.AssertsPtr == 0 {
+		return nil
+	}
+
+	length := int(l.AssertsPtr >> 48)
+
+	// mask of the top 16 bits
+	const lenMask = 0xFFFF << 48
+
+	ptr := unsafe.Pointer(uintptr(*(*unsafe.Pointer)(unsafe.Pointer(&l.AssertsPtr))) &^ lenMask)
+
+	// Note: The row above is equal to "ptr := unsafe.Pointer(l.AssertsPtr &^ lenMask)",
+	// 	they result the same assembly code. Its done this way to not make "go vet"
+	// 	flag it as "possible misuse of unsafe.Pointer".
+
+	return unsafe.Slice((*ast.Node)(ptr), length)
 }
 
 func NewObject(layers []*Layer, ctx Context) uint32 {
@@ -70,7 +103,7 @@ const FieldCacheInlineCount = 4
 type FieldCache struct {
 	inlineKeys    [FieldCacheInlineCount]uint32
 	inlineVals    [FieldCacheInlineCount]Value
-	fieldCache    map[uint32]CachedValue
+	fieldCache    *utils.PropertyMap[Value]
 	inlineCount   uint8
 	inlineVisible uint8
 }
@@ -84,14 +117,14 @@ func (c *FieldCache) Get(key uint32) (v Value, visible bool, ok bool) {
 		}
 	}
 	if c.fieldCache != nil {
-		if entry, ok := c.fieldCache[key]; ok {
-			return entry.Value, entry.Visible, true
+		if entry, meta, ok := c.fieldCache.GetEx(key); ok {
+			return entry, (meta == 1), true
 		}
 	}
 	return ValueNone, false, false
 }
 
-func (c *FieldCache) Set(key uint32, val Value, visible bool) {
+func (c *FieldCache) Set(key uint32, val Value, visible bool, ctx Context) {
 	for i := range c.inlineCount {
 		if c.inlineKeys[i] == key {
 			c.inlineVals[i] = val
@@ -113,10 +146,16 @@ func (c *FieldCache) Set(key uint32, val Value, visible bool) {
 		return
 	}
 
+	allocator := ctx.State.Registry.Allocator
+
 	if c.fieldCache == nil {
-		c.fieldCache = make(map[uint32]CachedValue)
+		c.fieldCache = utils.NewPropertyMap[Value](allocator, 8)
 	}
-	c.fieldCache[key] = CachedValue{val, visible}
+	var meta uint8
+	if visible {
+		meta = 1
+	}
+	c.fieldCache.PutEx(allocator, key, val, meta)
 }
 
 type Object struct {
@@ -141,7 +180,7 @@ func (t *Object) GetField(key uint32, ctx Context) (val Value, vis bool, err err
 	val, vis, err = t.getField(key, ctx, 0)
 
 	if err == nil {
-		t.Cache.Set(key, val, vis)
+		t.Cache.Set(key, val, vis, ctx)
 	}
 	return
 }
@@ -257,7 +296,7 @@ func (t *Object) getScope(layerIndex int, layer *Layer, ctx Context) (uint32, er
 //go:noinline
 func (t *Object) createLayerScope(layerIndex int, layer *Layer, ctx Context) (uint32, error) {
 	if t.Scopes == nil {
-		t.Scopes = ctx.State.Registry.Uint32Bufs.Alloc(len(t.GetLayers(ctx)), len(t.GetLayers(ctx)))
+		t.Scopes = arena.Alloc[uint32](ctx.State.Registry.Allocator, len(t.GetLayers(ctx)))
 	}
 
 	scopeId := t.Scopes[layerIndex]
@@ -407,6 +446,8 @@ func CompileObjectPlanEx(obj *Object, ctx Context, naturalSort bool) []FieldPlan
 }
 
 func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
+	allocator := ctx.State.Registry.Allocator
+
 	layers := obj.GetLayers(ctx)
 
 	maxKeys := 0
@@ -414,7 +455,7 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 		maxKeys += len(layers[i].Keys)
 	}
 
-	plans := ctx.State.Registry.FieldPlanBufs.Alloc(0, maxKeys)
+	plans := arena.Alloc[FieldPlan](allocator, maxKeys)[:0]
 
 	var planIdxMap map[uint32]int
 	useMap := maxKeys > MaxPlanLinearKeys
@@ -447,7 +488,7 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 				plans = append(plans, FieldPlan{
 					KeyId:            keyID,
 					Visibility:       uint8(ast.ObjectFieldInherit),
-					Layers:           ctx.State.Registry.LayerRefBufs.Alloc(0, 4),
+					Layers:           arena.Alloc[LayerRef](allocator, 4)[:0],
 					ShadowUntilLayer: math.MaxUint16,
 				})
 				pIdx = len(plans) - 1
@@ -485,6 +526,10 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 				continue
 			}
 
+			if len(plan.Layers) == cap(plan.Layers) {
+				n := len(plan.Layers)
+				plan.Layers = arena.Realloc(allocator, plan.Layers, n*2)[:n]
+			}
 			plan.Layers = append(plan.Layers, LayerRef{int32(l), int32(f)})
 
 			if !plus {
@@ -513,6 +558,11 @@ func (t *FieldPlan) GetValue(obj *Object, ctx Context) (Value, error) {
 		return value, nil
 	}
 
+	err := runAssertions(obj, ctx)
+	if err != nil {
+		return ValueNone, err
+	}
+
 	layersCount := len(t.Layers)
 
 	if layersCount == 0 {
@@ -523,7 +573,7 @@ func (t *FieldPlan) GetValue(obj *Object, ctx Context) (Value, error) {
 
 	layerRef := t.Layers[0]
 
-	value, err := getValue(obj, int(layerRef.LayerIdx), int(layerRef.FieldIdx), ctx)
+	value, err = getValue(obj, int(layerRef.LayerIdx), int(layerRef.FieldIdx), ctx)
 	if err != nil {
 		return ValueNone, err
 	}
@@ -554,7 +604,7 @@ func (t *FieldPlan) GetValue(obj *Object, ctx Context) (Value, error) {
 		value = res
 	}
 
-	obj.Cache.Set(t.KeyId, value, !t.IsHidden())
+	obj.Cache.Set(t.KeyId, value, !t.IsHidden(), ctx)
 
 	return value, nil
 }
@@ -609,12 +659,9 @@ func ManifestObjectRoot(obj *Object, ctx Context) ([]NamedValue, error) {
 
 	plans := CompileObjectPlan(obj, ctx)
 
-	res := ctx.State.Registry.NamedValueBufs.Alloc(0, len(plans))
+	res := arena.Alloc[NamedValue](ctx.State.Registry.Allocator, len(plans))
+	var index int
 	for _, plan := range plans {
-		// if len(values) == 0 {
-		// 	continue
-		// }
-		keyId := plan.KeyId
 
 		if plan.IsHidden() {
 			continue
@@ -625,7 +672,12 @@ func ManifestObjectRoot(obj *Object, ctx Context) ([]NamedValue, error) {
 			return nil, err
 		}
 
-		res = append(res, NamedValue{keyId, value})
+		res[index] = NamedValue{plan.KeyId, value}
+		index++
+	}
+
+	if index < len(plans) {
+		res = res[:index]
 	}
 
 	return res, nil
@@ -677,7 +729,8 @@ func runAssertions(obj *Object, ctx Context) error {
 	for i := len(layers) - 1; i >= 0; i-- {
 		layer := layers[i]
 
-		if layer.AssertsId == 0 {
+		asserts := layer.unpackAsserts()
+		if asserts == nil {
 			continue
 		}
 
@@ -688,8 +741,6 @@ func runAssertions(obj *Object, ctx Context) error {
 		if err != nil {
 			return err
 		}
-
-		asserts := ctx.State.Registry.NodeSlices.Get(layer.AssertsId)
 
 		for _, n := range asserts {
 			val, err := EvaluateNode(n, scopeId, ctx)
@@ -811,16 +862,17 @@ func (t *Object) Prune(ctx Context) (Value, error) {
 
 	plans := CompileObjectPlan(t, ctx)
 
-	layer := &Layer{
-		Keys: make([]uint32, 0, len(plans)),
-		Meta: make([]uint8, 0, len(plans)),
-	}
+	n := len(plans)
+	allocator := ctx.State.Registry.Allocator
 
-	resObjId := NewObject([]*Layer{layer}, ctx)
+	layer, _ := ctx.State.Registry.Layers.New()
+	layer.Keys = arena.Alloc[uint32](allocator, n)
+	layer.Values = arena.Alloc[Value](allocator, n)
+	layer.Meta = arena.Alloc[uint8](allocator, n)
 
-	useMap := len(plans) > MaxLayerLinearKeys
+	useMap := n > MaxLayerLinearKeys
 	if useMap {
-		layer.Index = make(map[uint32]int, len(layer.Keys))
+		layer.Index = utils.NewEmptyDescriptorTable(allocator, n)
 	}
 
 	index := 0
@@ -849,15 +901,25 @@ func (t *Object) Prune(ctx Context) (Value, error) {
 			continue
 		}
 
-		layer.Keys = append(layer.Keys, plan.KeyId)
-		layer.Values = append(layer.Values, prunedVal)
-		layer.Meta = append(layer.Meta, CreateFieldMeta(ast.ObjectFieldHide(plan.Visibility), false))
+		layer.Keys[index] = plan.KeyId
+		layer.Values[index] = prunedVal
+		layer.Meta[index] = CreateFieldMeta(ast.ObjectFieldHide(plan.Visibility), false)
 
 		if useMap {
-			layer.Index[plan.KeyId] = index
+			layer.Index.Append(plan.KeyId)
 		}
 		index++
 	}
+
+	if index < n {
+		layer.Keys = layer.Keys[:index]
+		layer.Values = layer.Values[:index]
+		layer.Meta = layer.Meta[:index]
+	}
+
+	layers := ctx.State.Registry.LayerBufs.Alloc(1, 1)
+	layers[0] = layer
+	resObjId := NewObject(layers, ctx)
 
 	return MakeObjectValue(resObjId), nil
 }

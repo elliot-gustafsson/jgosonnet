@@ -7,8 +7,11 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"unsafe"
 
+	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
+	"github.com/elliot-gustafsson/jgosonnet/internal/utils"
 	"github.com/google/go-jsonnet/ast"
 	"gopkg.in/yaml.v3"
 )
@@ -55,8 +58,10 @@ func std_parseJson(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 		return evaluator.ValueNone, err
 	}
 
+	jsonBytes := unsafe.Slice(unsafe.StringData(jsonString), len(jsonString))
+
 	var data any
-	err = json.Unmarshal([]byte(jsonString), &data)
+	err = json.Unmarshal(jsonBytes, &data)
 	if err != nil {
 		return evaluator.ValueNone, fmt.Errorf("failed to parse json, err: %w", err)
 	}
@@ -70,7 +75,8 @@ func std_parseYaml(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 		return evaluator.ValueNone, err
 	}
 
-	dec := yaml.NewDecoder(bytes.NewReader([]byte(yamlString)))
+	yamlBytes := unsafe.Slice(unsafe.StringData(yamlString), len(yamlString))
+	dec := yaml.NewDecoder(bytes.NewReader(yamlBytes))
 
 	var documents []any
 	for {
@@ -120,16 +126,17 @@ func rawDataToValue(x any, ctx evaluator.Context) (evaluator.Value, error) {
 	case map[string]any:
 
 		fieldCount := len(data)
+		allocator := ctx.State.Registry.Allocator
 
-		layer := &evaluator.Layer{
-			Keys:  make([]uint32, 0, fieldCount),
-			Nodes: make(ast.Nodes, 0, fieldCount),
-			Meta:  make([]uint8, 0, fieldCount),
+		layer, _ := ctx.State.Registry.Layers.New()
+		layer.Keys = arena.Alloc[uint32](allocator, fieldCount)
+		layer.Nodes = arena.Alloc[ast.Node](allocator, fieldCount)
+		layer.Meta = arena.Alloc[uint8](allocator, fieldCount)
 
-			Index: make(map[uint32]int, fieldCount),
+		useMap := fieldCount > evaluator.MaxLayerLinearKeys
+		if useMap {
+			layer.Index = utils.NewEmptyDescriptorTable(allocator, fieldCount)
 		}
-
-		objId := evaluator.NewObject([]*evaluator.Layer{layer}, ctx)
 
 		index := 0
 		for keyName, value := range data {
@@ -140,13 +147,26 @@ func rawDataToValue(x any, ctx evaluator.Context) (evaluator.Value, error) {
 				return evaluator.ValueNone, err
 			}
 
-			layer.Keys = append(layer.Keys, keyId)
-			layer.Values = append(layer.Values, v)
-			layer.Meta = append(layer.Meta, evaluator.DefaultFieldMeta)
-			layer.Index[keyId] = index
+			layer.Keys[index] = keyId
+			layer.Values[index] = v
+			layer.Meta[index] = evaluator.DefaultFieldMeta
+
+			if useMap {
+				layer.Index.Append(keyId)
+			}
 
 			index++
 		}
+
+		if index < fieldCount {
+			layer.Keys = layer.Keys[:index]
+			layer.Nodes = layer.Nodes[:index]
+			layer.Meta = layer.Meta[:index]
+		}
+
+		layers := ctx.State.Registry.LayerBufs.Alloc(1, 1)
+		layers[0] = layer
+		objId := evaluator.NewObject(layers, ctx)
 
 		return evaluator.MakeObjectValue(objId), nil
 	default:
@@ -162,7 +182,7 @@ func std_encodeUTF8(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 		return evaluator.ValueNone, err
 	}
 
-	strBytes := []byte(str)
+	strBytes := unsafe.Slice(unsafe.StringData(str), len(str))
 	res, arrVal := evaluator.MakeArraySized(len(strBytes), ctx)
 	for i, b := range strBytes {
 		res[i] = evaluator.MakeNumber(float64(b))

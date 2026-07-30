@@ -5,7 +5,6 @@ import (
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
 	"github.com/elliot-gustafsson/jgosonnet/internal/interner"
-	"github.com/google/go-jsonnet/ast"
 )
 
 type ContextState struct {
@@ -34,16 +33,9 @@ type Registry struct {
 
 	GoCallbackNodes *arena.Arena[GoCallbackNode]
 
-	NodeSlices *arena.SliceArena[ast.Node]
+	LayerBufs *arena.BufferArena[*Layer]
 
-	Uint8Bufs      *arena.BufferArena[uint8]
-	Uint32Bufs     *arena.BufferArena[uint32]
-	LayerBufs      *arena.BufferArena[*Layer]
-	NamedValueBufs *arena.BufferArena[NamedValue]
-	NodeBufs       *arena.BufferArena[ast.Node]
-
-	LayerRefBufs  *arena.BufferArena[LayerRef]
-	FieldPlanBufs *arena.BufferArena[FieldPlan]
+	Allocator *arena.Allocator
 }
 
 type Scope struct {
@@ -69,16 +61,9 @@ func NewRegistry() *Registry {
 
 		GoCallbackNodes: arena.NewArena[GoCallbackNode](),
 
-		NodeSlices: arena.NewSliceArena[ast.Node](128),
+		LayerBufs: arena.NewBufferArena[*Layer](bufferArenaBlockSize),
 
-		Uint8Bufs:      arena.NewBufferArena[uint8](bufferArenaBlockSize),
-		Uint32Bufs:     arena.NewBufferArena[uint32](bufferArenaBlockSize),
-		LayerBufs:      arena.NewBufferArena[*Layer](bufferArenaBlockSize),
-		NamedValueBufs: arena.NewBufferArena[NamedValue](bufferArenaBlockSize),
-		NodeBufs:       arena.NewBufferArena[ast.Node](bufferArenaBlockSize),
-
-		LayerRefBufs:  arena.NewBufferArena[LayerRef](bufferArenaBlockSize),
-		FieldPlanBufs: arena.NewBufferArena[FieldPlan](bufferArenaBlockSize),
+		Allocator: arena.NewAllocator(),
 	}
 }
 
@@ -94,16 +79,9 @@ func (t *Registry) Reset() {
 
 	t.GoCallbackNodes.Reset()
 
-	t.NodeSlices.Reset()
-
-	t.Uint8Bufs.Reset()
-	t.Uint32Bufs.Reset()
 	t.LayerBufs.Reset()
-	t.NamedValueBufs.Reset()
-	t.NodeBufs.Reset()
 
-	t.LayerRefBufs.Reset()
-	t.FieldPlanBufs.Reset()
+	t.Allocator.Reset()
 }
 
 func (c Context) NewScope(parentId uint32, length int) (*Scope, uint32) {
@@ -111,7 +89,7 @@ func (c Context) NewScope(parentId uint32, length int) (*Scope, uint32) {
 	s, id := c.State.Registry.Scopes.New()
 
 	s.ParentId = parentId
-	s.Bindings = c.State.Registry.NamedValueBufs.Alloc(length, length)
+	s.Bindings = arena.Alloc[NamedValue](c.State.Registry.Allocator, length)
 
 	return s, id
 }

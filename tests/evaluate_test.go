@@ -25,7 +25,9 @@ func TestEvaluator(t *testing.T) {
 	slog.SetLogLoggerLevel(slog.LevelDebug)
 
 	cwd, err := os.Getwd()
-	assert.NoError(t, err)
+	if err != nil {
+		t.Fatal(err.Error())
+	}
 
 	infraDir := filepath.Join(filepath.Dir(filepath.Dir(cwd)), "infra", "jsonnet", "proact")
 	assert.NotEmpty(t, infraDir)
@@ -38,10 +40,9 @@ func TestEvaluator(t *testing.T) {
 	jgosonnetStart := time.Now()
 	stuff, err := interpreter.EvaluateJson(file)
 	jgosonnetDur := time.Since(jgosonnetStart)
-	assert.NoError(t, err)
-	// if err != nil {
-	// 	return
-	// }
+	if err != nil {
+		t.Fatal(err.Error())
+	}
 
 	println()
 	println("jgosonnet:", jgosonnetDur.String())
@@ -49,7 +50,9 @@ func TestEvaluator(t *testing.T) {
 	goJsonnetStart := time.Now()
 	og, err := GetExpected(file, filepath.Join(infraDir, "vendor"))
 	goJsonnetDur := time.Since(goJsonnetStart)
-	assert.NoError(t, err)
+	if err != nil {
+		t.Fatal(err.Error())
+	}
 
 	println("go-jsonnet:", goJsonnetDur.String())
 	println()

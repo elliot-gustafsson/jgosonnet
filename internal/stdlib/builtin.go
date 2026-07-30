@@ -3,6 +3,7 @@ package stdlib
 import (
 	"fmt"
 
+	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 )
 
@@ -50,7 +51,7 @@ func builtin_flatMapArray(args []evaluator.NamedValue, ctx evaluator.Context) (e
 		return evaluator.ValueNone, err
 	}
 
-	mapperFuncInput := ctx.State.Registry.NamedValueBufs.Alloc(1, 1)
+	mapperFuncInput := arena.Alloc[evaluator.NamedValue](ctx.State.Registry.Allocator, 1)
 
 	subArrayValues := make([]evaluator.Value, len(inputArr))
 	totalLen := 0

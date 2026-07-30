@@ -3,6 +3,7 @@ package stdlib
 import (
 	"unsafe"
 
+	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 )
 
@@ -225,21 +226,23 @@ func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	}
 
 	fieldCount := len(keys)
+	allocator := ctx.State.Registry.Allocator
 
-	layer := &evaluator.Layer{
-		Keys:   make([]uint32, 0, fieldCount),
-		Values: make([]evaluator.Value, 0, fieldCount),
-		Meta:   make([]uint8, 0, fieldCount),
-	}
+	layer, _ := ctx.State.Registry.Layers.New()
 
-	resId := evaluator.NewObject([]*evaluator.Layer{layer}, ctx)
+	layer.Keys = arena.Alloc[uint32](allocator, fieldCount)
+	layer.Values = arena.Alloc[evaluator.Value](allocator, fieldCount)
+	layer.Meta = arena.Alloc[uint8](allocator, fieldCount)
 
+	layers := ctx.State.Registry.LayerBufs.Alloc(1, 1)
+	layers[0] = layer
+	resId := evaluator.NewObject(layers, ctx)
 	resObjVal := evaluator.MakeObjectValue(resId)
 
 	mapCtx := ctx
 	mapCtx.Self = resObjVal
 
-	allArgs := ctx.State.Registry.NamedValueBufs.Alloc(len(keys)*2, len(keys)*2)
+	allArgs := arena.Alloc[evaluator.NamedValue](allocator, len(keys)*2)
 	for i, k := range keys {
 		v := vals[i]
 		idx := i * 2
@@ -253,9 +256,9 @@ func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 		n.Func = mapFunc
 		n.Args = allArgs[idx : idx+2]
 
-		layer.Keys = append(layer.Keys, k)
-		layer.Values = append(layer.Values, evaluator.NewThunk(evaluator.ThunkTypeGoCallback, unsafe.Pointer(n), 0, mapCtx))
-		layer.Meta = append(layer.Meta, evaluator.DefaultFieldMeta)
+		layer.Keys[i] = k
+		layer.Values[i] = evaluator.NewThunk(evaluator.ThunkTypeGoCallback, unsafe.Pointer(n), 0, mapCtx)
+		layer.Meta[i] = evaluator.DefaultFieldMeta
 
 	}
 
@@ -278,14 +281,21 @@ func std_objectRemoveKey(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 		return evaluator.ValueNone, err
 	}
 
+	allocator := ctx.State.Registry.Allocator
+
 	keyId := ctx.State.Interner.Intern(key)
 
 	existingLayers := obj.GetLayers(ctx)
 
 	tombstoneLayer, _ := ctx.State.Registry.Layers.New()
-	tombstoneLayer.Keys = []uint32{keyId}
-	tombstoneLayer.Values = []evaluator.Value{evaluator.MakeTombstoneValue(len(existingLayers))}
-	tombstoneLayer.Meta = []uint8{evaluator.FlagTombstone | evaluator.DefaultFieldMeta}
+	tombstoneLayer.Keys = arena.Alloc[uint32](allocator, 1)
+	tombstoneLayer.Keys[0] = keyId
+
+	tombstoneLayer.Values = arena.Alloc[evaluator.Value](allocator, 1)
+	tombstoneLayer.Values[0] = evaluator.MakeTombstoneValue(len(existingLayers))
+
+	tombstoneLayer.Meta = arena.Alloc[uint8](allocator, 1)
+	tombstoneLayer.Meta[0] = evaluator.FlagTombstone | evaluator.DefaultFieldMeta
 
 	newLen := len(existingLayers) + 1
 	newLayers := ctx.State.Registry.LayerBufs.Alloc(newLen, newLen)
@@ -330,16 +340,17 @@ func std_mergePatch(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	plans := evaluator.CompileObjectPlan(obj, ctx)
 
 	fieldCount := len(plans)
+	allocator := ctx.State.Registry.Allocator
 
-	layer := &evaluator.Layer{
-		Keys:   make([]uint32, 0, fieldCount),
-		Values: make([]evaluator.Value, 0, fieldCount),
-		Meta:   make([]uint8, 0, fieldCount),
-	}
+	layer, _ := ctx.State.Registry.Layers.New()
+	layer.Keys = arena.Alloc[uint32](allocator, fieldCount)
+	layer.Values = arena.Alloc[evaluator.Value](allocator, fieldCount)
+	layer.Meta = arena.Alloc[uint8](allocator, fieldCount)
 
 	subCtx := ctx
 	subCtx.Self = objVal
 
+	var index int
 	for _, plan := range plans {
 		if plan.IsHidden() {
 			continue
@@ -354,13 +365,22 @@ func std_mergePatch(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 			continue
 		}
 
-		layer.Keys = append(layer.Keys, plan.KeyId)
-		layer.Values = append(layer.Values, val)
-		layer.Meta = append(layer.Meta, evaluator.DefaultFieldMeta)
+		layer.Keys[index] = plan.KeyId
+		layer.Values[index] = val
+		layer.Meta[index] = evaluator.DefaultFieldMeta
 
+		index++
 	}
 
-	resObjId := evaluator.NewObject([]*evaluator.Layer{layer}, ctx)
+	if index < fieldCount {
+		layer.Keys = layer.Keys[:index]
+		layer.Values = layer.Values[:index]
+		layer.Meta = layer.Meta[:index]
+	}
+
+	layers := ctx.State.Registry.LayerBufs.Alloc(1, 1)
+	layers[0] = layer
+	resObjId := evaluator.NewObject(layers, ctx)
 
 	return evaluator.MakeObjectValue(resObjId), nil
 
