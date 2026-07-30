@@ -1,6 +1,7 @@
 package arena
 
 import (
+	"runtime"
 	"testing"
 	"unsafe"
 
@@ -17,20 +18,28 @@ var dummyAlign = unsafe.Alignof(DummyStruct{})
 // --- 4. Benchmarks ---
 
 func BenchmarkGenericArena_Alloc(b *testing.B) {
+	runtime.GOMAXPROCS(1)
+
 	a := NewArena[DummyStruct]()
+	b.ResetTimer()
 
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		a.New()
+		x, _ := a.New()
+		_ = x.A
 	}
 }
 
 func BenchmarkByteArena_Alloc(b *testing.B) {
+	runtime.GOMAXPROCS(1)
+
 	a := NewAllocator()
+	b.ResetTimer()
 
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = Create[DummyStruct](a)
+		x := Create[DummyStruct](a)
+		_ = x.A
 	}
 }
 

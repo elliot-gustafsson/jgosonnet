@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	MaxPlanLinearKeys  = 96  // Threshold for compileObjectPlan map fallback
-	MaxLayerLinearKeys = 128 // Threshold for Layer.Index map fallback
+	MaxPlanLinearKeys  = 32 // Threshold for compileObjectPlan map fallback
+	MaxLayerLinearKeys = 32 // Threshold for Layer.Index map fallback
 
 	MaskVisibility = 0x03 // Binary 00000011
 	FlagPlusSuper  = 0x04 // Binary 00000100
@@ -354,6 +354,12 @@ func (t *Object) Length(ctx Context) int {
 
 func (t *Object) appendLayers(dest []*Layer, ctx Context) []*Layer {
 	if t.Layers != nil {
+		targetLen := len(dest) + len(t.Layers)
+		if targetLen > cap(dest) {
+			newCap := max(targetLen, cap(dest)*2)
+			dest = arena.Realloc(ctx.State.Registry.Allocator, dest, newCap)[:len(dest)]
+		}
+
 		return append(dest, t.Layers...)
 	}
 
@@ -375,7 +381,7 @@ func (t *Object) GetLayers(ctx Context) []*Layer {
 		return t.Layers
 	}
 
-	layers := ctx.State.Registry.LayerBufs.Alloc(0, 8)
+	layers := arena.Alloc[*Layer](ctx.State.Registry.Allocator, 8)[:0]
 	layers = t.appendLayers(layers, ctx)
 
 	t.Layers = layers
@@ -457,10 +463,10 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 
 	plans := arena.Alloc[FieldPlan](allocator, maxKeys)[:0]
 
-	var planIdxMap map[uint32]int
+	var planIdxMap *utils.DescriptorTable
 	useMap := maxKeys > MaxPlanLinearKeys
 	if useMap {
-		planIdxMap = make(map[uint32]int, maxKeys)
+		planIdxMap = utils.NewEmptyDescriptorTable(allocator, maxKeys)
 	}
 
 	var validate bool
@@ -472,8 +478,8 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 
 			pIdx := -1
 			if useMap {
-				if idx, exists := planIdxMap[keyID]; exists {
-					pIdx = idx
+				if idx, exists := planIdxMap.Get(keyID); exists {
+					pIdx = int(idx)
 				}
 			} else {
 				for i := 0; i < len(plans); i++ {
@@ -494,7 +500,7 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 				pIdx = len(plans) - 1
 
 				if useMap {
-					planIdxMap[keyID] = pIdx
+					planIdxMap.Append(keyID)
 				}
 
 			}
@@ -865,7 +871,7 @@ func (t *Object) Prune(ctx Context) (Value, error) {
 	n := len(plans)
 	allocator := ctx.State.Registry.Allocator
 
-	layer, _ := ctx.State.Registry.Layers.New()
+	layer := arena.Create[Layer](allocator)
 	layer.Keys = arena.Alloc[uint32](allocator, n)
 	layer.Values = arena.Alloc[Value](allocator, n)
 	layer.Meta = arena.Alloc[uint8](allocator, n)
@@ -917,7 +923,7 @@ func (t *Object) Prune(ctx Context) (Value, error) {
 		layer.Meta = layer.Meta[:index]
 	}
 
-	layers := ctx.State.Registry.LayerBufs.Alloc(1, 1)
+	layers := arena.Alloc[*Layer](allocator, 1)
 	layers[0] = layer
 	resObjId := NewObject(layers, ctx)
 

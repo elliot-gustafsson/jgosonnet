@@ -242,7 +242,7 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 	fieldCount := len(node.Fields)
 	localsCount := len(node.Locals)
 
-	layer, _ := ctx.State.Registry.Layers.New()
+	layer := arena.Create[Layer](allocator)
 
 	layer.ParentScopeId = scopeId
 
@@ -316,7 +316,7 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 		layer.Meta = layer.Meta[:index]
 	}
 
-	layers := ctx.State.Registry.LayerBufs.Alloc(1, 1)
+	layers := arena.Alloc[*Layer](allocator, 1)
 	layers[0] = layer
 	objId := NewObject(layers, ctx)
 

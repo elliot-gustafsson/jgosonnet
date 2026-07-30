@@ -228,13 +228,13 @@ func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	fieldCount := len(keys)
 	allocator := ctx.State.Registry.Allocator
 
-	layer, _ := ctx.State.Registry.Layers.New()
+	layer := arena.Create[evaluator.Layer](allocator)
 
 	layer.Keys = arena.Alloc[uint32](allocator, fieldCount)
 	layer.Values = arena.Alloc[evaluator.Value](allocator, fieldCount)
 	layer.Meta = arena.Alloc[uint8](allocator, fieldCount)
 
-	layers := ctx.State.Registry.LayerBufs.Alloc(1, 1)
+	layers := arena.Alloc[*evaluator.Layer](allocator, 1)
 	layers[0] = layer
 	resId := evaluator.NewObject(layers, ctx)
 	resObjVal := evaluator.MakeObjectValue(resId)
@@ -287,7 +287,7 @@ func std_objectRemoveKey(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 
 	existingLayers := obj.GetLayers(ctx)
 
-	tombstoneLayer, _ := ctx.State.Registry.Layers.New()
+	tombstoneLayer := arena.Create[evaluator.Layer](allocator)
 	tombstoneLayer.Keys = arena.Alloc[uint32](allocator, 1)
 	tombstoneLayer.Keys[0] = keyId
 
@@ -298,7 +298,7 @@ func std_objectRemoveKey(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 	tombstoneLayer.Meta[0] = evaluator.FlagTombstone | evaluator.DefaultFieldMeta
 
 	newLen := len(existingLayers) + 1
-	newLayers := ctx.State.Registry.LayerBufs.Alloc(newLen, newLen)
+	newLayers := arena.Alloc[*evaluator.Layer](allocator, newLen)
 	copy(newLayers, existingLayers)
 	newLayers[newLen-1] = tombstoneLayer
 
@@ -342,7 +342,7 @@ func std_mergePatch(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	fieldCount := len(plans)
 	allocator := ctx.State.Registry.Allocator
 
-	layer, _ := ctx.State.Registry.Layers.New()
+	layer := arena.Create[evaluator.Layer](allocator)
 	layer.Keys = arena.Alloc[uint32](allocator, fieldCount)
 	layer.Values = arena.Alloc[evaluator.Value](allocator, fieldCount)
 	layer.Meta = arena.Alloc[uint8](allocator, fieldCount)
@@ -378,7 +378,7 @@ func std_mergePatch(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 		layer.Meta = layer.Meta[:index]
 	}
 
-	layers := ctx.State.Registry.LayerBufs.Alloc(1, 1)
+	layers := arena.Alloc[*evaluator.Layer](allocator, 1)
 	layers[0] = layer
 	resObjId := evaluator.NewObject(layers, ctx)
 

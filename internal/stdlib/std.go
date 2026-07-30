@@ -280,7 +280,7 @@ func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
 	fieldCount := len(functions) + len(constants)
 	allocator := ctx.State.Registry.Allocator
 
-	layer, _ := ctx.State.Registry.Layers.New()
+	layer := arena.Create[evaluator.Layer](allocator)
 	layer.Keys = arena.Alloc[uint32](allocator, fieldCount)
 	layer.Values = arena.Alloc[evaluator.Value](allocator, fieldCount)
 	layer.Meta = arena.Alloc[uint8](allocator, fieldCount)
@@ -311,7 +311,7 @@ func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
 		index++
 	}
 
-	layers := ctx.State.Registry.LayerBufs.Alloc(1, 1)
+	layers := arena.Alloc[*evaluator.Layer](allocator, 1)
 	layers[0] = layer
 	objId := evaluator.NewObject(layers, ctx)
 

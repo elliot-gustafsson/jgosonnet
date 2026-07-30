@@ -5,10 +5,11 @@ import (
 )
 
 const (
-	// ChunkSize defines the standard block size (64 KB).
-	ChunkSize = 65536
+	KB = 1024
+	// ChunkSize defines the standard block size.
+	ChunkSize = 256 * KB
 	// MaxSmallAlloc defines the threshold above which allocations use the jumbo pool.
-	MaxSmallAlloc = ChunkSize / 2
+	MaxSmallAlloc = 32 * KB
 )
 
 type Allocator struct {
@@ -55,7 +56,8 @@ func Alloc[T any](a *Allocator, length int) (s []T) {
 	align := unsafe.Alignof(zero)
 
 	if elemSize == 0 {
-		return make([]T, length)
+		var empty struct{}
+		return unsafe.Slice((*T)(unsafe.Pointer(&empty)), length)
 	}
 
 	totalSize := elemSize * uintptr(length)
@@ -84,7 +86,8 @@ func Realloc[T any](a *Allocator, slice []T, length int) []T {
 	elemSize := int(unsafe.Sizeof(zero))
 
 	if elemSize == 0 {
-		return make([]T, length)
+		var empty struct{}
+		return unsafe.Slice((*T)(unsafe.Pointer(&empty)), length)
 	}
 
 	if cap(slice) > 0 {
@@ -102,6 +105,10 @@ func Realloc[T any](a *Allocator, slice []T, length int) []T {
 
 			// ensure it still fits in the chunk and respects the max small alloc threshold
 			if totalSize <= MaxSmallAlloc && (a.offset)+additionalBytes <= ChunkSize {
+				// zero newly claimed memory
+				extendedPtr := unsafe.Add(unsafe.Pointer(a.chunks[a.curr]), a.offset)
+				clear(unsafe.Slice((*byte)(unsafe.Pointer(extendedPtr)), additionalBytes))
+
 				a.offset += additionalBytes
 				return unsafe.Slice((*T)(slicePtr), length)
 			}
@@ -115,14 +122,6 @@ func Realloc[T any](a *Allocator, slice []T, length int) []T {
 }
 
 func (a *Allocator) Reset() {
-	for i := 0; i <= a.curr; i++ {
-		limit := ChunkSize
-		if i == a.curr {
-			limit = int(a.offset)
-		}
-		clear(a.chunks[i][:limit])
-	}
-
 	a.curr = 0
 	a.offset = 0
 
@@ -141,11 +140,13 @@ func allocRaw(a *Allocator, size, align uintptr) (ptr unsafe.Pointer) {
 
 	ptr = unsafe.Add(unsafe.Pointer(a.chunks[a.curr]), alignedOffset)
 	a.offset = int(alignedOffset + size)
+
+	clear(unsafe.Slice((*byte)(ptr), size))
 	return
 }
 
 //go:noinline
-func allocRawSlow(a *Allocator, size, align uintptr) unsafe.Pointer {
+func allocRawSlow(a *Allocator, size, align uintptr) (ptr unsafe.Pointer) {
 	if size > MaxSmallAlloc {
 		// jumbo alloc
 		buf := make([]byte, size+align)
@@ -171,7 +172,9 @@ func allocRawSlow(a *Allocator, size, align uintptr) unsafe.Pointer {
 		alignedOffset = 0
 	}
 
-	ptr := unsafe.Add(unsafe.Pointer(a.chunks[a.curr]), alignedOffset)
+	ptr = unsafe.Add(unsafe.Pointer(a.chunks[a.curr]), alignedOffset)
 	a.offset = int(alignedOffset + size)
-	return ptr
+
+	clear(unsafe.Slice((*byte)(ptr), size))
+	return
 }

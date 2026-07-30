@@ -128,7 +128,7 @@ func rawDataToValue(x any, ctx evaluator.Context) (evaluator.Value, error) {
 		fieldCount := len(data)
 		allocator := ctx.State.Registry.Allocator
 
-		layer, _ := ctx.State.Registry.Layers.New()
+		layer := arena.Create[evaluator.Layer](allocator)
 		layer.Keys = arena.Alloc[uint32](allocator, fieldCount)
 		layer.Nodes = arena.Alloc[ast.Node](allocator, fieldCount)
 		layer.Meta = arena.Alloc[uint8](allocator, fieldCount)
@@ -164,7 +164,7 @@ func rawDataToValue(x any, ctx evaluator.Context) (evaluator.Value, error) {
 			layer.Meta = layer.Meta[:index]
 		}
 
-		layers := ctx.State.Registry.LayerBufs.Alloc(1, 1)
+		layers := arena.Alloc[*evaluator.Layer](allocator, 1)
 		layers[0] = layer
 		objId := evaluator.NewObject(layers, ctx)
 

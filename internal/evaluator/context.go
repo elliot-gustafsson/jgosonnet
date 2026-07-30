@@ -29,11 +29,8 @@ type Registry struct {
 	Functions *arena.Arena[Function]
 
 	Scopes *arena.Arena[Scope]
-	Layers *arena.Arena[Layer]
 
 	GoCallbackNodes *arena.Arena[GoCallbackNode]
-
-	LayerBufs *arena.BufferArena[*Layer]
 
 	Allocator *arena.Allocator
 }
@@ -46,7 +43,6 @@ type Scope struct {
 
 const sliceArenaChunkSize = 4096
 const stringArenaBlockSize = 4096
-const bufferArenaBlockSize = 4096
 
 func NewRegistry() *Registry {
 	return &Registry{
@@ -57,11 +53,8 @@ func NewRegistry() *Registry {
 		Functions: arena.NewArena[Function](),
 
 		Scopes: arena.NewArena[Scope](),
-		Layers: arena.NewArena[Layer](),
 
 		GoCallbackNodes: arena.NewArena[GoCallbackNode](),
-
-		LayerBufs: arena.NewBufferArena[*Layer](bufferArenaBlockSize),
 
 		Allocator: arena.NewAllocator(),
 	}
@@ -75,11 +68,8 @@ func (t *Registry) Reset() {
 	t.Functions.Reset()
 
 	t.Scopes.Reset()
-	t.Layers.Reset()
 
 	t.GoCallbackNodes.Reset()
-
-	t.LayerBufs.Reset()
 
 	t.Allocator.Reset()
 }
