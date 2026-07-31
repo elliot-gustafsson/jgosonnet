@@ -25,7 +25,7 @@ type Interner struct {
 func NewInterner() *Interner {
 	interner := &Interner{
 		table:   make([]entry, defaultInternerSize),
-		strings: make([]string, 1, 8192), // burn 0 index
+		strings: make([]string, 1, defaultInternerSize/2), // burn 0 index
 		mask:    defaultInternerMask,
 		seed:    maphash.MakeSeed(),
 	}

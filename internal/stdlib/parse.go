@@ -12,7 +12,6 @@ import (
 	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 	"github.com/elliot-gustafsson/jgosonnet/internal/utils"
-	"github.com/google/go-jsonnet/ast"
 	"gopkg.in/yaml.v3"
 )
 
@@ -130,7 +129,7 @@ func rawDataToValue(x any, ctx evaluator.Context) (evaluator.Value, error) {
 
 		layer := arena.Create[evaluator.Layer](allocator)
 		layer.Keys = arena.Alloc[uint32](allocator, fieldCount)
-		layer.Nodes = arena.Alloc[ast.Node](allocator, fieldCount)
+		layer.Values = arena.Alloc[evaluator.Value](allocator, fieldCount)
 		layer.Meta = arena.Alloc[uint8](allocator, fieldCount)
 
 		useMap := fieldCount > evaluator.MaxLayerLinearKeys
@@ -160,7 +159,7 @@ func rawDataToValue(x any, ctx evaluator.Context) (evaluator.Value, error) {
 
 		if index < fieldCount {
 			layer.Keys = layer.Keys[:index]
-			layer.Nodes = layer.Nodes[:index]
+			layer.Values = layer.Values[:index]
 			layer.Meta = layer.Meta[:index]
 		}
 

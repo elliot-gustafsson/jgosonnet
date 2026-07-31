@@ -475,14 +475,13 @@ func sortArray(arr []evaluator.Value, keyF evaluator.Function, ctx evaluator.Con
 		}
 	}()
 
-	// result := slices.Clone(arr)
 	result, val := evaluator.MakeArraySized(len(arr), ctx)
 	copy(result, arr)
 
 	mapperFuncInput := arena.Alloc[evaluator.NamedValue](ctx.State.Registry.Allocator, 1)
 
 	// TODO: now we eval the values over and over, think abt this
-	slices.SortStableFunc(arr, func(a, b evaluator.Value) int {
+	slices.SortStableFunc(result, func(a, b evaluator.Value) int {
 
 		if !keyF.Noop() {
 			mapperFuncInput[0] = evaluator.NamedValue{Value: a}
