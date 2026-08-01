@@ -13,9 +13,10 @@ const (
 )
 
 type Allocator struct {
+	base   unsafe.Pointer
 	chunks []*[ChunkSize]byte
 	curr   int
-	offset int
+	offset uintptr
 	jumbos [][]byte
 }
 
@@ -24,6 +25,7 @@ func NewAllocator() (a *Allocator) {
 		chunks: make([]*[ChunkSize]byte, 1, 64),
 	}
 	a.chunks[0] = new([ChunkSize]byte)
+	a.base = unsafe.Pointer(a.chunks[0])
 	return
 }
 
@@ -76,14 +78,14 @@ func Alloc[T any](a *Allocator, length int) (s []T) {
 // new slice in the arena, copies over the existing values, and returns it.
 // If the requested length is less than or equal to the current length, it
 // simply returns the original slice.
-func Realloc[T any](a *Allocator, slice []T, length int) []T {
+func Realloc[T any](a *Allocator, slice []T, length int) (s []T) {
 	// If the slice already has enough capacity, we can just reslice it.
 	if length <= cap(slice) {
 		return slice[:length]
 	}
 
 	var zero T
-	elemSize := int(unsafe.Sizeof(zero))
+	elemSize := unsafe.Sizeof(zero)
 
 	if elemSize == 0 {
 		var empty struct{}
@@ -93,36 +95,40 @@ func Realloc[T any](a *Allocator, slice []T, length int) []T {
 	if cap(slice) > 0 {
 		// calculate the memory address at the end of the slice's capacity
 		slicePtr := unsafe.Pointer(unsafe.SliceData(slice))
-		sliceEnd := uintptr(slicePtr) + uintptr(cap(slice)*elemSize)
+		capBytes := uintptr(cap(slice)) * elemSize
+		sliceEnd := uintptr(slicePtr) + capBytes
 
 		// calculate the memory address of the arena's current offset
-		arenaEnd := uintptr(unsafe.Pointer(a.chunks[a.curr])) + uintptr(a.offset)
+		arenaEnd := uintptr(a.base) + a.offset
 
 		// if they match, this slice was the very last allocation in the current chunk.
-		if sliceEnd == arenaEnd {
-			additionalBytes := (length - cap(slice)) * elemSize
-			totalSize := length * elemSize
+		if uintptr(slicePtr) >= uintptr(a.base) && sliceEnd == arenaEnd {
+			totalSize := uintptr(length) * elemSize
+			additionalBytes := totalSize - capBytes
+			newOffset := a.offset + additionalBytes
 
 			// ensure it still fits in the chunk and respects the max small alloc threshold
-			if totalSize <= MaxSmallAlloc && (a.offset)+additionalBytes <= ChunkSize {
+			if totalSize <= MaxSmallAlloc && newOffset <= ChunkSize {
 				// zero newly claimed memory
-				extendedPtr := unsafe.Add(unsafe.Pointer(a.chunks[a.curr]), a.offset)
+				extendedPtr := unsafe.Add(a.base, a.offset)
 				clear(unsafe.Slice((*byte)(unsafe.Pointer(extendedPtr)), additionalBytes))
 
-				a.offset += additionalBytes
-				return unsafe.Slice((*T)(slicePtr), length)
+				a.offset = newOffset
+				s = unsafe.Slice((*T)(slicePtr), length)
+				return
 			}
 		}
 	}
 
-	// Fallback: allocate new space and copy the existing elements over
-	newSlice := Alloc[T](a, length)
-	copy(newSlice, slice)
-	return newSlice
+	// allocate new space and copy the existing elements over
+	s = Alloc[T](a, length)
+	copy(s, slice)
+	return
 }
 
 func (a *Allocator) Reset() {
 	a.curr = 0
+	a.base = unsafe.Pointer(a.chunks[0])
 	a.offset = 0
 
 	// Release jumbo buffers to the Go garbage collector
@@ -132,14 +138,15 @@ func (a *Allocator) Reset() {
 }
 
 func allocRaw(a *Allocator, size, align uintptr) (ptr unsafe.Pointer) {
-	alignedOffset := (uintptr(a.offset) + align - 1) &^ (align - 1)
+	alignedOffset := (a.offset + align - 1) &^ (align - 1)
+	end := alignedOffset + size
 
-	if alignedOffset+size > ChunkSize || size > MaxSmallAlloc {
+	if end > ChunkSize || size > MaxSmallAlloc {
 		return nil
 	}
 
-	ptr = unsafe.Add(unsafe.Pointer(a.chunks[a.curr]), alignedOffset)
-	a.offset = int(alignedOffset + size)
+	ptr = unsafe.Add(a.base, alignedOffset)
+	a.offset = end
 
 	clear(unsafe.Slice((*byte)(ptr), size))
 	return
@@ -156,24 +163,19 @@ func allocRawSlow(a *Allocator, size, align uintptr) (ptr unsafe.Pointer) {
 		// calculate alignment offset
 		mask := uintptr(align) - 1
 		aligned := (uintptr(ptr) + mask) &^ mask
-		offset := aligned - uintptr(ptr)
-		return unsafe.Add(ptr, offset)
+		return unsafe.Add(ptr, aligned-uintptr(ptr))
 
 	}
 
-	alignedOffset := (uintptr(a.offset) + align - 1) &^ (align - 1)
-	if alignedOffset+size > ChunkSize {
-		// not enough space in current block, add a new one
-		a.curr++
-		if a.curr >= len(a.chunks) {
-			a.chunks = append(a.chunks, new([ChunkSize]byte))
-		}
-		a.offset = 0
-		alignedOffset = 0
+	a.curr++
+	if a.curr >= len(a.chunks) {
+		a.chunks = append(a.chunks, new([ChunkSize]byte))
 	}
 
-	ptr = unsafe.Add(unsafe.Pointer(a.chunks[a.curr]), alignedOffset)
-	a.offset = int(alignedOffset + size)
+	ptr = unsafe.Pointer(a.chunks[a.curr])
+
+	a.offset = size
+	a.base = ptr
 
 	clear(unsafe.Slice((*byte)(ptr), size))
 	return
