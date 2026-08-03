@@ -134,7 +134,7 @@ func std_join(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 		return evaluator.ValueNone, evaluator.TypeErrorSpecific(evaluator.ValueTypeArray, sep.Type())
 	}
 
-	sepArray := sep.Array(ctx)
+	sepArray := sep.Array()
 	sepLen := len(sepArray)
 
 	totalCap := 0
@@ -153,7 +153,7 @@ func std_join(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 		if !v.IsArray() {
 			return evaluator.ValueNone, evaluator.TypeErrorSpecific(evaluator.ValueTypeArray, v.Type())
 		}
-		totalCap += len(v.Array(ctx))
+		totalCap += len(v.Array())
 		validCount++
 	}
 
@@ -178,7 +178,7 @@ func std_join(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 		if hasWritten {
 			idx += copy(res[idx:], sepArray)
 		}
-		idx += copy(res[idx:], v.Array(ctx))
+		idx += copy(res[idx:], v.Array())
 		hasWritten = true
 	}
 
@@ -199,7 +199,7 @@ func std_deepJoin(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator
 	if !arrVal.IsArray() {
 		return evaluator.ValueNone, evaluator.TypeErrorSpecific(evaluator.ValueTypeArray, arrVal.Type())
 	}
-	arr := arrVal.Array(ctx)
+	arr := arrVal.Array()
 
 	var b strings.Builder
 
@@ -218,7 +218,7 @@ func flattenArray(b *strings.Builder, arr []evaluator.Value, ctx evaluator.Conte
 			return err
 		}
 		if v.IsArray() {
-			err := flattenArray(b, v.Array(ctx), ctx)
+			err := flattenArray(b, v.Array(), ctx)
 			if err != nil {
 				return err
 			}
@@ -633,7 +633,7 @@ func std_member(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 		return evaluator.ValueNone, evaluator.TypeErrorSpecific(evaluator.ValueTypeArray, arg.Type())
 	}
 
-	inputArr := indexable.Array(ctx)
+	inputArr := indexable.Array()
 
 	for _, v := range inputArr {
 
@@ -811,7 +811,7 @@ func std_slice(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 	}
 
 	if indexable.IsArray() {
-		x := indexable.Array(ctx)
+		x := indexable.Array()
 
 		endInt := len(x)
 		if end.IsNumber() {
@@ -847,7 +847,7 @@ func std_lines(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 	}
 
 	b := strings.Builder{}
-	for _, v := range indexable.Array(ctx) {
+	for _, v := range indexable.Array() {
 		v, err := v.Eval(ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
@@ -881,7 +881,7 @@ func std_reverse(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.
 		return evaluator.ValueNone, fmt.Errorf("unexpected type passed to std.reverse (arg 0): %s, expected array", indexable.Type().String())
 	}
 
-	arr := indexable.Array(ctx)
+	arr := indexable.Array()
 	res, arrVal := evaluator.MakeArraySized(len(arr), ctx)
 	for i, v := range arr {
 		res[len(arr)-1-i] = v
@@ -937,7 +937,7 @@ func std_foldl(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 		return evaluator.ValueNone, fmt.Errorf("unexpected type passed to std.foldl (arg 1): %s, expected string or array", arrVal.Type().String())
 	}
 
-	for _, v := range arrVal.Array(ctx) {
+	for _, v := range arrVal.Array() {
 
 		foldFuncArgs[0] = evaluator.NamedValue{Value: state}
 		foldFuncArgs[1] = evaluator.NamedValue{Value: v}
@@ -1004,7 +1004,7 @@ func std_foldr(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 		return evaluator.ValueNone, fmt.Errorf("unexpected type passed to std.foldr (arg 1): %s, expected string or array", arrVal.Type().String())
 	}
 
-	arr := arrVal.Array(ctx)
+	arr := arrVal.Array()
 	for i := len(arr) - 1; i >= 0; i-- {
 		v := arr[i]
 
@@ -1037,7 +1037,7 @@ func std_sum(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 	}
 
 	var sum float64
-	for _, v := range arr.Array(ctx) {
+	for _, v := range arr.Array() {
 		v, err := v.Eval(ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
@@ -1065,7 +1065,7 @@ func std_flattenArrays(args []evaluator.NamedValue, ctx evaluator.Context) (eval
 	}
 
 	res := []evaluator.Value{}
-	for _, v := range arr.Array(ctx) {
+	for _, v := range arr.Array() {
 		v, err := v.Eval(ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
@@ -1073,7 +1073,7 @@ func std_flattenArrays(args []evaluator.NamedValue, ctx evaluator.Context) (eval
 		if !v.IsArray() {
 			return evaluator.ValueNone, fmt.Errorf("unexpected type in std.flattenArrays arr: %s, expected array", v.Type().String())
 		}
-		res = append(res, v.Array(ctx)...)
+		res = append(res, v.Array()...)
 	}
 	return evaluator.MakeArray(res, ctx), nil
 }
@@ -1091,7 +1091,7 @@ func std_flattenDeepArray(args []evaluator.NamedValue, ctx evaluator.Context) (e
 	if !arrVal.IsArray() {
 		return evaluator.ValueNone, fmt.Errorf("unexpected type passed to std.flattenDeepArray (arg 0): %s, expected array", arrVal.Type().String())
 	}
-	arr := arrVal.Array(ctx)
+	arr := arrVal.Array()
 
 	res := make([]evaluator.Value, 0, len(arr))
 	for _, v := range arr {
@@ -1100,7 +1100,7 @@ func std_flattenDeepArray(args []evaluator.NamedValue, ctx evaluator.Context) (e
 			return evaluator.ValueNone, err
 		}
 		if v.IsArray() {
-			res, err = flattedDeepArray(res, v.Array(ctx), ctx)
+			res, err = flattedDeepArray(res, v.Array(), ctx)
 			if err != nil {
 				return evaluator.ValueNone, err
 			}
@@ -1118,7 +1118,7 @@ func flattedDeepArray(state, v []evaluator.Value, ctx evaluator.Context) ([]eval
 			return nil, err
 		}
 		if x.IsArray() {
-			state, err = flattedDeepArray(state, x.Array(ctx), ctx)
+			state, err = flattedDeepArray(state, x.Array(), ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -1159,7 +1159,7 @@ func std_repeat(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 	}
 
 	if whatVal.IsArray() {
-		what := whatVal.Array(ctx)
+		what := whatVal.Array()
 		res, arrVal := evaluator.MakeArraySized(count*len(what), ctx)
 		for i := 0; i < count; i++ {
 			copy(res[i*len(what):], what)
@@ -1205,8 +1205,8 @@ func std_setUnion(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator
 		funcArgs = arena.Alloc[evaluator.NamedValue](ctx.State.Registry.Allocator, 1)
 	}
 
-	aArr := aVal.Array(ctx)
-	bArr := bVal.Array(ctx)
+	aArr := aVal.Array()
+	bArr := bVal.Array()
 
 	i, j := 0, 0
 
@@ -1334,8 +1334,8 @@ func std_setInter(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator
 		funcArgs = arena.Alloc[evaluator.NamedValue](ctx.State.Registry.Allocator, 1)
 	}
 
-	aArr := aVal.Array(ctx)
-	bArr := bVal.Array(ctx)
+	aArr := aVal.Array()
+	bArr := bVal.Array()
 
 	i, j := 0, 0
 

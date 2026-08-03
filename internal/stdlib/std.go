@@ -464,9 +464,9 @@ func std_length(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 		// res = float64(len(arg.String(ctx)))
 		res = float64(utf8.RuneCountInString(arg.String(ctx)))
 	case evaluator.ValueTypeArray:
-		res = float64(len(arg.Array(ctx)))
+		res = float64(len(arg.Array()))
 	case evaluator.ValueTypeObject:
-		res = float64(arg.Object(ctx).Length(ctx))
+		res = float64(arg.Object().Length(ctx))
 	case evaluator.ValueTypeFunction:
 		res = float64(arg.Function(ctx).Length())
 	default:

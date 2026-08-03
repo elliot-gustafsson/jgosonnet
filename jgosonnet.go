@@ -401,7 +401,7 @@ func (t *Evaluator) evaluateMulti(file string) ([]evaluator.NamedValue, evaluato
 	evalCtx := ctx
 	evalCtx.Self = value
 
-	root, err := evaluator.ManifestObjectRoot(value.Object(evalCtx), evalCtx)
+	root, err := evaluator.ManifestObjectRoot(value.Object(), evalCtx)
 	if err != nil {
 		return nil, evaluator.Context{}, cleanup, wrapManifestationErr(err)
 	}

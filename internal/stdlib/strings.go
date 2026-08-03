@@ -93,7 +93,7 @@ func std_base64(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 	if inputVal.IsString() {
 		toEncode = []byte(inputVal.String(ctx))
 	} else if inputVal.IsArray() {
-		arr := inputVal.Array(ctx)
+		arr := inputVal.Array()
 		toEncode = make([]byte, 0, len(arr))
 		for _, v := range arr {
 			v, err := v.Eval(ctx)

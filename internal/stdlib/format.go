@@ -82,9 +82,9 @@ func formatString(b []byte, str string, data evaluator.Value, ctx evaluator.Cont
 	default:
 		return nil, fmt.Errorf("unsupported data type passed to format: %s, expected string, array, object", data.Type().String())
 	case evaluator.ValueTypeArray:
-		args = data.Array(ctx)
+		args = data.Array()
 	case evaluator.ValueTypeObject:
-		dict = data.Object(ctx)
+		dict = data.Object()
 		useNamed = true
 	case evaluator.ValueTypeString, evaluator.ValueTypeBool, evaluator.ValueTypeNumber, evaluator.ValueTypeNull:
 		argBuf := [1]evaluator.Value{data}

@@ -244,7 +244,7 @@ func std_manifestIni(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 		return evaluator.ValueNone, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, sectionsVal.Type())
 	}
 
-	sectionsObj := sectionsVal.Object(ctx)
+	sectionsObj := sectionsVal.Object()
 	plans := evaluator.CompileObjectPlan(sectionsObj, ctx)
 
 	// TODO: look over error messages
@@ -271,7 +271,7 @@ func std_manifestIni(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 		b.WriteByte('[')
 		b.WriteString(keyStr)
 		b.WriteString("]\n")
-		err = printIniSection(&b, val.Object(ctx), ctx)
+		err = printIniSection(&b, val.Object(), ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
@@ -303,7 +303,7 @@ func printIniSection(b *strings.Builder, obj *evaluator.Object, ctx evaluator.Co
 		keyStr := ctx.State.Interner.Get(plan.KeyId)
 
 		if val.IsArray() {
-			for _, v := range val.Array(ctx) {
+			for _, v := range val.Array() {
 				err = printIniVal(b, keyStr, v, ctx)
 				if err != nil {
 					return err
@@ -418,7 +418,7 @@ func auxManifestXmlJsonml(v evaluator.Value, ctx evaluator.Context, b *strings.B
 		return fmt.Errorf("unexpected type in array passed to std.manifestXmlJsonml: %s, expected string or array value", v.Type().String())
 	}
 
-	arr := v.Array(ctx)
+	arr := v.Array()
 	if len(arr) == 0 {
 		return fmt.Errorf("empty array passed to std.manifestXmlJsonml")
 	}
@@ -438,7 +438,7 @@ func auxManifestXmlJsonml(v evaluator.Value, ctx evaluator.Context, b *strings.B
 		}
 		if secondVal.IsObject() {
 			hasAttrs = true
-			attrs = secondVal.Object(ctx)
+			attrs = secondVal.Object()
 			childrenStart = 2
 		}
 	}

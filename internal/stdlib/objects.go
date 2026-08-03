@@ -86,7 +86,7 @@ func std_get(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 	childCtx := ctx
 	childCtx.Self = objVal
 
-	val, visible, err := objVal.Object(ctx).GetField(keyId, childCtx)
+	val, visible, err := objVal.Object().GetField(keyId, childCtx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -97,12 +97,12 @@ func std_get(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 }
 
 var std_objectFields = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
-	res := evaluator.GetObjectFields(v.Object(ctx), ctx, false)
+	res := evaluator.GetObjectFields(v.Object(), ctx, false)
 	return evaluator.MakeArray(res, ctx), nil
 })
 
 var std_objectFieldsAll = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
-	res := evaluator.GetObjectFields(v.Object(ctx), ctx, true)
+	res := evaluator.GetObjectFields(v.Object(), ctx, true)
 	return evaluator.MakeArray(res, ctx), nil
 })
 
@@ -120,7 +120,7 @@ func std_objectFieldsEx(args []evaluator.NamedValue, ctx evaluator.Context) (eva
 }
 
 var std_objectValues = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
-	res, err := evaluator.GetObjectValues(v.Object(ctx), ctx, false)
+	res, err := evaluator.GetObjectValues(v.Object(), ctx, false)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -128,7 +128,7 @@ var std_objectValues = liftObjectToValueErr(func(v evaluator.Value, ctx evaluato
 })
 
 var std_objectValuesAll = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
-	res, err := evaluator.GetObjectValues(v.Object(ctx), ctx, true)
+	res, err := evaluator.GetObjectValues(v.Object(), ctx, true)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -136,7 +136,7 @@ var std_objectValuesAll = liftObjectToValueErr(func(v evaluator.Value, ctx evalu
 })
 
 var std_objectKeysValues = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
-	res, err := evaluator.GetObjectKeysValues(v.Object(ctx), ctx, false)
+	res, err := evaluator.GetObjectKeysValues(v.Object(), ctx, false)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -144,7 +144,7 @@ var std_objectKeysValues = liftObjectToValueErr(func(v evaluator.Value, ctx eval
 })
 
 var std_objectKeysValuesAll = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
-	res, err := evaluator.GetObjectKeysValues(v.Object(ctx), ctx, true)
+	res, err := evaluator.GetObjectKeysValues(v.Object(), ctx, true)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -155,7 +155,7 @@ var std_objectHas = liftObjectStringToValueErr(func(v evaluator.Value, s string,
 	keyId := ctx.State.Interner.Intern(s)
 	subCtx := ctx
 	subCtx.Self = v
-	value, _, err := v.Object(ctx).GetField(keyId, subCtx)
+	value, _, err := v.Object().GetField(keyId, subCtx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -166,7 +166,7 @@ var std_objectHasAll = liftObjectStringToValueErr(func(v evaluator.Value, s stri
 	keyId := ctx.State.Interner.Intern(s)
 	subCtx := ctx
 	subCtx.Self = v
-	value, _, err := v.Object(ctx).GetField(keyId, subCtx)
+	value, _, err := v.Object().GetField(keyId, subCtx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -197,7 +197,7 @@ func std_objectHasEx(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 	subCtx := ctx
 	subCtx.Self = objVal
 
-	value, visible, err := objVal.Object(ctx).GetField(keyId, subCtx)
+	value, visible, err := objVal.Object().GetField(keyId, subCtx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -273,7 +273,7 @@ func std_objectRemoveKey(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 	if !objVal.IsObject() {
 		return evaluator.ValueNone, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, objVal.Type())
 	}
-	obj := objVal.Object(ctx)
+	obj := objVal.Object()
 
 	key, err := args[1].EvalString(ctx)
 	if err != nil {
@@ -320,7 +320,7 @@ func std_mergePatch(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	if !patchVal.IsObject() {
 		return patchVal, nil
 	}
-	// patchObj := patchVal.Object(ctx)
+	// patchObj := patchVal.Object()
 
 	targetVal, err := args[0].Eval(ctx)
 	if err != nil {
@@ -339,7 +339,7 @@ func std_mergePatch(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 		// If target val is not an object, just scrap it and only use the patch object
 		objVal = patchVal
 	}
-	obj := objVal.Object(ctx)
+	obj := objVal.Object()
 
 	plans := evaluator.CompileObjectPlan(obj, ctx)
 

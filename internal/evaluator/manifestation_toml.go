@@ -11,7 +11,7 @@ func ManifestToml(b *strings.Builder, value Value, ctx Context, sindent string) 
 		return fmt.Errorf("root value must be object for toml manifestation, got: %s", value.Type().String())
 	}
 
-	obj := value.Object(ctx)
+	obj := value.Object()
 
 	err := renderTomlTable(b, obj, ctx, sindent, []string{}, "", false)
 	if err != nil {
@@ -88,12 +88,12 @@ func renderTomlTable(b *strings.Builder, obj *Object, ctx Context, sindent strin
 
 		switch val.Type() {
 		case ValueTypeObject:
-			err := writeTomlTable(b, val.Object(ctx), ctx, sindent, childPath, cindent)
+			err := writeTomlTable(b, val.Object(), ctx, sindent, childPath, cindent)
 			if err != nil {
 				return err
 			}
 		case ValueTypeArray:
-			err := writeTomlTableArray(b, val.Array(ctx), ctx, sindent, childPath, cindent)
+			err := writeTomlTableArray(b, val.Array(), ctx, sindent, childPath, cindent)
 			if err != nil {
 				return err
 			}
@@ -130,7 +130,7 @@ func writeTomlValue(b *strings.Builder, value Value, ctx Context, cindent, sinde
 		writeJsonString(b, value.String(ctx))
 		return nil
 	case ValueTypeArray:
-		arr := value.Array(ctx)
+		arr := value.Array()
 
 		if len(arr) == 0 {
 			b.WriteString("[]")
@@ -174,7 +174,7 @@ func writeTomlValue(b *strings.Builder, value Value, ctx Context, cindent, sinde
 
 		return nil
 	case ValueTypeObject:
-		obj := value.Object(ctx)
+		obj := value.Object()
 		plans := CompileObjectPlan(obj, ctx)
 
 		if len(plans) == 0 {
@@ -262,7 +262,7 @@ func writeTomlTableArray(b *strings.Builder, arr []Value, ctx Context, sindent s
 		}
 		b.WriteString("]]")
 
-		err = renderTomlTable(b, v.Object(ctx), ctx, sindent, path, cindent+sindent, true)
+		err = renderTomlTable(b, v.Object(), ctx, sindent, path, cindent+sindent, true)
 		if err != nil {
 			return err
 		}
@@ -304,7 +304,7 @@ func tomlIsSection(val Value, ctx Context) (bool, error) {
 	if val.IsObject() {
 		return true, nil
 	} else if val.IsArray() {
-		arr := val.Array(ctx)
+		arr := val.Array()
 		if len(arr) == 0 {
 			return false, nil
 		}

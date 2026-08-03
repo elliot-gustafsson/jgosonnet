@@ -146,7 +146,7 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, indentLevel in
 
 		return nil
 	case ValueTypeArray:
-		data := value.Array(ctx)
+		data := value.Array()
 		if len(data) == 0 {
 			buf.WriteString("[]")
 			return nil
@@ -163,7 +163,7 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, indentLevel in
 			}
 			buf.WriteByte('-')
 
-			if v.IsArray() && len(v.Array(ctx)) > 0 {
+			if v.IsArray() && len(v.Array()) > 0 {
 				buf.WriteByte('\n')
 				writeYamlIndent(buf, indentLevel+1)
 			} else {
@@ -183,7 +183,7 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, indentLevel in
 		}
 		return nil
 	case ValueTypeObject:
-		obj := value.Object(ctx)
+		obj := value.Object()
 		plans := CompileObjectPlanEx(obj, ctx, config.NaturalSort)
 		if len(plans) == 0 {
 			buf.WriteString("{}")
@@ -215,7 +215,7 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, indentLevel in
 
 			nextIndentLevel := indentLevel
 
-			if fieldValue.IsArray() && len(fieldValue.Array(subCtx)) > 0 {
+			if fieldValue.IsArray() && len(fieldValue.Array()) > 0 {
 				buf.WriteByte('\n')
 				writeYamlIndent(buf, indentLevel)
 				if config.IndentArrayInObjects {
@@ -226,7 +226,7 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, indentLevel in
 			} else if fieldValue.IsObject() {
 				hasFields := false
 
-				plans := compileObjectPlan(fieldValue.Object(subCtx), subCtx)
+				plans := compileObjectPlan(fieldValue.Object(), subCtx)
 				for i := range plans {
 					if !plans[i].IsHidden() {
 						hasFields = true

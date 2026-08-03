@@ -306,7 +306,7 @@ func (v Value) Bool() bool {
 	return uint32(v) == 1
 }
 
-func (v Value) Array(ctx Context) []Value {
+func (v Value) Array() []Value {
 	ptr := v.unboxPtr()
 	n := *(*int)(ptr)
 	if n == 0 {
@@ -315,7 +315,7 @@ func (v Value) Array(ctx Context) []Value {
 	return unsafe.Slice((*Value)(unsafe.Add(ptr, intSize)), n)
 }
 
-func (v Value) Object(ctx Context) *Object {
+func (v Value) Object() *Object {
 	return (*Object)(v.unboxPtr())
 }
 
@@ -323,7 +323,7 @@ func (v Value) Function(ctx Context) Function {
 	return ctx.State.Registry.Functions.GetValue(v.RefId())
 }
 
-func (v Value) Thunk(ctx Context) *Thunk {
+func (v Value) Thunk() *Thunk {
 	return (*Thunk)(v.unboxPtr())
 }
 
@@ -338,7 +338,7 @@ func (v Value) Eval(ctx Context) (rv Value, err error) {
 
 //go:noinline
 func (v Value) evalThunk(ctx Context) (Value, error) {
-	thunk := v.Thunk(ctx)
+	thunk := v.Thunk()
 
 	if thunk.EvalState == -1 {
 		return thunk.Value, nil
@@ -423,7 +423,7 @@ func (v Value) EvalArray(ctx Context) ([]Value, error) {
 	if !x.IsArray() {
 		return nil, TypeErrorSpecific(ValueTypeArray, x.Type())
 	}
-	return x.Array(ctx), nil
+	return x.Array(), nil
 }
 
 func (v Value) EvalObject(ctx Context) (*Object, error) {
@@ -434,7 +434,7 @@ func (v Value) EvalObject(ctx Context) (*Object, error) {
 	if !x.IsObject() {
 		return nil, TypeErrorSpecific(ValueTypeObject, x.Type())
 	}
-	return x.Object(ctx), nil
+	return x.Object(), nil
 }
 
 func (v Value) EvalFunction(ctx Context) (Function, error) {
@@ -539,9 +539,9 @@ func (v Value) IsEmpty(ctx Context) bool {
 	case ValueTypeNull:
 		return true
 	case ValueTypeObject:
-		return v.Object(ctx).Length(ctx) == 0
+		return v.Object().Length(ctx) == 0
 	case ValueTypeArray:
-		return len(v.Array(ctx)) == 0
+		return len(v.Array()) == 0
 	}
 }
 
@@ -552,9 +552,9 @@ func (v Value) Prune(ctx Context) (Value, error) {
 	case ValueTypeNull, ValueTypeString, ValueTypeNumber, ValueTypeBool:
 		return v, nil
 	case ValueTypeObject:
-		return v.Object(ctx).Prune(ctx)
+		return v.Object().Prune(ctx)
 	case ValueTypeArray:
-		arr := v.Array(ctx)
+		arr := v.Array()
 		res := make([]Value, 0, len(arr))
 		for _, v := range arr {
 			v, err := v.Eval(ctx)
@@ -593,10 +593,10 @@ func (a Value) Equal(b Value, ctx Context) (bool, error) {
 	case ValueTypeBool:
 		return a.Bool() == b.Bool(), nil
 	case ValueTypeObject:
-		return a.Object(ctx).Equal(b.Object(ctx), ctx)
+		return a.Object().Equal(b.Object(), ctx)
 	case ValueTypeArray:
-		aArr := a.Array(ctx)
-		bArr := b.Array(ctx)
+		aArr := a.Array()
+		bArr := b.Array()
 
 		if len(aArr) != len(bArr) {
 			return false, nil
@@ -658,10 +658,10 @@ func (a Value) Compare(b Value, ctx Context) (int, error) {
 	// case ValueTypeBool:
 	// 	return 0, fmt.Errorf("comparing boolean values is not supported")
 	// case ValueTypeObject:
-	// 	return a.Object(ctx).Compare(b.Object(ctx), ctx)
+	// 	return a.Object().Compare(b.Object(), ctx)
 	case ValueTypeArray:
-		aArr := a.Array(ctx)
-		bArr := b.Array(ctx)
+		aArr := a.Array()
+		bArr := b.Array()
 
 		i, j := 0, 0
 		for i < len(aArr) && j < len(bArr) {

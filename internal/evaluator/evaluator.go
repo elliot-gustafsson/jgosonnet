@@ -49,10 +49,10 @@ func ManifestValue(value Value, ctx Context) (any, error) {
 	case ValueTypeObject:
 		subCtx := ctx
 		subCtx.Self = value
-		return manifestObject(value.Object(ctx), subCtx)
+		return manifestObject(value.Object(), subCtx)
 	case ValueTypeArray:
-		res := make([]any, 0, len(value.Array(ctx)))
-		for _, v := range value.Array(ctx) {
+		res := make([]any, 0, len(value.Array()))
+		for _, v := range value.Array() {
 			ev, err := ManifestValue(v, ctx)
 			if err != nil {
 				return nil, err
@@ -614,7 +614,7 @@ func handleIndex(node *ast.Index, scopePtr uintptr, ctx Context) (Value, error) 
 		}
 		i := int(index.Number())
 		if len(target.String(ctx)) <= i {
-			return ValueNone, MakeRuntimeError(fmt.Errorf("index (%d) out of bounds, string length %d", i, len(target.Array(ctx))))
+			return ValueNone, MakeRuntimeError(fmt.Errorf("index (%d) out of bounds, string length %d", i, len(target.Array())))
 		}
 		s := target.String(ctx)
 		return MakeString(string(s[i]), ctx), nil
@@ -635,7 +635,7 @@ func handleIndex(node *ast.Index, scopePtr uintptr, ctx Context) (Value, error) 
 		name := index.String(ctx)
 		keyId := ctx.State.Interner.Intern(name)
 
-		obj := target.Object(ctx)
+		obj := target.Object()
 
 		// Reset self to point to correct obj
 		subCtx := ctx
@@ -659,11 +659,11 @@ func handleIndex(node *ast.Index, scopePtr uintptr, ctx Context) (Value, error) 
 		}
 		i := int(index.Number())
 
-		arr := target.Array(ctx)
+		arr := target.Array()
 		if i < 0 || len(arr) <= i {
 			return ValueNone, MakeRuntimeError(fmt.Errorf("Index %d out of bounds, not within [0, %d)", i, len(arr)))
 		}
-		return target.Array(ctx)[i], nil
+		return target.Array()[i], nil
 	}
 
 }
@@ -690,7 +690,7 @@ func handleSuperIndex(node *ast.SuperIndex, scopePtr uintptr, ctx Context) (Valu
 	name := index.String(ctx)
 	keyId := ctx.State.Interner.Intern(name)
 
-	obj := ctx.Self.Object(ctx)
+	obj := ctx.Self.Object()
 
 	targetOffset := ctx.SuperOffset + 1
 
@@ -733,7 +733,7 @@ func handleInSuper(node *ast.InSuper, scopePtr uintptr, ctx Context) (Value, err
 	name := index.String(ctx)
 	keyId := ctx.State.Interner.Intern(name)
 
-	obj := ctx.Self.Object(ctx)
+	obj := ctx.Self.Object()
 
 	targetOffset := ctx.SuperOffset + 1
 

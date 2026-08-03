@@ -73,13 +73,13 @@ func builtin_flatMapArray(args []evaluator.NamedValue, ctx evaluator.Context) (e
 			return evaluator.ValueNone, fmt.Errorf("unexpected response type of builtin_flatMapArray map func call: %s, expected array", out.Type().String())
 		}
 		subArrayValues[i] = out
-		totalLen += len(out.Array(ctx))
+		totalLen += len(out.Array())
 	}
 
 	res, val := evaluator.MakeArraySized(totalLen, ctx)
 	index := 0
 	for _, out := range subArrayValues {
-		arr := out.Array(ctx)
+		arr := out.Array()
 		copy(res[index:], arr)
 		index += len(arr)
 	}

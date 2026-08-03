@@ -77,7 +77,7 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, indentLevel int,
 		writeJsonString(b, data)
 		return nil
 	case ValueTypeArray:
-		data := value.Array(ctx)
+		data := value.Array()
 		if len(data) == 0 {
 			if config.SpaceComma && !config.Python {
 				b.WriteString("[ ]")
@@ -136,7 +136,7 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, indentLevel int,
 		b.WriteByte(']')
 		return nil
 	case ValueTypeObject:
-		obj := value.Object(ctx)
+		obj := value.Object()
 		plans := CompileObjectPlan(obj, ctx)
 		if len(plans) == 0 {
 			if config.SpaceComma && !config.Python {

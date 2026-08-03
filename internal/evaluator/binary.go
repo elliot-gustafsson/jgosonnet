@@ -101,11 +101,11 @@ func bopPlus(left, right Value, ctx Context) (Value, error) {
 		return MakeNumber(val), nil
 
 	case ValueTypeArray:
-		leftArr := left.Array(ctx)
+		leftArr := left.Array()
 		if len(leftArr) == 0 {
 			return right, nil
 		}
-		rightArr := right.Array(ctx)
+		rightArr := right.Array()
 		if len(rightArr) == 0 {
 			return left, nil
 		}
