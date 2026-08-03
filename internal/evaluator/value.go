@@ -95,6 +95,8 @@ func (t Function) Length() int {
 // - Bits 63-51: Reserved for IEEE-754 Quiet NaN float64 detection.
 // - Bits 50-47: ValueType enum.
 // - Bits 46-0 : Payload (pointer info, interned string id, 1/0 for bools)
+//
+//	Note: lowest bits can be used for flags depending on the alignment
 type Value uint64
 
 const (
@@ -204,6 +206,12 @@ func MakeStringConcat(v1, v2 string, ctx Context) (rv Value) {
 	return
 }
 
+func MakeStringConst(id uint32) Value {
+	// set lowest bit to 1 to signal its a interned string
+	return Value((uint64(ValueTypeString) << typeShift) | (uint64(id) << 1) | 1)
+
+}
+
 func MakeNumber(v float64) (rv Value) {
 	bits := math.Float64bits(v)
 	if math.IsNaN(v) {
@@ -292,6 +300,10 @@ func (v Value) Payload() uintptr {
 }
 
 func (v Value) String(ctx Context) string {
+	if (uint64(v) & 1) == 1 {
+		return ctx.State.Interner.Get(uint32(v.Payload() >> 1))
+	}
+
 	ptr := v.unboxPtr()
 	n := *(*int)(ptr)
 	return unsafe.String((*byte)(unsafe.Add(ptr, intSize)), n)
@@ -543,6 +555,13 @@ func (v Value) IsEmpty(ctx Context) bool {
 	case ValueTypeArray:
 		return len(v.Array()) == 0
 	}
+}
+
+func (v Value) AsStringConst() uint32 {
+	if uint64(v)>>typeShift != uint64(ValueTypeString) || (uint64(v)&1) != 1 {
+		return 0
+	}
+	return uint32(v.Payload() >> 1)
 }
 
 func (v Value) Prune(ctx Context) (Value, error) {

@@ -216,7 +216,7 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 		visibility, plusSuper, tombstone := EvalFieldMeta(layer.Meta[fieldIndex])
 
 		if tombstone {
-			layerOffset -= int(layer.Values[fieldIndex].RefId())
+			layerOffset -= int(uint32(layer.Values[fieldIndex]))
 			continue
 		}
 
@@ -269,7 +269,7 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 			visibility, _, tombstone := EvalFieldMeta(layer.Meta[fieldIndex])
 
 			if tombstone {
-				j -= int(layer.Values[fieldIndex].RefId())
+				j -= int(uint32(layer.Values[fieldIndex]))
 				continue
 			}
 
@@ -538,7 +538,7 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 
 			if tombstone {
 				validate = true
-				plan.ShadowUntilLayer = uint16(l - int(layer.Values[f].RefId()))
+				plan.ShadowUntilLayer = uint16(l) - uint16(layer.Values[f])
 				continue
 			}
 

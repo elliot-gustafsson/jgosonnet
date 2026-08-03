@@ -109,9 +109,9 @@ func evaluateNodeLazy(n ast.Node, scopePtr uintptr, ctx Context) (Value, error) 
 	default:
 		return ValueNone, fmt.Errorf("unhandled node type: %T (lazy eval)", node)
 	case *ast.LiteralString:
-		// id := ctx.State.Interner.Intern(node.Value)
-		// return MakeStringConst(id), nil
-		return MakeString(node.Value, ctx), nil
+		id := ctx.State.Interner.Intern(node.Value)
+		return MakeStringConst(id), nil
+		// return MakeString(node.Value, ctx), nil
 	case *ast.LiteralNull:
 		return MakeNull(), nil
 	case *ast.LiteralBoolean:
@@ -166,9 +166,9 @@ func evaluateNode(n ast.Node, scopePtr uintptr, ctx Context) (Value, error) {
 	default:
 		return ValueNone, fmt.Errorf("unhandled node type: %T", node)
 	case *ast.LiteralString:
-		// id := ctx.State.Interner.Intern(node.Value)
-		// return MakeStringConst(id), nil
-		return MakeString(node.Value, ctx), nil
+		id := ctx.State.Interner.Intern(node.Value)
+		return MakeStringConst(id), nil
+		// return MakeString(node.Value, ctx), nil
 	case *ast.LiteralNull:
 		return MakeNull(), nil
 	case *ast.LiteralBoolean:
@@ -623,17 +623,11 @@ func handleIndex(node *ast.Index, scopePtr uintptr, ctx Context) (Value, error) 
 			return ValueNone, MakeRuntimeError(fmt.Errorf("unexpected index type for indexing object, expected string, got %s", index.Type().String()))
 		}
 
-		// var keyId uint32
-		// if index.IsStringConst() {
-		// 	keyId = index.RefId()
-		// } else {
-		// 	name := index.String(ctx)
-		// 	keyId = ctx.State.Interner.Intern(name)
-		// }
-
-		// TODO: think abt this again
-		name := index.String(ctx)
-		keyId := ctx.State.Interner.Intern(name)
+		keyId := index.AsStringConst()
+		if keyId == 0 {
+			name := index.String(ctx)
+			keyId = ctx.State.Interner.Intern(name)
+		}
 
 		obj := target.Object()
 
@@ -678,17 +672,11 @@ func handleSuperIndex(node *ast.SuperIndex, scopePtr uintptr, ctx Context) (Valu
 		return ValueNone, errors.New("ctx.Self not set")
 	}
 
-	// var keyId uint32
-	// if index.IsStringConst() {
-	// 	keyId = index.RefId()
-	// } else {
-	// 	name := index.String(ctx)
-	// 	keyId = ctx.State.Interner.Intern(name)
-	// }
-
-	// TODO: think abt this again
-	name := index.String(ctx)
-	keyId := ctx.State.Interner.Intern(name)
+	keyId := index.AsStringConst()
+	if keyId == 0 {
+		name := index.String(ctx)
+		keyId = ctx.State.Interner.Intern(name)
+	}
 
 	obj := ctx.Self.Object()
 
@@ -721,17 +709,11 @@ func handleInSuper(node *ast.InSuper, scopePtr uintptr, ctx Context) (Value, err
 		return ValueNone, errors.New("ctx.Self not set")
 	}
 
-	// var keyId uint32
-	// if index.IsStringConst() {
-	// 	keyId = index.RefId()
-	// } else {
-	// 	name := index.String(ctx)
-	// 	keyId = ctx.State.Interner.Intern(name)
-	// }
-
-	// TODO: think abt this again
-	name := index.String(ctx)
-	keyId := ctx.State.Interner.Intern(name)
+	keyId := index.AsStringConst()
+	if keyId == 0 {
+		name := index.String(ctx)
+		keyId = ctx.State.Interner.Intern(name)
+	}
 
 	obj := ctx.Self.Object()
 
