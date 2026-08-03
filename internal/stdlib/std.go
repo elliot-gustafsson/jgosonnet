@@ -311,11 +311,8 @@ func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
 		index++
 	}
 
-	layers := arena.Alloc[*evaluator.Layer](allocator, 1)
-	layers[0] = layer
-	objId := evaluator.NewObject(layers, ctx)
-
-	val := evaluator.MakeObjectValue(objId)
+	obj := evaluator.NewSingleLayerObject(allocator, layer)
+	val := evaluator.MakeObjectValue(obj)
 
 	return val, nil
 }

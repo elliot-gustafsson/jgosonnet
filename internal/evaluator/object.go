@@ -35,7 +35,7 @@ type Layer struct {
 
 	AssertsPtr uintptr
 
-	ParentScopeId uint32
+	ParentScopePtr uintptr
 }
 
 func (l *Layer) findField(key uint32) (layerId int) {
@@ -86,10 +86,11 @@ func (l *Layer) unpackAsserts() []ast.Node {
 	return unsafe.Slice((*ast.Node)(ptr), length)
 }
 
-func NewObject(layers []*Layer, ctx Context) uint32 {
-	o, id := ctx.State.Registry.Objects.New()
-	o.Layers = layers
-	return id
+func NewSingleLayerObject(allocator *arena.Allocator, layer *Layer) *Object {
+	o := arena.Create[Object](allocator)
+	o.Layers = arena.Alloc[*Layer](allocator, 1)
+	o.Layers[0] = layer
+	return o
 }
 
 const (
@@ -162,12 +163,12 @@ type Object struct {
 	Layers []*Layer
 
 	// Used ONLY for lazy merging (A + B)
-	LeftId  uint32 // object arena id
-	RightId uint32 // object arena id
+	LeftPtr  uintptr
+	RightPtr uintptr
 
 	Cache FieldCache
 
-	Scopes []uint32
+	Scopes []uintptr
 
 	AssertionState uint8
 }
@@ -283,28 +284,28 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 	return res, visible, nil
 }
 
-func (t *Object) getScope(layerIndex int, layer *Layer, ctx Context) (uint32, error) {
+func (t *Object) getScope(layerIndex int, layer *Layer, ctx Context) (uintptr, error) {
 
 	// no locals no need to create another scope
 	if len(layer.LocalKeys) == 0 {
-		return layer.ParentScopeId, nil
+		return layer.ParentScopePtr, nil
 	}
 
 	return t.createLayerScope(layerIndex, layer, ctx)
 }
 
 //go:noinline
-func (t *Object) createLayerScope(layerIndex int, layer *Layer, ctx Context) (uint32, error) {
+func (t *Object) createLayerScope(layerIndex int, layer *Layer, ctx Context) (uintptr, error) {
 	if t.Scopes == nil {
-		t.Scopes = arena.Alloc[uint32](ctx.State.Registry.Allocator, len(t.GetLayers(ctx)))
+		t.Scopes = arena.Alloc[uintptr](ctx.State.Registry.Allocator, len(t.GetLayers(ctx)))
 	}
 
-	scopeId := t.Scopes[layerIndex]
-	if scopeId != 0 {
-		return scopeId, nil
+	scopePtr := t.Scopes[layerIndex]
+	if scopePtr != 0 {
+		return scopePtr, nil
 	}
 
-	s, scopeId := ctx.NewScope(layer.ParentScopeId, len(layer.LocalKeys))
+	s, scopeId := ctx.NewScope(layer.ParentScopePtr, len(layer.LocalKeys))
 
 	for i := range layer.LocalKeys {
 		node := layer.LocalNodes[i]
@@ -363,16 +364,16 @@ func (t *Object) appendLayers(dest []*Layer, ctx Context) []*Layer {
 		return append(dest, t.Layers...)
 	}
 
-	if t.LeftId == 0 || t.RightId == 0 {
+	if t.LeftPtr == 0 || t.RightPtr == 0 {
 		return dest
 	}
 
 	// copy lefts layer ids
-	l := ctx.State.Registry.Objects.GetValue(t.LeftId)
+	l := (*Object)(resolveUintptr(t.LeftPtr))
 	dest = l.appendLayers(dest, ctx)
 
 	// copy rights layer ids
-	r := ctx.State.Registry.Objects.GetValue(t.RightId)
+	r := (*Object)(resolveUintptr(t.RightPtr))
 	return r.appendLayers(dest, ctx)
 }
 
@@ -385,17 +386,17 @@ func (t *Object) GetLayers(ctx Context) []*Layer {
 	layers = t.appendLayers(layers, ctx)
 
 	t.Layers = layers
-	t.LeftId = 0
-	t.RightId = 0
+	t.LeftPtr = 0
+	t.RightPtr = 0
 
 	return t.Layers
 }
 
-func MergeObjects(leftId, rightId uint32, ctx Context) uint32 {
-	o, id := ctx.State.Registry.Objects.New()
-	o.LeftId = leftId
-	o.RightId = rightId
-	return id
+func MergeObjects(leftPtr, rightPtr uintptr, ctx Context) *Object {
+	o := arena.Create[Object](ctx.State.Registry.Allocator)
+	o.LeftPtr = leftPtr
+	o.RightPtr = rightPtr
+	return o
 }
 
 type FieldPlan struct {
@@ -800,9 +801,16 @@ func GetObjectValues(obj *Object, ctx Context, inclHidden bool) ([]Value, error)
 }
 
 func GetObjectKeysValues(obj *Object, ctx Context, inclHidden bool) ([]Value, error) {
+	allocator := ctx.State.Registry.Allocator
+
 	plans := CompileObjectPlan(obj, ctx)
 
-	res := make([]Value, 0, len(plans))
+	keyIdx := ctx.State.Interner.Intern("key")
+	valueIdx := ctx.State.Interner.Intern("value")
+
+	res := arena.Alloc[Value](allocator, len(plans))
+
+	var index int
 	for _, plan := range plans {
 
 		if !inclHidden && plan.IsHidden() {
@@ -814,24 +822,31 @@ func GetObjectKeysValues(obj *Object, ctx Context, inclHidden bool) ([]Value, er
 			return nil, err
 		}
 
-		layer := &Layer{}
-		objId := NewObject([]*Layer{layer}, ctx)
+		layer := arena.Create[Layer](allocator)
 
-		layer.Keys = []uint32{
-			ctx.State.Interner.Intern("key"),
-			ctx.State.Interner.Intern("value"),
-		}
-		layer.Values = []Value{
-			MakeString(ctx.State.Interner.Get(plan.KeyId), ctx),
-			val,
-		}
+		layer.Keys = arena.Alloc[uint32](allocator, 2)
+		layer.Keys[0] = keyIdx
+		layer.Keys[1] = valueIdx
 
-		layer.Meta = []uint8{DefaultFieldMeta, DefaultFieldMeta}
+		layer.Values = arena.Alloc[Value](allocator, 2)
+		layer.Values[0] = MakeString(ctx.State.Interner.Get(plan.KeyId), ctx)
+		layer.Values[1] = val
 
-		kv := MakeObjectValue(objId)
+		layer.Meta = arena.Alloc[uint8](allocator, 2)
+		layer.Meta[0] = DefaultFieldMeta
+		layer.Meta[1] = DefaultFieldMeta
 
-		res = append(res, kv)
+		obj := NewSingleLayerObject(allocator, layer)
+		kv := MakeObjectValue(obj)
 
+		res[index] = kv
+
+		index++
+
+	}
+
+	if index < len(plans) {
+		res = res[:index]
 	}
 
 	return res, nil
@@ -923,11 +938,9 @@ func (t *Object) Prune(ctx Context) (Value, error) {
 		layer.Meta = layer.Meta[:index]
 	}
 
-	layers := arena.Alloc[*Layer](allocator, 1)
-	layers[0] = layer
-	resObjId := NewObject(layers, ctx)
+	obj := NewSingleLayerObject(allocator, layer)
 
-	return MakeObjectValue(resObjId), nil
+	return MakeObjectValue(obj), nil
 }
 
 func (a *Object) Equal(b *Object, ctx Context) (bool, error) {
@@ -957,9 +970,8 @@ func (a *Object) Equal(b *Object, ctx Context) (bool, error) {
 			return false, nil
 		}
 
-		// TODO: Think over this, feels hacky...
 		subCtx := ctx
-		subCtx.Self = MakeObject(*a, ctx)
+		subCtx.Self = MakeObjectValue(a)
 
 		valA, err := planAs[i].GetValue(a, subCtx)
 		if err != nil {
@@ -970,8 +982,7 @@ func (a *Object) Equal(b *Object, ctx Context) (bool, error) {
 			return false, err
 		}
 
-		// TODO: Think over this, feels hacky...
-		subCtx.Self = MakeObject(*b, ctx)
+		subCtx.Self = MakeObjectValue(b)
 		valB, err := planBs[j].GetValue(b, subCtx)
 		if err != nil {
 			return false, err

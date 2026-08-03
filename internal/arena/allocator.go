@@ -74,6 +74,17 @@ func Alloc[T any](a *Allocator, length int) (s []T) {
 	return
 }
 
+func AlignedAlloc(a *Allocator, size, align uintptr) (ptr unsafe.Pointer) {
+
+	ptr = allocRaw(a, size, align)
+	if ptr != nil {
+		return
+	}
+
+	ptr = allocRawSlow(a, size, align)
+	return
+}
+
 // Realloc takes an existing slice and a new desired length. It allocates a
 // new slice in the arena, copies over the existing values, and returns it.
 // If the requested length is less than or equal to the current length, it

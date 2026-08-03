@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"unsafe"
+
+	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
 )
 
 type ValueType uint8
@@ -83,30 +86,41 @@ func (t Function) Length() int {
 // Value represents a NaN-boxed 64-bit value.
 // Bit layout for non-float types:
 //
-// 63                   51 50         40 39       32 31                              0
-// |----------------------|-------------|-----------|--------------------------------|
-// |  Float NaN Boundary  |    Flags    | ValueType |         RefId / Payload        |
-// |       (13 bits)      |  (11 bits)  |  (8 bits) |            (32 bits)           |
-// |----------------------|-------------|-----------|--------------------------------|
+// 63                   51 50    47 46                               0
+// |----------------------|--------|---------------------------------|
+// |  Float NaN Boundary  |  Type  |             Payload             |
+// |       (13 bits)      |(4 bits)|            (47 bits)            |
+// |----------------------|--------|---------------------------------|
 //
 // - Bits 63-51: Reserved for IEEE-754 Quiet NaN float64 detection.
-// - Bits 50-40: Available for custom boolean flags (e.g., FlagStringConst).
-// - Bits 39-32: ValueType enum.
-// - Bits 31-0 : uint32 Arena ID (or 1/0 for booleans).
+// - Bits 50-47: ValueType enum.
+// - Bits 46-0 : Payload (pointer info, interned string id, 1/0 for bools)
 type Value uint64
 
 const (
-	nanTag         uint64 = 0xFFF8000000000000
-	floatThreshold uint64 = 1 << 19
+	nanTag           uint64 = 0xFFF8000000000000
+	tagMask                 = 0xFFFF800000000000
+	floatThreshold   uint64 = 1 << 51
+	canonicalNaNBits uint64 = 0x7FF8000000000000
+	typeShift               = 47
 
 	ValueNone Value = 0
 
-	ValueFlagStringConst uint64 = 1 << 40
+	// ValueFlagStringConst uint64 = 1 << 40
 )
 
-func box(t ValueType, refId uint32) Value {
-	// pack the type into bits 32-47, and the refId into bits 0-31
-	return Value((uint64(t) << 32) | uint64(refId))
+func box(t ValueType, data uint32) Value {
+	// pack the type into bits 50-47, and the data into bits 0-31
+	return Value((uint64(t) << typeShift) | uint64(data))
+}
+
+func boxPtr(t ValueType, p unsafe.Pointer) Value {
+	return Value(uint64(t)<<typeShift | uint64(uintptr(p)))
+}
+
+func (v Value) unboxPtr() unsafe.Pointer {
+	// return unsafe.Pointer(uintptr(uint64(v) &^ tagMask))
+	return unsafe.Pointer(uintptr(*(*unsafe.Pointer)(unsafe.Pointer(&v))) &^ tagMask)
 }
 
 type NamedValue struct {
@@ -121,36 +135,79 @@ type CachedValue struct {
 	Visible bool
 }
 
+const (
+	intSize    = unsafe.Sizeof(int(0))
+	intAlign   = unsafe.Alignof(int(0))
+	valueSize  = unsafe.Sizeof(Value(0))
+	valueAlign = unsafe.Alignof(Value(0))
+)
+
 func MakeNull() (rv Value) {
 	rv = box(ValueTypeNull, 0)
 	return
 }
 
-func MakeString(v string, ctx Context) (rv Value) {
-	id := ctx.State.Registry.Strings.Alloc(v)
-	rv = box(ValueTypeString, id)
+func MakeString(s string, ctx Context) (rv Value) {
+	n := len(s)
+
+	totalSize := intSize + uintptr(n)
+
+	ptr := arena.AlignedAlloc(ctx.State.Registry.Allocator, totalSize, intAlign)
+
+	// write len at beginning of block
+	*(*int)(ptr) = n
+
+	// write data
+	bytePtr := unsafe.Add(ptr, intSize)
+	copy(unsafe.Slice((*byte)(bytePtr), n), s)
+
+	rv = boxPtr(ValueTypeString, ptr)
 	return
 }
 
-func MakeStringValue(id uint32) (rv Value) {
-	rv = box(ValueTypeString, id)
-	return
-}
+func MakeStringFromBytes(in []byte, ctx Context) (rv Value) {
+	n := len(in)
 
-func MakeStringConst(id uint32) Value {
-	return Value(uint64(box(ValueTypeString, id)) | ValueFlagStringConst)
+	totalSize := intSize + uintptr(n)
+
+	ptr := arena.AlignedAlloc(ctx.State.Registry.Allocator, totalSize, intAlign)
+
+	// write len at beginning of block
+	*(*int)(ptr) = n
+
+	// write data
+	bytePtr := unsafe.Add(ptr, intSize)
+	copy(unsafe.Slice((*byte)(bytePtr), n), in)
+
+	rv = boxPtr(ValueTypeString, ptr)
+	return
 }
 
 func MakeStringConcat(v1, v2 string, ctx Context) (rv Value) {
-	id := ctx.State.Registry.Strings.AllocConcat(v1, v2)
-	rv = box(ValueTypeString, id)
+	n := len(v1) + len(v2)
+
+	totalSize := intSize + uintptr(n)
+
+	ptr := arena.AlignedAlloc(ctx.State.Registry.Allocator, totalSize, intAlign)
+
+	// write len at beginning of block
+	*(*int)(ptr) = n
+
+	// write data
+	bytePtr := unsafe.Add(ptr, intSize)
+
+	buf := unsafe.Slice((*byte)(bytePtr), n)
+	x := copy(buf, v1)
+	copy(buf[x:], v2)
+
+	rv = boxPtr(ValueTypeString, ptr)
 	return
 }
 
 func MakeNumber(v float64) (rv Value) {
 	bits := math.Float64bits(v)
 	if math.IsNaN(v) {
-		bits = 0x7FF8000000000000
+		bits = canonicalNaNBits
 	}
 	rv = Value(bits ^ nanTag)
 	return
@@ -165,38 +222,51 @@ func MakeBool(v bool) (rv Value) {
 	return
 }
 
-func MakeObject(v Object, ctx Context) (rv Value) {
-	refId := ctx.State.Registry.Objects.Alloc(v)
-	rv = box(ValueTypeObject, refId)
-	return
-}
-
-func MakeObjectValue(id uint32) (rv Value) {
-	rv = box(ValueTypeObject, id)
+func MakeObjectValue(v *Object) (rv Value) {
+	rv = boxPtr(ValueTypeObject, unsafe.Pointer(v))
 	return
 }
 
 func MakeArray(v []Value, ctx Context) (rv Value) {
-	refId := ctx.State.Registry.Arrays.Alloc(v)
-	rv = box(ValueTypeArray, refId)
+	n := len(v)
+	totalSize := intSize + (uintptr(n) * valueSize)
+
+	ptr := arena.AlignedAlloc(ctx.State.Registry.Allocator, totalSize, valueAlign)
+
+	*(*int)(ptr) = n
+
+	elemPtr := (*Value)(unsafe.Add(ptr, intSize))
+	copy(unsafe.Slice(elemPtr, n), v)
+
+	return boxPtr(ValueTypeArray, ptr)
+}
+
+func MakeArraySized(n int, ctx Context) (arr []Value, rv Value) {
+	if n < 0 {
+		panic("MakeArraySized: called with negative size")
+	}
+
+	totalSize := intSize + (uintptr(n) * valueSize)
+	ptr := arena.AlignedAlloc(ctx.State.Registry.Allocator, totalSize, valueAlign)
+
+	*(*int)(ptr) = n
+
+	elemPtr := (*Value)(unsafe.Add(ptr, intSize))
+	arr = unsafe.Slice(elemPtr, n)
+
+	rv = boxPtr(ValueTypeArray, ptr)
 	return
 }
 
-func MakeArraySized(l int, ctx Context) (arr []Value, rv Value) {
-	arr, refId := ctx.State.Registry.Arrays.Make(l)
-	rv = box(ValueTypeArray, refId)
-	return
-}
-
+// TODO: handle functions
 func MakeFunction(v Function, ctx Context) (rv Value) {
 	refId := ctx.State.Registry.Functions.Alloc(v)
 	rv = box(ValueTypeFunction, refId)
 	return
 }
 
-func MakeThunk(v Thunk, ctx Context) (rv Value) {
-	refId := ctx.State.Registry.Thunks.Alloc(v)
-	rv = box(ValueTypeThunk, refId)
+func MakeThunkValue(v *Thunk, ctx Context) (rv Value) {
+	rv = boxPtr(ValueTypeThunk, unsafe.Pointer(v))
 	return
 }
 
@@ -206,8 +276,8 @@ func MakeTombstoneValue(scope int) (rv Value) {
 }
 
 func (v Value) Type() ValueType {
-	t := uint64(v) >> 32
-	if t >= floatThreshold {
+	t := uint64(v) >> typeShift
+	if t >= (floatThreshold >> typeShift) {
 		return ValueTypeNumber
 	}
 	return ValueType(t)
@@ -217,11 +287,14 @@ func (v Value) RefId() uint32 {
 	return uint32(v)
 }
 
+func (v Value) Payload() uintptr {
+	return uintptr(v &^ tagMask)
+}
+
 func (v Value) String(ctx Context) string {
-	if (uint64(v) & ValueFlagStringConst) != 0 {
-		return ctx.State.Interner.Get(v.RefId())
-	}
-	return ctx.State.Registry.Strings.Get(v.RefId())
+	ptr := v.unboxPtr()
+	n := *(*int)(ptr)
+	return unsafe.String((*byte)(unsafe.Add(ptr, intSize)), n)
 }
 
 func (v Value) Number() float64 {
@@ -234,11 +307,16 @@ func (v Value) Bool() bool {
 }
 
 func (v Value) Array(ctx Context) []Value {
-	return ctx.State.Registry.Arrays.Get(v.RefId())
+	ptr := v.unboxPtr()
+	n := *(*int)(ptr)
+	if n == 0 {
+		return nil
+	}
+	return unsafe.Slice((*Value)(unsafe.Add(ptr, intSize)), n)
 }
 
 func (v Value) Object(ctx Context) *Object {
-	return ctx.State.Registry.Objects.GetPtr(v.RefId())
+	return (*Object)(v.unboxPtr())
 }
 
 func (v Value) Function(ctx Context) Function {
@@ -246,7 +324,7 @@ func (v Value) Function(ctx Context) Function {
 }
 
 func (v Value) Thunk(ctx Context) *Thunk {
-	return ctx.State.Registry.Thunks.GetPtr(v.RefId())
+	return (*Thunk)(v.unboxPtr())
 }
 
 func (v Value) Eval(ctx Context) (rv Value, err error) {
@@ -262,7 +340,7 @@ func (v Value) Eval(ctx Context) (rv Value, err error) {
 func (v Value) evalThunk(ctx Context) (Value, error) {
 	thunk := v.Thunk(ctx)
 
-	if !thunk.Value.IsNone() {
+	if thunk.EvalState == -1 {
 		return thunk.Value, nil
 	}
 
@@ -423,39 +501,35 @@ func (v Value) IsLiteral() bool {
 }
 
 func (v Value) IsNull() bool {
-	return ValueType(uint64(v)>>32) == ValueTypeNull
+	return uint64(v)>>typeShift == uint64(ValueTypeNull)
 }
 
 func (v Value) IsString() bool {
-	return ValueType(uint64(v)>>32) == ValueTypeString
+	return uint64(v)>>typeShift == uint64(ValueTypeString)
 }
 
 func (v Value) IsNumber() bool {
-	return (uint64(v) >> 32) >= floatThreshold
+	return uint64(v) >= floatThreshold
 }
 
 func (v Value) IsBool() bool {
-	return ValueType(uint64(v)>>32) == ValueTypeBool
+	return uint64(v)>>typeShift == uint64(ValueTypeBool)
 }
 
 func (v Value) IsThunk() bool {
-	return ValueType(uint64(v)>>32) == ValueTypeThunk
+	return uint64(v)>>typeShift == uint64(ValueTypeThunk)
 }
 
 func (v Value) IsObject() bool {
-	return ValueType(uint64(v)>>32) == ValueTypeObject
+	return uint64(v)>>typeShift == uint64(ValueTypeObject)
 }
 
 func (v Value) IsFunction() bool {
-	return ValueType(uint64(v)>>32) == ValueTypeFunction
+	return uint64(v)>>typeShift == uint64(ValueTypeFunction)
 }
 
 func (v Value) IsArray() bool {
-	return ValueType(uint64(v)>>32) == ValueTypeArray
-}
-
-func (v Value) IsStringConst() bool {
-	return ValueType(uint64(v)>>32) == ValueTypeString && (uint64(v)&ValueFlagStringConst) != 0
+	return uint64(v)>>typeShift == uint64(ValueTypeArray)
 }
 
 func (v Value) IsEmpty(ctx Context) bool {
@@ -510,14 +584,9 @@ func (a Value) Equal(b Value, ctx Context) (bool, error) {
 	case ValueTypeNull:
 		return true, nil
 	case ValueTypeString:
-		if a.IsStringConst() && b.IsStringConst() {
-			return a.RefId() == b.RefId(), nil
-		}
-
-		if !a.IsStringConst() && !b.IsStringConst() && a.RefId() == b.RefId() {
+		if a == b {
 			return true, nil
 		}
-
 		return a.String(ctx) == b.String(ctx), nil
 	case ValueTypeNumber:
 		return a.Number() == b.Number(), nil
@@ -580,14 +649,8 @@ func (a Value) Compare(b Value, ctx Context) (int, error) {
 	case ValueTypeNull:
 		return 0, nil
 	case ValueTypeString:
-		if a.IsStringConst() && b.IsStringConst() {
-			if a.RefId() == b.RefId() {
-				return 0, nil
-			}
-		} else if !a.IsStringConst() && !b.IsStringConst() {
-			if a.RefId() == b.RefId() {
-				return 0, nil
-			}
+		if a == b {
+			return 0, nil
 		}
 		return cmp.Compare(a.String(ctx), b.String(ctx)), nil
 	case ValueTypeNumber:

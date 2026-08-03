@@ -234,10 +234,8 @@ func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	layer.Values = arena.Alloc[evaluator.Value](allocator, fieldCount)
 	layer.Meta = arena.Alloc[uint8](allocator, fieldCount)
 
-	layers := arena.Alloc[*evaluator.Layer](allocator, 1)
-	layers[0] = layer
-	resId := evaluator.NewObject(layers, ctx)
-	resObjVal := evaluator.MakeObjectValue(resId)
+	resObj := evaluator.NewSingleLayerObject(allocator, layer)
+	resObjVal := evaluator.MakeObjectValue(resObj)
 
 	mapCtx := ctx
 	mapCtx.Self = resObjVal
@@ -302,8 +300,9 @@ func std_objectRemoveKey(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 	copy(newLayers, existingLayers)
 	newLayers[newLen-1] = tombstoneLayer
 
-	resObjId := evaluator.NewObject(newLayers, ctx)
-	return evaluator.MakeObjectValue(resObjId), nil
+	resObj := arena.Create[evaluator.Object](allocator)
+	resObj.Layers = newLayers
+	return evaluator.MakeObjectValue(resObj), nil
 }
 
 func std_mergePatch(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -329,7 +328,7 @@ func std_mergePatch(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	// std.mergePatch({ a: 1 }, { b: 2, c: self.a }) should not work according to go-jsonnet
 	// but with this kinda merge it does... so some solution where the objects are individually evaled is needed
 	if targetVal.IsObject() {
-		mergedObjId := evaluator.MergeObjects(targetVal.RefId(), patchVal.RefId(), ctx)
+		mergedObjId := evaluator.MergeObjects(targetVal.Payload(), patchVal.Payload(), ctx)
 		objVal = evaluator.MakeObjectValue(mergedObjId)
 	} else {
 		// If target val is not an object, just scrap it and only use the patch object
@@ -378,10 +377,8 @@ func std_mergePatch(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 		layer.Meta = layer.Meta[:index]
 	}
 
-	layers := arena.Alloc[*evaluator.Layer](allocator, 1)
-	layers[0] = layer
-	resObjId := evaluator.NewObject(layers, ctx)
+	res := evaluator.NewSingleLayerObject(allocator, layer)
 
-	return evaluator.MakeObjectValue(resObjId), nil
+	return evaluator.MakeObjectValue(res), nil
 
 }

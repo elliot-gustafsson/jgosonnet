@@ -14,8 +14,8 @@ import (
 	"github.com/google/go-jsonnet/ast"
 )
 
-func EvaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
-	val, err := evaluateNode(n, scopeId, ctx)
+func EvaluateNode(n ast.Node, scopePtr uintptr, ctx Context) (Value, error) {
+	val, err := evaluateNode(n, scopePtr, ctx)
 	if err != nil {
 		return ValueNone, WrapError(err, n)
 	}
@@ -75,31 +75,34 @@ func ManifestValue(value Value, ctx Context) (any, error) {
 	}
 }
 
-func CreateFileScope(filename string, baseStd Value, ctx Context) uint32 {
+func CreateFileScope(filename string, baseStd Value, ctx Context) uintptr {
+	allocator := ctx.State.Registry.Allocator
+
 	keyId := ctx.State.Interner.Intern("thisFile")
 
-	layer := &Layer{
-		Keys:   []uint32{keyId},
-		Values: []Value{MakeString(filename, ctx)},
-		Meta:   []uint8{0},
-	}
+	layer := arena.Create[Layer](allocator)
+	layer.Keys = arena.Alloc[uint32](allocator, 1)
+	layer.Keys[0] = keyId
 
-	fileObjId := NewObject([]*Layer{layer}, ctx)
-	fileObjVal := MakeObjectValue(fileObjId)
+	layer.Values = arena.Alloc[Value](allocator, 1)
+	layer.Values[0] = MakeString(filename, ctx)
 
-	mergedObjId := MergeObjects(baseStd.RefId(), fileObjVal.RefId(), ctx)
+	layer.Meta = arena.Alloc[uint8](allocator, 1)
+
+	fileObj := NewSingleLayerObject(allocator, layer)
+
+	mergedObjId := MergeObjects(baseStd.Payload(), uintptr(unsafe.Pointer(fileObj)), ctx)
 	fileStd := MakeObjectValue(mergedObjId)
 
-	s, scopeId := ctx.NewScope(2, 2)
-	// s := ctx.State.Registry.Scopes.GetPtr(scopeId)
+	s, scopePtr := ctx.NewScope(2, 2)
 
 	s.Bindings[0] = NamedValue{Key: ctx.State.Interner.Intern("$std"), Value: fileStd}
 	s.Bindings[1] = NamedValue{Key: ctx.State.Interner.Intern("std"), Value: fileStd}
 
-	return scopeId
+	return scopePtr
 }
 
-func evaluateNodeLazy(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
+func evaluateNodeLazy(n ast.Node, scopePtr uintptr, ctx Context) (Value, error) {
 	switch node := n.(type) {
 	default:
 		return ValueNone, fmt.Errorf("unhandled node type: %T (lazy eval)", node)
@@ -121,42 +124,42 @@ func evaluateNodeLazy(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 		return ctx.Self, nil
 
 	case *ast.DesugaredObject:
-		return NewThunk(ThunkTypeObject, unsafe.Pointer(node), scopeId, ctx), nil
+		return NewThunk(ThunkTypeObject, unsafe.Pointer(node), scopePtr, ctx), nil
 	case *ast.Array:
-		return NewThunk(ThunkTypeArray, unsafe.Pointer(node), scopeId, ctx), nil
+		return NewThunk(ThunkTypeArray, unsafe.Pointer(node), scopePtr, ctx), nil
 	case *ast.Local:
-		return NewThunk(ThunkTypeLocal, unsafe.Pointer(node), scopeId, ctx), nil
+		return NewThunk(ThunkTypeLocal, unsafe.Pointer(node), scopePtr, ctx), nil
 	case *ast.Apply:
-		return NewThunk(ThunkTypeApply, unsafe.Pointer(node), scopeId, ctx), nil
+		return NewThunk(ThunkTypeApply, unsafe.Pointer(node), scopePtr, ctx), nil
 	case *ast.Index:
-		return NewThunk(ThunkTypeIndex, unsafe.Pointer(node), scopeId, ctx), nil
+		return NewThunk(ThunkTypeIndex, unsafe.Pointer(node), scopePtr, ctx), nil
 	case *ast.Var:
-		return NewThunk(ThunkTypeVar, unsafe.Pointer(node), scopeId, ctx), nil
+		return NewThunk(ThunkTypeVar, unsafe.Pointer(node), scopePtr, ctx), nil
 	case *ast.Function:
-		return NewThunk(ThunkTypeFunction, unsafe.Pointer(node), scopeId, ctx), nil
+		return NewThunk(ThunkTypeFunction, unsafe.Pointer(node), scopePtr, ctx), nil
 	case *ast.Conditional:
-		return NewThunk(ThunkTypeConditional, unsafe.Pointer(node), scopeId, ctx), nil
+		return NewThunk(ThunkTypeConditional, unsafe.Pointer(node), scopePtr, ctx), nil
 	case *ast.Binary:
-		return NewThunk(ThunkTypeBinary, unsafe.Pointer(node), scopeId, ctx), nil
+		return NewThunk(ThunkTypeBinary, unsafe.Pointer(node), scopePtr, ctx), nil
 	case *ast.Unary:
-		return NewThunk(ThunkTypeUnary, unsafe.Pointer(node), scopeId, ctx), nil
+		return NewThunk(ThunkTypeUnary, unsafe.Pointer(node), scopePtr, ctx), nil
 	case *ast.Import:
-		return NewThunk(ThunkTypeImport, unsafe.Pointer(node), scopeId, ctx), nil
+		return NewThunk(ThunkTypeImport, unsafe.Pointer(node), scopePtr, ctx), nil
 	case *ast.ImportStr:
-		return NewThunk(ThunkTypeImportStr, unsafe.Pointer(node), scopeId, ctx), nil
+		return NewThunk(ThunkTypeImportStr, unsafe.Pointer(node), scopePtr, ctx), nil
 	case *ast.SuperIndex:
-		return NewThunk(ThunkTypeSuperIndex, unsafe.Pointer(node), scopeId, ctx), nil
+		return NewThunk(ThunkTypeSuperIndex, unsafe.Pointer(node), scopePtr, ctx), nil
 	case *ast.InSuper:
-		return NewThunk(ThunkTypeInSuper, unsafe.Pointer(node), scopeId, ctx), nil
+		return NewThunk(ThunkTypeInSuper, unsafe.Pointer(node), scopePtr, ctx), nil
 	case *ast.Error:
-		return NewThunk(ThunkTypeError, unsafe.Pointer(node), scopeId, ctx), nil
+		return NewThunk(ThunkTypeError, unsafe.Pointer(node), scopePtr, ctx), nil
 
 	case *GoCallbackNode:
-		return NewThunk(ThunkTypeGoCallback, unsafe.Pointer(node), scopeId, ctx), nil
+		return NewThunk(ThunkTypeGoCallback, unsafe.Pointer(node), scopePtr, ctx), nil
 	}
 }
 
-func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
+func evaluateNode(n ast.Node, scopePtr uintptr, ctx Context) (Value, error) {
 	switch node := n.(type) {
 	default:
 		return ValueNone, fmt.Errorf("unhandled node type: %T", node)
@@ -175,25 +178,25 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 		}
 		return MakeNumber(num), nil
 	case *ast.DesugaredObject:
-		return handleDesugaredObject(node, scopeId, ctx)
+		return handleDesugaredObject(node, scopePtr, ctx)
 	case *ast.Array:
-		return handleArray(node, scopeId, ctx)
+		return handleArray(node, scopePtr, ctx)
 	case *ast.Local:
-		return handleLocal(node, scopeId, ctx)
+		return handleLocal(node, scopePtr, ctx)
 	case *ast.Apply:
-		return handleApply(node, scopeId, ctx)
+		return handleApply(node, scopePtr, ctx)
 	case *ast.Index:
-		return handleIndex(node, scopeId, ctx)
+		return handleIndex(node, scopePtr, ctx)
 	case *ast.Var:
-		return handleVar(node, scopeId, ctx)
+		return handleVar(node, scopePtr, ctx)
 	case *ast.Function:
-		return handleFunction(node, scopeId, ctx)
+		return handleFunction(node, scopePtr, ctx)
 	case *ast.Conditional:
-		return handleConditional(node, scopeId, ctx)
+		return handleConditional(node, scopePtr, ctx)
 	case *ast.Binary:
-		return handleBinary(node, scopeId, ctx)
+		return handleBinary(node, scopePtr, ctx)
 	case *ast.Unary:
-		return handleUnary(node, scopeId, ctx)
+		return handleUnary(node, scopePtr, ctx)
 	case *ast.Import:
 		return handleImport(node, ctx)
 	case *ast.ImportStr:
@@ -201,11 +204,11 @@ func evaluateNode(n ast.Node, scopeId uint32, ctx Context) (Value, error) {
 	case *ast.Self:
 		return ctx.Self, nil
 	case *ast.SuperIndex:
-		return handleSuperIndex(node, scopeId, ctx)
+		return handleSuperIndex(node, scopePtr, ctx)
 	case *ast.InSuper:
-		return handleInSuper(node, scopeId, ctx)
+		return handleInSuper(node, scopePtr, ctx)
 	case *ast.Error:
-		return handleError(node, scopeId, ctx)
+		return handleError(node, scopePtr, ctx)
 	case *GoCallbackNode:
 		return node.Func.Exec(node.Args, ctx)
 	}
@@ -223,10 +226,10 @@ func (n *GoCallbackNode) SetFreeVariables(ast.Identifiers) {}
 func (n *GoCallbackNode) SetContext(ast.Context)           {}
 func (n *GoCallbackNode) OpenFodder() *ast.Fodder          { return nil }
 
-func handleArray(node *ast.Array, scopeId uint32, ctx Context) (Value, error) {
+func handleArray(node *ast.Array, scopePtr uintptr, ctx Context) (Value, error) {
 	arr, val := MakeArraySized(len(node.Elements), ctx)
 	for i := range node.Elements {
-		ev, err := evaluateNodeLazy(node.Elements[i].Expr, scopeId, ctx)
+		ev, err := evaluateNodeLazy(node.Elements[i].Expr, scopePtr, ctx)
 		if err != nil {
 			return ValueNone, err
 		}
@@ -235,7 +238,7 @@ func handleArray(node *ast.Array, scopeId uint32, ctx Context) (Value, error) {
 	return val, nil
 }
 
-func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Context) (Value, error) {
+func handleDesugaredObject(node *ast.DesugaredObject, scopePtr uintptr, ctx Context) (Value, error) {
 
 	allocator := ctx.State.Registry.Allocator
 
@@ -244,7 +247,7 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 
 	layer := arena.Create[Layer](allocator)
 
-	layer.ParentScopeId = scopeId
+	layer.ParentScopePtr = scopePtr
 
 	if fieldCount > 0 {
 		layer.Keys = arena.Alloc[uint32](allocator, fieldCount)
@@ -281,7 +284,7 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 			nameStr = ls.Value
 		} else {
 			var err error
-			name, err := EvaluateNode(v.Name, scopeId, ctx)
+			name, err := EvaluateNode(v.Name, scopePtr, ctx)
 			if err != nil {
 				return ValueNone, err
 			}
@@ -316,21 +319,19 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopeId uint32, ctx Contex
 		layer.Meta = layer.Meta[:index]
 	}
 
-	layers := arena.Alloc[*Layer](allocator, 1)
-	layers[0] = layer
-	objId := NewObject(layers, ctx)
+	obj := NewSingleLayerObject(allocator, layer)
 
-	return MakeObjectValue(objId), nil
+	return MakeObjectValue(obj), nil
 }
 
-func handleLocal(node *ast.Local, scopeId uint32, ctx Context) (Value, error) {
+func handleLocal(node *ast.Local, scopePtr uintptr, ctx Context) (Value, error) {
 
-	s, childScopeId := ctx.NewScope(scopeId, len(node.Binds))
+	s, childScopePtr := ctx.NewScope(scopePtr, len(node.Binds))
 
 	for i, v := range node.Binds {
 		vname := string(v.Variable)
 		keyId := ctx.State.Interner.Intern(vname)
-		t, err := evaluateNodeLazy(v.Body, childScopeId, ctx)
+		t, err := evaluateNodeLazy(v.Body, childScopePtr, ctx)
 		if err != nil {
 			return ValueNone, err
 		}
@@ -338,15 +339,15 @@ func handleLocal(node *ast.Local, scopeId uint32, ctx Context) (Value, error) {
 		s.Bindings[i] = NamedValue{keyId, t}
 	}
 
-	val, err := EvaluateNode(node.Body, childScopeId, ctx)
+	val, err := EvaluateNode(node.Body, childScopePtr, ctx)
 	if err != nil {
 		return ValueNone, err
 	}
 	return val, nil
 }
 
-func handleApply(node *ast.Apply, scopeId uint32, ctx Context) (Value, error) {
-	val, err := EvaluateNode(node.Target, scopeId, ctx)
+func handleApply(node *ast.Apply, scopePtr uintptr, ctx Context) (Value, error) {
+	val, err := EvaluateNode(node.Target, scopePtr, ctx)
 	if err != nil {
 		return ValueNone, err
 	}
@@ -361,7 +362,7 @@ func handleApply(node *ast.Apply, scopeId uint32, ctx Context) (Value, error) {
 	args := arena.Alloc[NamedValue](ctx.State.Registry.Allocator, posCount+nameCount)
 	for i, a := range node.Arguments.Positional {
 		// v, err := EvaluateNodeStrict(a.Expr, scopeId, ctx)
-		v, err := evaluateNodeLazy(a.Expr, scopeId, ctx)
+		v, err := evaluateNodeLazy(a.Expr, scopePtr, ctx)
 		if err != nil {
 			return ValueNone, err
 		}
@@ -370,7 +371,7 @@ func handleApply(node *ast.Apply, scopeId uint32, ctx Context) (Value, error) {
 	for i, a := range node.Arguments.Named {
 		// a.Name
 		// v, err := EvaluateNodeStrict(a.Arg, scopeId, ctx)
-		v, err := evaluateNodeLazy(a.Arg, scopeId, ctx)
+		v, err := evaluateNodeLazy(a.Arg, scopePtr, ctx)
 		if err != nil {
 			return ValueNone, err
 		}
@@ -385,8 +386,8 @@ func handleApply(node *ast.Apply, scopeId uint32, ctx Context) (Value, error) {
 	return res, nil
 }
 
-func handleBinary(node *ast.Binary, scopeId uint32, ctx Context) (Value, error) {
-	left, err := EvaluateNode(node.Left, scopeId, ctx)
+func handleBinary(node *ast.Binary, scopePtr uintptr, ctx Context) (Value, error) {
+	left, err := EvaluateNode(node.Left, scopePtr, ctx)
 	if err != nil {
 		return ValueNone, err
 	}
@@ -402,7 +403,7 @@ func handleBinary(node *ast.Binary, scopeId uint32, ctx Context) (Value, error) 
 			return MakeBool(false), nil
 		}
 
-		right, err := EvaluateNode(node.Right, scopeId, ctx)
+		right, err := EvaluateNode(node.Right, scopePtr, ctx)
 		if err != nil {
 			return ValueNone, err
 		}
@@ -422,7 +423,7 @@ func handleBinary(node *ast.Binary, scopeId uint32, ctx Context) (Value, error) 
 			return MakeBool(true), nil
 		}
 
-		right, err := EvaluateNode(node.Right, scopeId, ctx)
+		right, err := EvaluateNode(node.Right, scopePtr, ctx)
 		if err != nil {
 			return ValueNone, err
 		}
@@ -434,7 +435,7 @@ func handleBinary(node *ast.Binary, scopeId uint32, ctx Context) (Value, error) 
 		return right, nil
 
 	default:
-		right, err := EvaluateNode(node.Right, scopeId, ctx)
+		right, err := EvaluateNode(node.Right, scopePtr, ctx)
 		if err != nil {
 			return ValueNone, err
 		}
@@ -449,8 +450,8 @@ func handleBinary(node *ast.Binary, scopeId uint32, ctx Context) (Value, error) 
 
 }
 
-func handleUnary(node *ast.Unary, scopeId uint32, ctx Context) (Value, error) {
-	unary, err := EvaluateNode(node.Expr, scopeId, ctx)
+func handleUnary(node *ast.Unary, scopePtr uintptr, ctx Context) (Value, error) {
+	unary, err := EvaluateNode(node.Expr, scopePtr, ctx)
 	if err != nil {
 		return ValueNone, err
 	}
@@ -479,12 +480,12 @@ func handleUnary(node *ast.Unary, scopeId uint32, ctx Context) (Value, error) {
 	}
 }
 
-func handleVar(node *ast.Var, scopeId uint32, ctx Context) (Value, error) {
+func handleVar(node *ast.Var, scopePtr uintptr, ctx Context) (Value, error) {
 	name := string(node.Id)
 
 	keyId := ctx.State.Interner.Intern(name)
 
-	val, found := ctx.GetScopeBind(scopeId, keyId)
+	val, found := ctx.GetScopeBind(scopePtr, keyId)
 	if !found {
 		return ValueNone, MakeRuntimeError(fmt.Errorf("variable not found in scope, name: %s", name))
 	}
@@ -492,7 +493,7 @@ func handleVar(node *ast.Var, scopeId uint32, ctx Context) (Value, error) {
 	return val, nil
 }
 
-func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, error) {
+func handleFunction(node *ast.Function, scopePtr uintptr, ctx Context) (Value, error) {
 
 	paramCount := len(node.Parameters)
 
@@ -507,10 +508,10 @@ func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, err
 		}
 
 		if paramCount == 0 {
-			return EvaluateNode(node.Body, scopeId, ctx)
+			return EvaluateNode(node.Body, scopePtr, ctx)
 		}
 
-		s, childScopeId := ctx.NewScope(scopeId, paramCount)
+		s, childScopeId := ctx.NewScope(scopePtr, paramCount)
 
 		// TODO: Throw err on argument x already provided
 
@@ -563,8 +564,8 @@ func handleFunction(node *ast.Function, scopeId uint32, ctx Context) (Value, err
 	return MakeFunction(f, ctx), nil
 }
 
-func handleConditional(node *ast.Conditional, scopeId uint32, ctx Context) (Value, error) {
-	cond, err := EvaluateNode(node.Cond, scopeId, ctx)
+func handleConditional(node *ast.Conditional, scopePtr uintptr, ctx Context) (Value, error) {
+	cond, err := EvaluateNode(node.Cond, scopePtr, ctx)
 	if err != nil {
 		return ValueNone, err
 	}
@@ -573,27 +574,27 @@ func handleConditional(node *ast.Conditional, scopeId uint32, ctx Context) (Valu
 	}
 
 	if cond.Bool() {
-		bt, err := EvaluateNode(node.BranchTrue, scopeId, ctx)
+		bt, err := EvaluateNode(node.BranchTrue, scopePtr, ctx)
 		if err != nil {
 			return ValueNone, err
 		}
 		return bt, nil
 	}
 
-	bf, err := EvaluateNode(node.BranchFalse, scopeId, ctx)
+	bf, err := EvaluateNode(node.BranchFalse, scopePtr, ctx)
 	if err != nil {
 		return ValueNone, err
 	}
 	return bf, nil
 }
 
-func handleIndex(node *ast.Index, scopeId uint32, ctx Context) (Value, error) {
-	index, err := EvaluateNode(node.Index, scopeId, ctx)
+func handleIndex(node *ast.Index, scopePtr uintptr, ctx Context) (Value, error) {
+	index, err := EvaluateNode(node.Index, scopePtr, ctx)
 	if err != nil {
 		return ValueNone, err
 	}
 
-	target, err := EvaluateNode(node.Target, scopeId, ctx)
+	target, err := EvaluateNode(node.Target, scopePtr, ctx)
 	if err != nil {
 		return ValueNone, err
 	}
@@ -616,13 +617,17 @@ func handleIndex(node *ast.Index, scopeId uint32, ctx Context) (Value, error) {
 			return ValueNone, MakeRuntimeError(fmt.Errorf("unexpected index type for indexing object, expected string, got %s", index.Type().String()))
 		}
 
-		var keyId uint32
-		if index.IsStringConst() {
-			keyId = index.RefId()
-		} else {
-			name := index.String(ctx)
-			keyId = ctx.State.Interner.Intern(name)
-		}
+		// var keyId uint32
+		// if index.IsStringConst() {
+		// 	keyId = index.RefId()
+		// } else {
+		// 	name := index.String(ctx)
+		// 	keyId = ctx.State.Interner.Intern(name)
+		// }
+
+		// TODO: think abt this again
+		name := index.String(ctx)
+		keyId := ctx.State.Interner.Intern(name)
 
 		obj := target.Object(ctx)
 
@@ -657,8 +662,8 @@ func handleIndex(node *ast.Index, scopeId uint32, ctx Context) (Value, error) {
 
 }
 
-func handleSuperIndex(node *ast.SuperIndex, scopeId uint32, ctx Context) (Value, error) {
-	index, err := EvaluateNode(node.Index, scopeId, ctx)
+func handleSuperIndex(node *ast.SuperIndex, scopePtr uintptr, ctx Context) (Value, error) {
+	index, err := EvaluateNode(node.Index, scopePtr, ctx)
 	if err != nil {
 		return ValueNone, err
 	}
@@ -667,13 +672,17 @@ func handleSuperIndex(node *ast.SuperIndex, scopeId uint32, ctx Context) (Value,
 		return ValueNone, errors.New("ctx.Self not set")
 	}
 
-	var keyId uint32
-	if index.IsStringConst() {
-		keyId = index.RefId()
-	} else {
-		name := index.String(ctx)
-		keyId = ctx.State.Interner.Intern(name)
-	}
+	// var keyId uint32
+	// if index.IsStringConst() {
+	// 	keyId = index.RefId()
+	// } else {
+	// 	name := index.String(ctx)
+	// 	keyId = ctx.State.Interner.Intern(name)
+	// }
+
+	// TODO: think abt this again
+	name := index.String(ctx)
+	keyId := ctx.State.Interner.Intern(name)
 
 	obj := ctx.Self.Object(ctx)
 
@@ -696,8 +705,8 @@ func handleSuperIndex(node *ast.SuperIndex, scopeId uint32, ctx Context) (Value,
 	return val, nil
 }
 
-func handleInSuper(node *ast.InSuper, scopeId uint32, ctx Context) (Value, error) {
-	index, err := EvaluateNode(node.Index, scopeId, ctx)
+func handleInSuper(node *ast.InSuper, scopePtr uintptr, ctx Context) (Value, error) {
+	index, err := EvaluateNode(node.Index, scopePtr, ctx)
 	if err != nil {
 		return ValueNone, err
 	}
@@ -706,13 +715,17 @@ func handleInSuper(node *ast.InSuper, scopeId uint32, ctx Context) (Value, error
 		return ValueNone, errors.New("ctx.Self not set")
 	}
 
-	var keyId uint32
-	if index.IsStringConst() {
-		keyId = index.RefId()
-	} else {
-		name := index.String(ctx)
-		keyId = ctx.State.Interner.Intern(name)
-	}
+	// var keyId uint32
+	// if index.IsStringConst() {
+	// 	keyId = index.RefId()
+	// } else {
+	// 	name := index.String(ctx)
+	// 	keyId = ctx.State.Interner.Intern(name)
+	// }
+
+	// TODO: think abt this again
+	name := index.String(ctx)
+	keyId := ctx.State.Interner.Intern(name)
 
 	obj := ctx.Self.Object(ctx)
 
@@ -726,8 +739,8 @@ func handleInSuper(node *ast.InSuper, scopeId uint32, ctx Context) (Value, error
 	return MakeBool(!val.IsNone()), nil
 }
 
-func handleError(node *ast.Error, scopeId uint32, ctx Context) (Value, error) {
-	msg, err := EvaluateNode(node.Expr, scopeId, ctx)
+func handleError(node *ast.Error, scopePtr uintptr, ctx Context) (Value, error) {
+	msg, err := EvaluateNode(node.Expr, scopePtr, ctx)
 	if err != nil {
 		return ValueNone, err
 	}

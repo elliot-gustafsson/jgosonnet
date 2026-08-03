@@ -163,11 +163,8 @@ func rawDataToValue(x any, ctx evaluator.Context) (evaluator.Value, error) {
 			layer.Meta = layer.Meta[:index]
 		}
 
-		layers := arena.Alloc[*evaluator.Layer](allocator, 1)
-		layers[0] = layer
-		objId := evaluator.NewObject(layers, ctx)
-
-		return evaluator.MakeObjectValue(objId), nil
+		obj := evaluator.NewSingleLayerObject(allocator, layer)
+		return evaluator.MakeObjectValue(obj), nil
 	default:
 		return evaluator.ValueNone, fmt.Errorf("unahandled type %T when converting data to value", x)
 	}
