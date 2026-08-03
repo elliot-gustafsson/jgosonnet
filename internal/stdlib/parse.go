@@ -128,6 +128,8 @@ func rawDataToValue(x any, ctx evaluator.Context) (evaluator.Value, error) {
 		allocator := ctx.State.Registry.Allocator
 
 		layer := arena.Create[evaluator.Layer](allocator)
+		*layer = evaluator.Layer{}
+
 		layer.Keys = arena.Alloc[uint32](allocator, fieldCount)
 		layer.Values = arena.Alloc[evaluator.Value](allocator, fieldCount)
 		layer.Meta = arena.Alloc[uint8](allocator, fieldCount)

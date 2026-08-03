@@ -24,7 +24,9 @@ func NewPropertyMap[T any](a *arena.Allocator, initialCap uint32) *PropertyMap[T
 
 	pm := arena.Create[PropertyMap[T]](a)
 	pm.entries = arena.Alloc[Property[T]](a, int(cap))
+	clear(pm.entries)
 	pm.capMask = cap - 1
+	pm.count = 0
 	return pm
 }
 
@@ -94,6 +96,7 @@ func (pm *PropertyMap[T]) grow(a *arena.Allocator) {
 
 	// Fast allocation of the larger backing table
 	newEntries := arena.Alloc[Property[T]](a, int(newCap))
+	clear(newEntries)
 
 	for i := range oldEntries {
 		old := &oldEntries[i]

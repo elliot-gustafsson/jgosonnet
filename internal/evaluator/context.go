@@ -62,9 +62,11 @@ func (t *Registry) Reset() {
 
 func (c Context) NewScope(parentPtr uintptr, length int) (*Scope, uintptr) {
 	s := arena.Create[Scope](c.State.Registry.Allocator)
+	*s = Scope{}
 
 	s.ParentPtr = parentPtr
 	s.Bindings = arena.Alloc[NamedValue](c.State.Registry.Allocator, length)
+	clear(s.Bindings)
 
 	return s, uintptr(unsafe.Pointer(s))
 }

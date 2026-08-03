@@ -17,13 +17,14 @@ type DescriptorTable struct {
 	count   uint32
 }
 
-func NewDescriptorTable(a *arena.Allocator, symbols []uint32) *DescriptorTable {
+func NewDescriptorTable(a *arena.Allocator, symbols []uint32) (dt *DescriptorTable) {
 	n := uint32(len(symbols))
 	// 1.4x capacity guarantees a max load factor of ~70% for minimal probing
 	cap := nextPowerOf2(n + (n >> 1))
 	capMask := cap - 1
 
 	entries := arena.Alloc[Descriptor](a, int(cap))
+	clear(entries)
 
 	for i, sym := range symbols {
 		idx := hashUint32(sym) & capMask
@@ -34,24 +35,29 @@ func NewDescriptorTable(a *arena.Allocator, symbols []uint32) *DescriptorTable {
 		entries[idx].Value = uint32(i)
 	}
 
-	dt := arena.Create[DescriptorTable](a)
-	dt.entries = entries
-	dt.capMask = capMask
-	dt.count = n
-	return dt
+	dt = arena.Create[DescriptorTable](a)
+	*dt = DescriptorTable{
+		entries: entries,
+		capMask: capMask,
+		count:   n,
+	}
+	return
 }
 
-func NewEmptyDescriptorTable(a *arena.Allocator, l int) *DescriptorTable {
+func NewEmptyDescriptorTable(a *arena.Allocator, l int) (dt *DescriptorTable) {
 	n := uint32(l)
 	// 1.4x capacity guarantees a max load factor of ~70% for minimal probing
 	cap := nextPowerOf2(n + (n >> 1))
 	capMask := cap - 1
 
-	dt := arena.Create[DescriptorTable](a)
-	dt.entries = arena.Alloc[Descriptor](a, int(cap))
-	dt.capMask = capMask
-	dt.count = 0
-	return dt
+	dt = arena.Create[DescriptorTable](a)
+	*dt = DescriptorTable{
+		entries: arena.Alloc[Descriptor](a, int(cap)),
+		capMask: capMask,
+		count:   0,
+	}
+	clear(dt.entries)
+	return
 }
 
 func (dt *DescriptorTable) Length() int {

@@ -16,6 +16,8 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 
 	// TODO: benchmark if stack or arena arrays are better
 	objs := arena.Alloc[*evaluator.Object](ctx.State.Registry.Allocator, len(inputArr))
+	clear(objs)
+
 	totalLayers := 0
 	for i, v := range inputArr {
 		obj, err := v.EvalObject(ctx)
@@ -28,6 +30,8 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 	}
 
 	layers := arena.Alloc[*evaluator.Layer](ctx.State.Registry.Allocator, totalLayers)
+	clear(layers)
+
 	index := 0
 	for _, o := range objs {
 		objLayers := o.GetLayers(ctx)
@@ -36,6 +40,7 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 	}
 
 	obj := arena.Create[evaluator.Object](ctx.State.Registry.Allocator)
+	*obj = evaluator.Object{}
 	obj.Layers = layers
 
 	return evaluator.MakeObjectValue(obj), nil

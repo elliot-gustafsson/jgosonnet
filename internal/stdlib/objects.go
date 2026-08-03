@@ -229,6 +229,7 @@ func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	allocator := ctx.State.Registry.Allocator
 
 	layer := arena.Create[evaluator.Layer](allocator)
+	*layer = evaluator.Layer{}
 
 	layer.Keys = arena.Alloc[uint32](allocator, fieldCount)
 	layer.Values = arena.Alloc[evaluator.Value](allocator, fieldCount)
@@ -286,6 +287,8 @@ func std_objectRemoveKey(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 	existingLayers := obj.GetLayers(ctx)
 
 	tombstoneLayer := arena.Create[evaluator.Layer](allocator)
+	*tombstoneLayer = evaluator.Layer{}
+
 	tombstoneLayer.Keys = arena.Alloc[uint32](allocator, 1)
 	tombstoneLayer.Keys[0] = keyId
 
@@ -301,6 +304,8 @@ func std_objectRemoveKey(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 	newLayers[newLen-1] = tombstoneLayer
 
 	resObj := arena.Create[evaluator.Object](allocator)
+	*resObj = evaluator.Object{}
+
 	resObj.Layers = newLayers
 	return evaluator.MakeObjectValue(resObj), nil
 }
@@ -342,6 +347,8 @@ func std_mergePatch(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	allocator := ctx.State.Registry.Allocator
 
 	layer := arena.Create[evaluator.Layer](allocator)
+	*layer = evaluator.Layer{}
+
 	layer.Keys = arena.Alloc[uint32](allocator, fieldCount)
 	layer.Values = arena.Alloc[evaluator.Value](allocator, fieldCount)
 	layer.Meta = arena.Alloc[uint8](allocator, fieldCount)

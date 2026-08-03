@@ -81,6 +81,8 @@ func CreateFileScope(filename string, baseStd Value, ctx Context) uintptr {
 	keyId := ctx.State.Interner.Intern("thisFile")
 
 	layer := arena.Create[Layer](allocator)
+	*layer = Layer{}
+
 	layer.Keys = arena.Alloc[uint32](allocator, 1)
 	layer.Keys[0] = keyId
 
@@ -246,18 +248,21 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopePtr uintptr, ctx Cont
 	localsCount := len(node.Locals)
 
 	layer := arena.Create[Layer](allocator)
+	*layer = Layer{}
 
 	layer.ParentScopePtr = scopePtr
 
 	if fieldCount > 0 {
 		layer.Keys = arena.Alloc[uint32](allocator, fieldCount)
 		layer.Nodes = arena.Alloc[ast.Node](allocator, fieldCount)
+		clear(layer.Nodes)
 		layer.Meta = arena.Alloc[uint8](allocator, fieldCount)
 	}
 
 	if localsCount > 0 {
 		layer.LocalKeys = arena.Alloc[uint32](allocator, localsCount)
 		layer.LocalNodes = arena.Alloc[ast.Node](allocator, localsCount)
+		clear(layer.LocalNodes)
 	}
 
 	if len(node.Asserts) > 0 {
@@ -360,6 +365,7 @@ func handleApply(node *ast.Apply, scopePtr uintptr, ctx Context) (Value, error) 
 	nameCount := len(node.Arguments.Named)
 
 	args := arena.Alloc[NamedValue](ctx.State.Registry.Allocator, posCount+nameCount)
+	clear(args)
 	for i, a := range node.Arguments.Positional {
 		// v, err := EvaluateNodeStrict(a.Expr, scopeId, ctx)
 		v, err := evaluateNodeLazy(a.Expr, scopePtr, ctx)

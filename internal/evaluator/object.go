@@ -88,6 +88,7 @@ func (l *Layer) unpackAsserts() []ast.Node {
 
 func NewSingleLayerObject(allocator *arena.Allocator, layer *Layer) *Object {
 	o := arena.Create[Object](allocator)
+	*o = Object{}
 	o.Layers = arena.Alloc[*Layer](allocator, 1)
 	o.Layers[0] = layer
 	return o
@@ -298,6 +299,7 @@ func (t *Object) getScope(layerIndex int, layer *Layer, ctx Context) (uintptr, e
 func (t *Object) createLayerScope(layerIndex int, layer *Layer, ctx Context) (uintptr, error) {
 	if t.Scopes == nil {
 		t.Scopes = arena.Alloc[uintptr](ctx.State.Registry.Allocator, len(t.GetLayers(ctx)))
+		clear(t.Scopes)
 	}
 
 	scopePtr := t.Scopes[layerIndex]
@@ -382,8 +384,9 @@ func (t *Object) GetLayers(ctx Context) []*Layer {
 		return t.Layers
 	}
 
-	layers := arena.Alloc[*Layer](ctx.State.Registry.Allocator, 8)[:0]
-	layers = t.appendLayers(layers, ctx)
+	layers := arena.Alloc[*Layer](ctx.State.Registry.Allocator, 8)
+	clear(layers)
+	layers = t.appendLayers(layers[:0], ctx)
 
 	t.Layers = layers
 	t.LeftPtr = 0
@@ -394,6 +397,7 @@ func (t *Object) GetLayers(ctx Context) []*Layer {
 
 func MergeObjects(leftPtr, rightPtr uintptr, ctx Context) *Object {
 	o := arena.Create[Object](ctx.State.Registry.Allocator)
+	*o = Object{}
 	o.LeftPtr = leftPtr
 	o.RightPtr = rightPtr
 	return o
@@ -462,7 +466,9 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 		maxKeys += len(layers[i].Keys)
 	}
 
-	plans := arena.Alloc[FieldPlan](allocator, maxKeys)[:0]
+	plans := arena.Alloc[FieldPlan](allocator, maxKeys)
+	clear(plans)
+	plans = plans[:0]
 
 	var planIdxMap *utils.DescriptorTable
 	useMap := maxKeys > MaxPlanLinearKeys
@@ -492,10 +498,13 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 			}
 
 			if pIdx == -1 {
+				lrs := arena.Alloc[LayerRef](allocator, 4)
+				clear(lrs)
+
 				plans = append(plans, FieldPlan{
 					KeyId:            keyID,
 					Visibility:       uint8(ast.ObjectFieldInherit),
-					Layers:           arena.Alloc[LayerRef](allocator, 4)[:0],
+					Layers:           lrs[:0],
 					ShadowUntilLayer: math.MaxUint16,
 				})
 				pIdx = len(plans) - 1
@@ -535,7 +544,9 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 
 			if len(plan.Layers) == cap(plan.Layers) {
 				n := len(plan.Layers)
-				plan.Layers = arena.Realloc(allocator, plan.Layers, n*2)[:n]
+				plan.Layers = arena.Realloc(allocator, plan.Layers, n*2)
+				clear(plan.Layers[n:])
+				plan.Layers = plan.Layers[:n]
 			}
 			plan.Layers = append(plan.Layers, LayerRef{int32(l), int32(f)})
 
@@ -823,6 +834,7 @@ func GetObjectKeysValues(obj *Object, ctx Context, inclHidden bool) ([]Value, er
 		}
 
 		layer := arena.Create[Layer](allocator)
+		*layer = Layer{}
 
 		layer.Keys = arena.Alloc[uint32](allocator, 2)
 		layer.Keys[0] = keyIdx
@@ -887,6 +899,7 @@ func (t *Object) Prune(ctx Context) (Value, error) {
 	allocator := ctx.State.Registry.Allocator
 
 	layer := arena.Create[Layer](allocator)
+	*layer = Layer{}
 	layer.Keys = arena.Alloc[uint32](allocator, n)
 	layer.Values = arena.Alloc[Value](allocator, n)
 	layer.Meta = arena.Alloc[uint8](allocator, n)

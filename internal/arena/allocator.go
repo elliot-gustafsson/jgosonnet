@@ -29,6 +29,7 @@ func NewAllocator() (a *Allocator) {
 	return
 }
 
+// Create type T, memory can be uninitialized. If all slots arent set a clear must be made first
 func Create[T any](a *Allocator) (ptr *T) {
 	var zero T
 	size := unsafe.Sizeof(zero)
@@ -120,9 +121,6 @@ func Realloc[T any](a *Allocator, slice []T, length int) (s []T) {
 
 			// ensure it still fits in the chunk and respects the max small alloc threshold
 			if totalSize <= MaxSmallAlloc && newOffset <= ChunkSize {
-				// zero newly claimed memory
-				extendedPtr := unsafe.Add(a.base, a.offset)
-				clear(unsafe.Slice((*byte)(unsafe.Pointer(extendedPtr)), additionalBytes))
 
 				a.offset = newOffset
 				s = unsafe.Slice((*T)(slicePtr), length)
@@ -159,7 +157,7 @@ func allocRaw(a *Allocator, size, align uintptr) (ptr unsafe.Pointer) {
 	ptr = unsafe.Add(a.base, alignedOffset)
 	a.offset = end
 
-	clear(unsafe.Slice((*byte)(ptr), size))
+	// clear(unsafe.Slice((*byte)(ptr), size))
 	return
 }
 
@@ -188,6 +186,6 @@ func allocRawSlow(a *Allocator, size, align uintptr) (ptr unsafe.Pointer) {
 	a.offset = size
 	a.base = ptr
 
-	clear(unsafe.Slice((*byte)(ptr), size))
+	// clear(unsafe.Slice((*byte)(ptr), size))
 	return
 }
