@@ -177,6 +177,21 @@ func MakeStringConcat(v1, v2 string, ctx Context) (rv Value) {
 	return
 }
 
+func AllocStringBuilder(ctx Context, capacity int) (unsafe.Pointer, []byte) {
+	totalSize := intSize + uintptr(capacity)
+	ptr := arena.AlignedAlloc(ctx.State.Allocator, totalSize, intAlign)
+
+	// Create a 0-length slice pointing to the space right after the length header
+	buf := unsafe.Slice((*byte)(unsafe.Add(ptr, intSize)), capacity)[:0]
+	return ptr, buf
+}
+
+// FinalizeStringBuilder writes the length header and boxes the pointer into a Value.
+func FinalizeStringBuilder(ptr unsafe.Pointer, length int) Value {
+	*(*int)(ptr) = length
+	return boxPtr(ValueTypeString, ptr)
+}
+
 func MakeStringConst(id uint32) Value {
 	// set lowest bit to 1 to signal its a interned string
 	return Value((uint64(ValueTypeString) << typeShift) | (uint64(id) << 1) | 1)

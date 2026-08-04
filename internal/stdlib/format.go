@@ -9,7 +9,6 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
-	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 )
 
@@ -32,17 +31,22 @@ func std_format(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 	}
 
 	// add a min buffer of 128
-	padding := max(128, len(format))
+	initialCap := len(format) + max(128, len(format))
 	// if the underlaying buffer need to resize it will escape to the heap.
 	// keeping track of when a resize and grow using the arena is much slower in the hot path.
-	buf := arena.Alloc[byte](ctx.State.Allocator, len(format)+padding)[:0]
+	ptr, buf := evaluator.AllocStringBuilder(ctx, initialCap)
 
 	buf, err = formatString(buf, format, arg, ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	return evaluator.MakeStringFromBytes(buf, ctx), nil
+	if cap(buf) > initialCap {
+		// It has grown to the heap and need to be put back in the arena
+		return evaluator.MakeStringFromBytes(buf, ctx), nil
+	}
+
+	return evaluator.FinalizeStringBuilder(ptr, len(buf)), nil
 }
 
 const (
