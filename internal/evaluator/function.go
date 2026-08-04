@@ -152,7 +152,7 @@ func execNativeFunction(funcVal Value, args []NamedValue, ctx Context) (Value, e
 		orderedArgs = stackArgs[:paramCount]
 	} else {
 		// just in case a user defines a custom native extension with 5+ args
-		orderedArgs = arena.Alloc[NamedValue](ctx.State.Registry.Allocator, paramCount)
+		orderedArgs = arena.Alloc[NamedValue](ctx.State.Allocator, paramCount)
 		clear(orderedArgs)
 	}
 

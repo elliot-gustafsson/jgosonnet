@@ -15,7 +15,7 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 	}
 
 	// TODO: benchmark if stack or arena arrays are better
-	objs := arena.Alloc[*evaluator.Object](ctx.State.Registry.Allocator, len(inputArr))
+	objs := arena.Alloc[*evaluator.Object](ctx.State.Allocator, len(inputArr))
 	arena.MemclrSlice(objs)
 
 	totalLayers := 0
@@ -29,7 +29,7 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 		totalLayers += len(obj.GetLayers(ctx))
 	}
 
-	layers := arena.Alloc[*evaluator.Layer](ctx.State.Registry.Allocator, totalLayers)
+	layers := arena.Alloc[*evaluator.Layer](ctx.State.Allocator, totalLayers)
 	arena.MemclrSlice(layers)
 
 	index := 0
@@ -39,7 +39,7 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 		index += len(objLayers)
 	}
 
-	obj := arena.Create[evaluator.Object](ctx.State.Registry.Allocator)
+	obj := arena.Create[evaluator.Object](ctx.State.Allocator)
 	arena.Memclr(obj)
 	obj.Layers = layers
 
@@ -58,7 +58,7 @@ func builtin_flatMapArray(args []evaluator.NamedValue, ctx evaluator.Context) (e
 		return evaluator.ValueNone, err
 	}
 
-	mapperFuncInput := arena.Alloc[evaluator.NamedValue](ctx.State.Registry.Allocator, 1)
+	mapperFuncInput := arena.Alloc[evaluator.NamedValue](ctx.State.Allocator, 1)
 
 	// TODO: benchmark if stack or arena arrays are better
 	subArrayValues := make([]evaluator.Value, len(inputArr))

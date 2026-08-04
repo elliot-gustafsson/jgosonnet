@@ -146,7 +146,7 @@ func (c *FieldCache) Set(key uint32, val Value, visible bool, ctx Context) {
 		return
 	}
 
-	allocator := ctx.State.Registry.Allocator
+	allocator := ctx.State.Allocator
 
 	if c.fieldCache == nil {
 		c.fieldCache = utils.NewPropertyMap[Value](allocator, 8)
@@ -296,7 +296,7 @@ func (t *Object) getScope(layerIndex int, layer *Layer, ctx Context) (uintptr, e
 //go:noinline
 func (t *Object) createLayerScope(layerIndex int, layer *Layer, ctx Context) (uintptr, error) {
 	if t.Scopes == nil {
-		t.Scopes = arena.Alloc[uintptr](ctx.State.Registry.Allocator, len(t.GetLayers(ctx)))
+		t.Scopes = arena.Alloc[uintptr](ctx.State.Allocator, len(t.GetLayers(ctx)))
 		clear(t.Scopes)
 	}
 
@@ -358,7 +358,7 @@ func (t *Object) appendLayers(dest []*Layer, ctx Context) []*Layer {
 		targetLen := len(dest) + len(t.Layers)
 		if targetLen > cap(dest) {
 			newCap := max(targetLen, cap(dest)*2)
-			dest = arena.Realloc(ctx.State.Registry.Allocator, dest, newCap)[:len(dest)]
+			dest = arena.Realloc(ctx.State.Allocator, dest, newCap)[:len(dest)]
 		}
 
 		return append(dest, t.Layers...)
@@ -382,7 +382,7 @@ func (t *Object) GetLayers(ctx Context) []*Layer {
 		return t.Layers
 	}
 
-	layers := arena.Alloc[*Layer](ctx.State.Registry.Allocator, 8)
+	layers := arena.Alloc[*Layer](ctx.State.Allocator, 8)
 	arena.MemclrSlice(layers)
 	layers = t.appendLayers(layers[:0], ctx)
 
@@ -394,7 +394,7 @@ func (t *Object) GetLayers(ctx Context) []*Layer {
 }
 
 func MergeObjects(leftPtr, rightPtr uintptr, ctx Context) *Object {
-	o := arena.Create[Object](ctx.State.Registry.Allocator)
+	o := arena.Create[Object](ctx.State.Allocator)
 	arena.Memclr(o)
 	o.LeftPtr = leftPtr
 	o.RightPtr = rightPtr
@@ -455,7 +455,7 @@ func CompileObjectPlanEx(obj *Object, ctx Context, naturalSort bool) []FieldPlan
 }
 
 func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
-	allocator := ctx.State.Registry.Allocator
+	allocator := ctx.State.Allocator
 
 	layers := obj.GetLayers(ctx)
 
@@ -675,7 +675,7 @@ func ManifestObjectRoot(obj *Object, ctx Context) ([]NamedValue, error) {
 
 	plans := CompileObjectPlan(obj, ctx)
 
-	res := arena.Alloc[NamedValue](ctx.State.Registry.Allocator, len(plans))
+	res := arena.Alloc[NamedValue](ctx.State.Allocator, len(plans))
 	var index int
 	for _, plan := range plans {
 
@@ -810,7 +810,7 @@ func GetObjectValues(obj *Object, ctx Context, inclHidden bool) ([]Value, error)
 }
 
 func GetObjectKeysValues(obj *Object, ctx Context, inclHidden bool) ([]Value, error) {
-	allocator := ctx.State.Registry.Allocator
+	allocator := ctx.State.Allocator
 
 	plans := CompileObjectPlan(obj, ctx)
 
@@ -894,7 +894,7 @@ func (t *Object) Prune(ctx Context) (Value, error) {
 	plans := CompileObjectPlan(t, ctx)
 
 	n := len(plans)
-	allocator := ctx.State.Registry.Allocator
+	allocator := ctx.State.Allocator
 
 	layer := arena.Create[Layer](allocator)
 	arena.Memclr(layer)

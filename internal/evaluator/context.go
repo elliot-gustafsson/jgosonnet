@@ -10,7 +10,7 @@ import (
 
 type ContextState struct {
 	Interner    *interner.Interner
-	Registry    *Registry
+	Allocator   *arena.Allocator
 	Environment *Environment
 }
 
@@ -22,50 +22,17 @@ type Context struct {
 	SuperOffset uint32
 }
 
-type Registry struct {
-	// Objects   *arena.Arena[Object]
-	// Arrays    *arena.SliceArena[Value]
-	// Strings   *arena.StringArena
-	// Thunks    *arena.Arena[Thunk]
-	// Functions *arena.Arena[Function]
-
-	// Scopes *arena.Arena[Scope]
-
-	// GoCallbackNodes *arena.Arena[GoCallbackNode]
-
-	Allocator *arena.Allocator
-}
-
 type Scope struct {
 	Bindings  []NamedValue
 	ParentPtr uintptr
 }
 
-func NewRegistry() *Registry {
-	return &Registry{
-		// Functions: arena.NewArena[Function](),
-
-		// GoCallbackNodes: arena.NewArena[GoCallbackNode](),
-
-		Allocator: arena.NewAllocator(),
-	}
-}
-
-func (t *Registry) Reset() {
-
-	// t.Functions.Reset()
-
-	// t.GoCallbackNodes.Reset()
-
-	t.Allocator.Reset()
-}
-
 func (c Context) NewScope(parentPtr uintptr, length int) (*Scope, uintptr) {
-	s := arena.Create[Scope](c.State.Registry.Allocator)
+	s := arena.Create[Scope](c.State.Allocator)
 	arena.Memclr(s)
 
 	s.ParentPtr = parentPtr
-	s.Bindings = arena.Alloc[NamedValue](c.State.Registry.Allocator, length)
+	s.Bindings = arena.Alloc[NamedValue](c.State.Allocator, length)
 	clear(s.Bindings)
 
 	return s, uintptr(unsafe.Pointer(s))

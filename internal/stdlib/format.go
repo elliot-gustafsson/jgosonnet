@@ -35,7 +35,7 @@ func std_format(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 	padding := max(128, len(format))
 	// if the underlaying buffer need to resize it will escape to the heap.
 	// keeping track of when a resize and grow using the arena is much slower in the hot path.
-	buf := arena.Alloc[byte](ctx.State.Registry.Allocator, len(format)+padding)[:0]
+	buf := arena.Alloc[byte](ctx.State.Allocator, len(format)+padding)[:0]
 
 	buf, err = formatString(buf, format, arg, ctx)
 	if err != nil {

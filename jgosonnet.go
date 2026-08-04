@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 	"github.com/elliot-gustafsson/jgosonnet/internal/interner"
 	"github.com/elliot-gustafsson/jgosonnet/internal/stdlib"
@@ -305,15 +306,15 @@ func (t *Evaluator) EvaluateYamlMultiIter(file string) (iter.Seq2[FileOutput, er
 }
 
 type EvaluationEngine struct {
-	Registry *evaluator.Registry
-	Interner *interner.Interner
+	Allocator *arena.Allocator
+	Interner  *interner.Interner
 }
 
 var enginePool = sync.Pool{
 	New: func() any {
 		return &EvaluationEngine{
-			Registry: evaluator.NewRegistry(),
-			Interner: interner.NewInterner(),
+			Allocator: arena.NewAllocator(),
+			Interner:  interner.NewInterner(),
 		}
 	},
 }
@@ -333,7 +334,7 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 
 	engine := enginePool.Get().(*EvaluationEngine)
 	cleanup := func() {
-		engine.Registry.Reset()
+		engine.Allocator.Reset()
 		engine.Interner.Reset()
 		enginePool.Put(engine)
 
@@ -343,8 +344,8 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 
 	ctx := evaluator.Context{
 		State: &evaluator.ContextState{
-			Interner: engine.Interner,
-			Registry: engine.Registry,
+			Interner:  engine.Interner,
+			Allocator: engine.Allocator,
 		},
 	}
 

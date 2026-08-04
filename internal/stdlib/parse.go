@@ -125,7 +125,7 @@ func rawDataToValue(x any, ctx evaluator.Context) (evaluator.Value, error) {
 	case map[string]any:
 
 		fieldCount := len(data)
-		allocator := ctx.State.Registry.Allocator
+		allocator := ctx.State.Allocator
 
 		layer := arena.Create[evaluator.Layer](allocator)
 		arena.Memclr(layer)

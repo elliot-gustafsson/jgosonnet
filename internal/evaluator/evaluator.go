@@ -76,7 +76,7 @@ func ManifestValue(value Value, ctx Context) (any, error) {
 }
 
 func CreateFileScope(filename string, baseStd Value, ctx Context) uintptr {
-	allocator := ctx.State.Registry.Allocator
+	allocator := ctx.State.Allocator
 
 	keyId := ctx.State.Interner.Intern("thisFile")
 
@@ -248,7 +248,7 @@ func handleArray(node *ast.Array, scopePtr uintptr, ctx Context) (Value, error) 
 
 func handleDesugaredObject(node *ast.DesugaredObject, scopePtr uintptr, ctx Context) (Value, error) {
 
-	allocator := ctx.State.Registry.Allocator
+	allocator := ctx.State.Allocator
 
 	fieldCount := len(node.Fields)
 	localsCount := len(node.Locals)
@@ -370,7 +370,7 @@ func handleApply(node *ast.Apply, scopePtr uintptr, ctx Context) (Value, error) 
 	posCount := len(node.Arguments.Positional)
 	nameCount := len(node.Arguments.Named)
 
-	args := arena.Alloc[NamedValue](ctx.State.Registry.Allocator, posCount+nameCount)
+	args := arena.Alloc[NamedValue](ctx.State.Allocator, posCount+nameCount)
 	clear(args)
 	for i, a := range node.Arguments.Positional {
 		// v, err := EvaluateNodeStrict(a.Expr, scopeId, ctx)
@@ -507,12 +507,12 @@ func handleVar(node *ast.Var, scopePtr uintptr, ctx Context) (Value, error) {
 
 func handleFunction(node *ast.Function, scopePtr uintptr, ctx Context) (Value, error) {
 
-	paramKeyIds := arena.Alloc[uint32](ctx.State.Registry.Allocator, len(node.Parameters))
+	paramKeyIds := arena.Alloc[uint32](ctx.State.Allocator, len(node.Parameters))
 	for i, p := range node.Parameters {
 		paramKeyIds[i] = ctx.State.Interner.Intern(string(p.Name))
 	}
 
-	f := arena.Create[Function](ctx.State.Registry.Allocator)
+	f := arena.Create[Function](ctx.State.Allocator)
 	arena.Memclr(f)
 	*f = Function{
 		Node:        node,

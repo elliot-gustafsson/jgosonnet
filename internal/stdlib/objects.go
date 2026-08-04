@@ -226,7 +226,7 @@ func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	}
 
 	fieldCount := len(keys)
-	allocator := ctx.State.Registry.Allocator
+	allocator := ctx.State.Allocator
 
 	layer := arena.Create[evaluator.Layer](allocator)
 	arena.Memclr(layer)
@@ -283,7 +283,7 @@ func std_objectRemoveKey(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 		return evaluator.ValueNone, err
 	}
 
-	allocator := ctx.State.Registry.Allocator
+	allocator := ctx.State.Allocator
 
 	keyId := ctx.State.Interner.Intern(key)
 
@@ -348,7 +348,7 @@ func std_mergePatch(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	plans := evaluator.CompileObjectPlan(obj, ctx)
 
 	fieldCount := len(plans)
-	allocator := ctx.State.Registry.Allocator
+	allocator := ctx.State.Allocator
 
 	layer := arena.Create[evaluator.Layer](allocator)
 	arena.Memclr(layer)

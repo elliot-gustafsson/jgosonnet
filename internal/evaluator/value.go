@@ -125,7 +125,7 @@ func MakeString(s string, ctx Context) (rv Value) {
 
 	totalSize := intSize + uintptr(n)
 
-	ptr := arena.AlignedAlloc(ctx.State.Registry.Allocator, totalSize, intAlign)
+	ptr := arena.AlignedAlloc(ctx.State.Allocator, totalSize, intAlign)
 
 	// write len at beginning of block
 	*(*int)(ptr) = n
@@ -143,7 +143,7 @@ func MakeStringFromBytes(in []byte, ctx Context) (rv Value) {
 
 	totalSize := intSize + uintptr(n)
 
-	ptr := arena.AlignedAlloc(ctx.State.Registry.Allocator, totalSize, intAlign)
+	ptr := arena.AlignedAlloc(ctx.State.Allocator, totalSize, intAlign)
 
 	// write len at beginning of block
 	*(*int)(ptr) = n
@@ -161,7 +161,7 @@ func MakeStringConcat(v1, v2 string, ctx Context) (rv Value) {
 
 	totalSize := intSize + uintptr(n)
 
-	ptr := arena.AlignedAlloc(ctx.State.Registry.Allocator, totalSize, intAlign)
+	ptr := arena.AlignedAlloc(ctx.State.Allocator, totalSize, intAlign)
 
 	// write len at beginning of block
 	*(*int)(ptr) = n
@@ -212,7 +212,7 @@ func MakeArraySized(n int, ctx Context) (arr []Value, rv Value) {
 	}
 
 	totalSize := intSize + (uintptr(n) * valueSize)
-	ptr := arena.AlignedAlloc(ctx.State.Registry.Allocator, totalSize, valueAlign)
+	ptr := arena.AlignedAlloc(ctx.State.Allocator, totalSize, valueAlign)
 
 	*(*int)(ptr) = n
 
@@ -231,7 +231,7 @@ func MakeArray(v []Value, ctx Context) (rv Value) {
 	n := len(v)
 	totalSize := intSize + (uintptr(n) * valueSize)
 
-	ptr := arena.AlignedAlloc(ctx.State.Registry.Allocator, totalSize, valueAlign)
+	ptr := arena.AlignedAlloc(ctx.State.Allocator, totalSize, valueAlign)
 
 	*(*int)(ptr) = n
 

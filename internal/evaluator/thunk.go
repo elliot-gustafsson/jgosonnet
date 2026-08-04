@@ -49,7 +49,7 @@ type Thunk struct {
 }
 
 func NewThunk(nodeType ThunkType, nodePtr unsafe.Pointer, scopePtr uintptr, ctx Context) Value {
-	t := arena.Create[Thunk](ctx.State.Registry.Allocator)
+	t := arena.Create[Thunk](ctx.State.Allocator)
 	t.NodePtr = boxThunkNodePtr(nodeType, nodePtr)
 	t.ScopePtr = scopePtr
 	t.Value = ctx.Self
