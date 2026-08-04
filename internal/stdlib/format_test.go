@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 	"github.com/elliot-gustafsson/jgosonnet/internal/interner"
 	"github.com/stretchr/testify/assert"
@@ -357,8 +358,8 @@ func TestFormat(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := evaluator.Context{
 				State: &evaluator.ContextState{
-					Interner: interner.NewInterner(),
-					Registry: evaluator.NewRegistry(),
+					Interner:  interner.NewInterner(),
+					Allocator: arena.NewAllocator(),
 				},
 			}
 			val := toValue(tt.args, ctx)
@@ -438,8 +439,8 @@ func TestFormatStrings(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := evaluator.Context{
 				State: &evaluator.ContextState{
-					Interner: interner.NewInterner(),
-					Registry: evaluator.NewRegistry(),
+					Interner:  interner.NewInterner(),
+					Allocator: arena.NewAllocator(),
 				},
 			}
 			val := toValue(tt.args, ctx)
@@ -568,8 +569,8 @@ func TestFormatIntegers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := evaluator.Context{
 				State: &evaluator.ContextState{
-					Interner: interner.NewInterner(),
-					Registry: evaluator.NewRegistry(),
+					Interner:  interner.NewInterner(),
+					Allocator: arena.NewAllocator(),
 				},
 			}
 			val := toValue(tt.args, ctx)
@@ -704,8 +705,8 @@ func TestFormatOctal(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := evaluator.Context{
 				State: &evaluator.ContextState{
-					Interner: interner.NewInterner(),
-					Registry: evaluator.NewRegistry(),
+					Interner:  interner.NewInterner(),
+					Allocator: arena.NewAllocator(),
 				},
 			}
 			val := toValue(tt.args, ctx)
@@ -953,8 +954,8 @@ func TestFormatHex(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := evaluator.Context{
 				State: &evaluator.ContextState{
-					Interner: interner.NewInterner(),
-					Registry: evaluator.NewRegistry(),
+					Interner:  interner.NewInterner(),
+					Allocator: arena.NewAllocator(),
 				},
 			}
 			val := toValue(tt.args, ctx)
@@ -999,8 +1000,8 @@ func TestFormatFloat(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := evaluator.Context{
 				State: &evaluator.ContextState{
-					Interner: interner.NewInterner(),
-					Registry: evaluator.NewRegistry(),
+					Interner:  interner.NewInterner(),
+					Allocator: arena.NewAllocator(),
 				},
 			}
 			val := toValue(tt.args, ctx)
@@ -1087,7 +1088,7 @@ func toValue(v any, ctx evaluator.Context) evaluator.Value {
 			layer.Meta = append(layer.Meta, evaluator.DefaultFieldMeta)
 
 		}
-		objId := evaluator.NewObject([]*evaluator.Layer{layer}, ctx)
+		objId := evaluator.NewSingleLayerObject(ctx.State.Allocator, layer)
 		return evaluator.MakeObjectValue(objId)
 	default:
 		panic(fmt.Sprintf("unhandled type %T", val))

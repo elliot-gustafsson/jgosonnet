@@ -5,315 +5,235 @@ import (
 	"math"
 	"unicode/utf8"
 
+	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
+	"github.com/elliot-gustafsson/jgosonnet/internal/utils"
 )
 
-type param struct {
-	Name     string
-	Optional bool
+var constants = []struct {
+	name string
+	val  evaluator.Value
+}{
+	{"pi", evaluator.MakeNumber(math.Pi)},
 }
 
-func req(name string) param {
-	return param{Name: name}
-}
-
-func opt(name string) param {
-	return param{Name: name, Optional: true}
-}
-
-var constants = map[string]evaluator.Value{
-	"pi": evaluator.MakeNumber(math.Pi),
-}
-
-var functions = map[string]func(evaluator.Context) evaluator.Function{
-	// --- General ---
-	"$flatMapArray":    f(builtin_flatMapArray, req("func"), req("arr")),
-	"$objectFlatMerge": f(builtin_objectFlatMerge, req("arr")),
-	"extVar":           f(std_extVar, req("x")),
-	"trace":            f(std_trace, req("str"), req("rest")),
-	"assertEqual":      f(std_assertEqual, req("a"), req("b")),
-	"toString":         f(std_toString, req("a")),
-	"length":           f(std_length, req("x")),
-	"mod":              f(std_mod, req("a"), req("b")),
+var functions = []struct {
+	name string
+	fn   evaluator.NativeFunction
+}{
+	{"$flatMapArray", evaluator.NativeFunction{Func: builtin_flatMapArray, Params: []string{"func", "arr"}, OptStart: 2}},
+	{"$objectFlatMerge", evaluator.NativeFunction{Func: builtin_objectFlatMerge, Params: []string{"arr"}, OptStart: 1}},
+	{"extVar", evaluator.NativeFunction{Func: std_extVar, Params: []string{"x"}, OptStart: 1}},
+	{"trace", evaluator.NativeFunction{Func: std_trace, Params: []string{"str", "rest"}, OptStart: 2}},
+	{"assertEqual", evaluator.NativeFunction{Func: std_assertEqual, Params: []string{"a", "b"}, OptStart: 2}},
+	{"toString", evaluator.NativeFunction{Func: std_toString, Params: []string{"a"}, OptStart: 1}},
+	{"length", evaluator.NativeFunction{Func: std_length, Params: []string{"x"}, OptStart: 1}},
+	{"mod", evaluator.NativeFunction{Func: std_mod, Params: []string{"a", "b"}, OptStart: 2}},
 
 	// --- Types ---
-	"type":       f(std_type, req("x")),
-	"isString":   f(std_isString, req("v")),
-	"isNumber":   f(std_isNumber, req("v")),
-	"isBoolean":  f(std_isBoolean, req("v")),
-	"isObject":   f(std_isObject, req("v")),
-	"isArray":    f(std_isArray, req("v")),
-	"isFunction": f(std_isFunction, req("v")),
-	"isNull":     f(std_isNull, req("x")),
-	"prune":      f(std_prune, req("a")),
+	{"type", evaluator.NativeFunction{Func: std_type, Params: []string{"x"}, OptStart: 1}},
+	{"isString", evaluator.NativeFunction{Func: std_isString, Params: []string{"v"}, OptStart: 1}},
+	{"isNumber", evaluator.NativeFunction{Func: std_isNumber, Params: []string{"v"}, OptStart: 1}},
+	{"isBoolean", evaluator.NativeFunction{Func: std_isBoolean, Params: []string{"v"}, OptStart: 1}},
+	{"isObject", evaluator.NativeFunction{Func: std_isObject, Params: []string{"v"}, OptStart: 1}},
+	{"isArray", evaluator.NativeFunction{Func: std_isArray, Params: []string{"v"}, OptStart: 1}},
+	{"isFunction", evaluator.NativeFunction{Func: std_isFunction, Params: []string{"v"}, OptStart: 1}},
+	{"isNull", evaluator.NativeFunction{Func: std_isNull, Params: []string{"x"}, OptStart: 1}},
+	{"prune", evaluator.NativeFunction{Func: std_prune, Params: []string{"a"}, OptStart: 1}},
 
 	// --- Parse ---
-	"parseInt":   f(std_parseInt, req("str")),
-	"parseOctal": f(std_parseOctal, req("str")),
-	"parseHex":   f(std_parseHex, req("str")),
-	"parseJson":  f(std_parseJson, req("str")),
-	"parseYaml":  f(std_parseYaml, req("str")),
-	"encodeUTF8": f(std_encodeUTF8, req("str")),
-	"decodeUTF8": f(std_decodeUTF8, req("arr")),
+	{"parseInt", evaluator.NativeFunction{Func: std_parseInt, Params: []string{"str"}, OptStart: 1}},
+	{"parseOctal", evaluator.NativeFunction{Func: std_parseOctal, Params: []string{"str"}, OptStart: 1}},
+	{"parseHex", evaluator.NativeFunction{Func: std_parseHex, Params: []string{"str"}, OptStart: 1}},
+	{"parseJson", evaluator.NativeFunction{Func: std_parseJson, Params: []string{"str"}, OptStart: 1}},
+	{"parseYaml", evaluator.NativeFunction{Func: std_parseYaml, Params: []string{"str"}, OptStart: 1}},
+	{"encodeUTF8", evaluator.NativeFunction{Func: std_encodeUTF8, Params: []string{"str"}, OptStart: 1}},
+	{"decodeUTF8", evaluator.NativeFunction{Func: std_decodeUTF8, Params: []string{"arr"}, OptStart: 1}},
 
 	// --- Math ---
-	"floor":     f(std_floor, req("x")),
-	"ceil":      f(std_ceil, req("x")),
-	"round":     f(std_round, req("x")),
-	"pow":       f(std_pow, req("x"), req("n")),
-	"sqrt":      f(std_sqrt, req("x")),
-	"hypot":     f(std_hypot, req("a"), req("b")),
-	"modulo":    f(std_modulo, req("a"), req("b")),
-	"mantissa":  f(std_mantissa, req("x")),
-	"exponent":  f(std_exponent, req("x")),
-	"sin":       f(std_sin, req("x")),
-	"cos":       f(std_cos, req("x")),
-	"tan":       f(std_tan, req("x")),
-	"asin":      f(std_asin, req("x")),
-	"acos":      f(std_acos, req("x")),
-	"atan":      f(std_atan, req("x")),
-	"atan2":     f(std_atan2, req("y"), req("x")),
-	"deg2rad":   f(std_deg2rad, req("x")),
-	"rad2deg":   f(std_rad2deg, req("x")),
-	"log":       f(std_log, req("x")),
-	"log2":      f(std_log2, req("x")),
-	"log10":     f(std_log10, req("x")),
-	"exp":       f(std_exp, req("x")),
-	"isEven":    f(std_isEven, req("x")),
-	"isOdd":     f(std_isOdd, req("x")),
-	"isInteger": f(std_isInteger, req("x")),
-	"isDecimal": f(std_isDecimal, req("x")),
-	"max":       f(std_max, req("a"), req("b")),
-	"min":       f(std_min, req("a"), req("b")),
-	"abs":       f(std_abs, req("n")),
-	"sign":      f(std_sign, req("n")),
-	"clamp":     f(std_clamp, req("x"), req("minVal"), req("maxVal")),
+	{"floor", evaluator.NativeFunction{Func: std_floor, Params: []string{"x"}, OptStart: 1}},
+	{"ceil", evaluator.NativeFunction{Func: std_ceil, Params: []string{"x"}, OptStart: 1}},
+	{"round", evaluator.NativeFunction{Func: std_round, Params: []string{"x"}, OptStart: 1}},
+	{"pow", evaluator.NativeFunction{Func: std_pow, Params: []string{"x", "n"}, OptStart: 2}},
+	{"sqrt", evaluator.NativeFunction{Func: std_sqrt, Params: []string{"x"}, OptStart: 1}},
+	{"hypot", evaluator.NativeFunction{Func: std_hypot, Params: []string{"a", "b"}, OptStart: 2}},
+	{"modulo", evaluator.NativeFunction{Func: std_modulo, Params: []string{"a", "b"}, OptStart: 2}},
+	{"mantissa", evaluator.NativeFunction{Func: std_mantissa, Params: []string{"x"}, OptStart: 1}},
+	{"exponent", evaluator.NativeFunction{Func: std_exponent, Params: []string{"x"}, OptStart: 1}},
+	{"sin", evaluator.NativeFunction{Func: std_sin, Params: []string{"x"}, OptStart: 1}},
+	{"cos", evaluator.NativeFunction{Func: std_cos, Params: []string{"x"}, OptStart: 1}},
+	{"tan", evaluator.NativeFunction{Func: std_tan, Params: []string{"x"}, OptStart: 1}},
+	{"asin", evaluator.NativeFunction{Func: std_asin, Params: []string{"x"}, OptStart: 1}},
+	{"acos", evaluator.NativeFunction{Func: std_acos, Params: []string{"x"}, OptStart: 1}},
+	{"atan", evaluator.NativeFunction{Func: std_atan, Params: []string{"x"}, OptStart: 1}},
+	{"atan2", evaluator.NativeFunction{Func: std_atan2, Params: []string{"y", "x"}, OptStart: 2}},
+	{"deg2rad", evaluator.NativeFunction{Func: std_deg2rad, Params: []string{"x"}, OptStart: 1}},
+	{"rad2deg", evaluator.NativeFunction{Func: std_rad2deg, Params: []string{"x"}, OptStart: 1}},
+	{"log", evaluator.NativeFunction{Func: std_log, Params: []string{"x"}, OptStart: 1}},
+	{"log2", evaluator.NativeFunction{Func: std_log2, Params: []string{"x"}, OptStart: 1}},
+	{"log10", evaluator.NativeFunction{Func: std_log10, Params: []string{"x"}, OptStart: 1}},
+	{"exp", evaluator.NativeFunction{Func: std_exp, Params: []string{"x"}, OptStart: 1}},
+	{"isEven", evaluator.NativeFunction{Func: std_isEven, Params: []string{"x"}, OptStart: 1}},
+	{"isOdd", evaluator.NativeFunction{Func: std_isOdd, Params: []string{"x"}, OptStart: 1}},
+	{"isInteger", evaluator.NativeFunction{Func: std_isInteger, Params: []string{"x"}, OptStart: 1}},
+	{"isDecimal", evaluator.NativeFunction{Func: std_isDecimal, Params: []string{"x"}, OptStart: 1}},
+	{"max", evaluator.NativeFunction{Func: std_max, Params: []string{"a", "b"}, OptStart: 2}},
+	{"min", evaluator.NativeFunction{Func: std_min, Params: []string{"a", "b"}, OptStart: 2}},
+	{"abs", evaluator.NativeFunction{Func: std_abs, Params: []string{"n"}, OptStart: 1}},
+	{"sign", evaluator.NativeFunction{Func: std_sign, Params: []string{"n"}, OptStart: 1}},
+	{"clamp", evaluator.NativeFunction{Func: std_clamp, Params: []string{"x", "minVal", "maxVal"}, OptStart: 3}},
 
 	// --- Strings ---
-	"format":              f(std_format, req("str"), req("vals")),
-	"stringChars":         f(std_stringChars, req("str")),
-	"startsWith":          f(std_startsWith, req("a"), req("b")),
-	"endsWith":            f(std_endsWith, req("a"), req("b")),
-	"substr":              f(std_substr, req("str"), req("from"), req("len")),
-	"findSubstr":          f(std_findSubstr, req("pat"), req("str")),
-	"strReplace":          f(std_strReplace, req("str"), req("from"), req("to")),
-	"split":               f(std_split, req("str"), req("c")),
-	"splitLimit":          f(std_splitLimit, req("str"), req("c"), req("maxsplits")),
-	"splitLimitR":         f(std_splitLimitR, req("str"), req("c"), req("maxsplits")),
-	"stripChars":          f(std_stripChars, req("str"), req("chars")),
-	"rstripChars":         f(std_rstripChars, req("str"), req("chars")),
-	"lstripChars":         f(std_lstripChars, req("str"), req("chars")),
-	"isEmpty":             f(std_isEmpty, req("str")),
-	"trim":                f(std_trim, req("str")),
-	"md5":                 f(std_md5, req("s")),
-	"sha1":                f(std_sha1, req("s")),
-	"sha256":              f(std_sha256, req("s")),
-	"sha512":              f(std_sha512, req("s")),
-	"sha3":                f(std_sha3, req("s")),
-	"char":                f(std_char, req("n")),
-	"codepoint":           f(std_codepoint, req("str")),
-	"base64":              f(std_base64, req("input")),
-	"base64Decode":        f(std_base64Decode, req("str")),
-	"base64DecodeBytes":   f(std_base64DecodeBytes, req("str")),
-	"asciiLower":          f(std_asciiLower, req("str")),
-	"asciiUpper":          f(std_asciiUpper, req("str")),
-	"escapeStringBash":    f(std_escapeStringBash, req("str_")),
-	"escapeStringDollars": f(std_escapeStringDollars, req("str_")),
-	"escapeStringJson":    f(std_escapeStringJson, req("str_")),
-	"escapeStringPython":  f(std_escapeStringJson, req("str")), // Intentionally same as function as escapeStringJson
-	"escapeStringXML":     f(std_escapeStringXML, req("str_")),
-	"equalsIgnoreCase":    f(std_equalsIgnoreCase, req("str1"), req("str2")),
+	{"format", evaluator.NativeFunction{Func: std_format, Params: []string{"str", "vals"}, OptStart: 2}},
+	{"stringChars", evaluator.NativeFunction{Func: std_stringChars, Params: []string{"str"}, OptStart: 1}},
+	{"startsWith", evaluator.NativeFunction{Func: std_startsWith, Params: []string{"a", "b"}, OptStart: 2}},
+	{"endsWith", evaluator.NativeFunction{Func: std_endsWith, Params: []string{"a", "b"}, OptStart: 2}},
+	{"substr", evaluator.NativeFunction{Func: std_substr, Params: []string{"str", "from", "len"}, OptStart: 3}},
+	{"findSubstr", evaluator.NativeFunction{Func: std_findSubstr, Params: []string{"pat", "str"}, OptStart: 2}},
+	{"strReplace", evaluator.NativeFunction{Func: std_strReplace, Params: []string{"str", "from", "to"}, OptStart: 3}},
+	{"split", evaluator.NativeFunction{Func: std_split, Params: []string{"str", "c"}, OptStart: 2}},
+	{"splitLimit", evaluator.NativeFunction{Func: std_splitLimit, Params: []string{"str", "c", "maxsplits"}, OptStart: 3}},
+	{"splitLimitR", evaluator.NativeFunction{Func: std_splitLimitR, Params: []string{"str", "c", "maxsplits"}, OptStart: 3}},
+	{"stripChars", evaluator.NativeFunction{Func: std_stripChars, Params: []string{"str", "chars"}, OptStart: 2}},
+	{"rstripChars", evaluator.NativeFunction{Func: std_rstripChars, Params: []string{"str", "chars"}, OptStart: 2}},
+	{"lstripChars", evaluator.NativeFunction{Func: std_lstripChars, Params: []string{"str", "chars"}, OptStart: 2}},
+	{"isEmpty", evaluator.NativeFunction{Func: std_isEmpty, Params: []string{"str"}, OptStart: 1}},
+	{"trim", evaluator.NativeFunction{Func: std_trim, Params: []string{"str"}, OptStart: 1}},
+	{"md5", evaluator.NativeFunction{Func: std_md5, Params: []string{"s"}, OptStart: 1}},
+	{"sha1", evaluator.NativeFunction{Func: std_sha1, Params: []string{"s"}, OptStart: 1}},
+	{"sha256", evaluator.NativeFunction{Func: std_sha256, Params: []string{"s"}, OptStart: 1}},
+	{"sha512", evaluator.NativeFunction{Func: std_sha512, Params: []string{"s"}, OptStart: 1}},
+	{"sha3", evaluator.NativeFunction{Func: std_sha3, Params: []string{"s"}, OptStart: 1}},
+	{"char", evaluator.NativeFunction{Func: std_char, Params: []string{"n"}, OptStart: 1}},
+	{"codepoint", evaluator.NativeFunction{Func: std_codepoint, Params: []string{"str"}, OptStart: 1}},
+	{"base64", evaluator.NativeFunction{Func: std_base64, Params: []string{"input"}, OptStart: 1}},
+	{"base64Decode", evaluator.NativeFunction{Func: std_base64Decode, Params: []string{"str"}, OptStart: 1}},
+	{"base64DecodeBytes", evaluator.NativeFunction{Func: std_base64DecodeBytes, Params: []string{"str"}, OptStart: 1}},
+	{"asciiLower", evaluator.NativeFunction{Func: std_asciiLower, Params: []string{"str"}, OptStart: 1}},
+	{"asciiUpper", evaluator.NativeFunction{Func: std_asciiUpper, Params: []string{"str"}, OptStart: 1}},
+	{"escapeStringBash", evaluator.NativeFunction{Func: std_escapeStringBash, Params: []string{"str_"}, OptStart: 1}},
+	{"escapeStringDollars", evaluator.NativeFunction{Func: std_escapeStringDollars, Params: []string{"str_"}, OptStart: 1}},
+	{"escapeStringJson", evaluator.NativeFunction{Func: std_escapeStringJson, Params: []string{"str_"}, OptStart: 1}},
+	{"escapeStringPython", evaluator.NativeFunction{Func: std_escapeStringJson, Params: []string{"str"}, OptStart: 1}}, // Intentionally same as function as escapeStringJson
+	{"escapeStringXML", evaluator.NativeFunction{Func: std_escapeStringXML, Params: []string{"str_"}, OptStart: 1}},
+	{"equalsIgnoreCase", evaluator.NativeFunction{Func: std_equalsIgnoreCase, Params: []string{"str1", "str2"}, OptStart: 2}},
 
 	// --- Arrays ---
-	"join":             f(std_join, req("sep"), req("arr")),
-	"deepJoin":         f(std_deepJoin, req("arr")),
-	"range":            f(std_range, req("from"), req("to")),
-	"makeArray":        f(std_makeArray, req("sz"), req("func")),
-	"filter":           f(std_filter, req("func"), req("arr")),
-	"uniq":             f(std_uniq, req("arr"), opt("keyF")),
-	"sort":             f(std_sort, req("arr"), opt("keyF")),
-	"map":              f(std_map, req("func"), req("arr")),
-	"mapWithIndex":     f(std_mapWithIndex, req("func"), req("arr")),
-	"flatMap":          f(std_flatMap, req("func"), req("arr")),
-	"filterMap":        f(std_filterMap, req("filter_func"), req("map_func"), req("arr")),
-	"member":           f(std_member, req("arr"), req("x")),
-	"setMember":        f(std_setMember, req("x"), req("arr"), opt("keyF")),
-	"slice":            f(std_slice, req("indexable"), opt("index"), opt("end"), opt("step")),
-	"count":            f(std_count, req("arr"), req("x")),
-	"lines":            f(std_lines, req("arr")),
-	"reverse":          f(std_reverse, req("arrs")),
-	"foldl":            f(std_foldl, req("func"), req("arr"), req("init")),
-	"foldr":            f(std_foldr, req("func"), req("arr"), req("init")),
-	"sum":              f(std_sum, req("arr")),
-	"flattenArrays":    f(std_flattenArrays, req("arr")),
-	"flattenDeepArray": f(std_flattenDeepArray, req("arr")),
-	"repeat":           f(std_repeat, req("what"), req("count")),
-	"setUnion":         f(std_setUnion, req("a"), req("b"), opt("keyF")),
-	"setInter":         f(std_setInter, req("a"), req("b"), opt("keyF")),
-	"setDiff":          f(std_setDiff, req("a"), req("b"), opt("keyF")),
-	"find":             f(std_find, req("value"), req("arr")),
-	"any":              f(std_any, req("arr")),
-	"all":              f(std_all, req("arr")),
-	"avg":              f(std_avg, req("arr")),
-	"minArray":         f(std_minArray, req("arr"), opt("keyF"), opt("onEmpty")),
-	"maxArray":         f(std_maxArray, req("arr"), opt("keyF"), opt("onEmpty")),
-	"contains":         f(std_contains, req("arr"), req("elem")),
-	"remove":           f(std_remove, req("arr"), req("elem")),
-	"removeAt":         f(std_removeAt, req("arr"), req("idx")),
+	{"join", evaluator.NativeFunction{Func: std_join, Params: []string{"sep", "arr"}, OptStart: 2}},
+	{"deepJoin", evaluator.NativeFunction{Func: std_deepJoin, Params: []string{"arr"}, OptStart: 1}},
+	{"range", evaluator.NativeFunction{Func: std_range, Params: []string{"from", "to"}, OptStart: 2}},
+	{"makeArray", evaluator.NativeFunction{Func: std_makeArray, Params: []string{"sz", "func"}, OptStart: 2}},
+	{"filter", evaluator.NativeFunction{Func: std_filter, Params: []string{"func", "arr"}, OptStart: 2}},
+	{"uniq", evaluator.NativeFunction{Func: std_uniq, Params: []string{"arr", "keyF"}, OptStart: 1}},
+	{"sort", evaluator.NativeFunction{Func: std_sort, Params: []string{"arr", "keyF"}, OptStart: 1}},
+	{"map", evaluator.NativeFunction{Func: std_map, Params: []string{"func", "arr"}, OptStart: 2}},
+	{"mapWithIndex", evaluator.NativeFunction{Func: std_mapWithIndex, Params: []string{"func", "arr"}, OptStart: 2}},
+	{"flatMap", evaluator.NativeFunction{Func: std_flatMap, Params: []string{"func", "arr"}, OptStart: 2}},
+	{"filterMap", evaluator.NativeFunction{Func: std_filterMap, Params: []string{"filter_func", "map_func", "arr"}, OptStart: 3}},
+	{"member", evaluator.NativeFunction{Func: std_member, Params: []string{"arr", "x"}, OptStart: 2}},
+	{"setMember", evaluator.NativeFunction{Func: std_setMember, Params: []string{"x", "arr", "keyF"}, OptStart: 2}},
+	{"slice", evaluator.NativeFunction{Func: std_slice, Params: []string{"indexable", "index", "end", "step"}, OptStart: 1}},
+	{"count", evaluator.NativeFunction{Func: std_count, Params: []string{"arr", "x"}, OptStart: 2}},
+	{"lines", evaluator.NativeFunction{Func: std_lines, Params: []string{"arr"}, OptStart: 1}},
+	{"reverse", evaluator.NativeFunction{Func: std_reverse, Params: []string{"arrs"}, OptStart: 1}},
+	{"foldl", evaluator.NativeFunction{Func: std_foldl, Params: []string{"func", "arr", "init"}, OptStart: 3}},
+	{"foldr", evaluator.NativeFunction{Func: std_foldr, Params: []string{"func", "arr", "init"}, OptStart: 3}},
+	{"sum", evaluator.NativeFunction{Func: std_sum, Params: []string{"arr"}, OptStart: 1}},
+	{"flattenArrays", evaluator.NativeFunction{Func: std_flattenArrays, Params: []string{"arr"}, OptStart: 1}},
+	{"flattenDeepArray", evaluator.NativeFunction{Func: std_flattenDeepArray, Params: []string{"arr"}, OptStart: 1}},
+	{"repeat", evaluator.NativeFunction{Func: std_repeat, Params: []string{"what", "count"}, OptStart: 2}},
+	{"setUnion", evaluator.NativeFunction{Func: std_setUnion, Params: []string{"a", "b", "keyF"}, OptStart: 2}},
+	{"setInter", evaluator.NativeFunction{Func: std_setInter, Params: []string{"a", "b", "keyF"}, OptStart: 2}},
+	{"setDiff", evaluator.NativeFunction{Func: std_setDiff, Params: []string{"a", "b", "keyF"}, OptStart: 2}},
+	{"find", evaluator.NativeFunction{Func: std_find, Params: []string{"value", "arr"}, OptStart: 2}},
+	{"any", evaluator.NativeFunction{Func: std_any, Params: []string{"arr"}, OptStart: 1}},
+	{"all", evaluator.NativeFunction{Func: std_all, Params: []string{"arr"}, OptStart: 1}},
+	{"avg", evaluator.NativeFunction{Func: std_avg, Params: []string{"arr"}, OptStart: 1}},
+	{"minArray", evaluator.NativeFunction{Func: std_minArray, Params: []string{"arr", "keyF", "onEmpty"}, OptStart: 1}},
+	{"maxArray", evaluator.NativeFunction{Func: std_maxArray, Params: []string{"arr", "keyF", "onEmpty"}, OptStart: 1}},
+	{"contains", evaluator.NativeFunction{Func: std_contains, Params: []string{"arr", "elem"}, OptStart: 2}},
+	{"remove", evaluator.NativeFunction{Func: std_remove, Params: []string{"arr", "elem"}, OptStart: 2}},
+	{"removeAt", evaluator.NativeFunction{Func: std_removeAt, Params: []string{"arr", "idx"}, OptStart: 2}},
 
 	// -- Booleans ---
-	"xor":  f(std_xor, req("x"), req("y")),
-	"xnor": f(std_xnor, req("x"), req("y")),
+	{"xor", evaluator.NativeFunction{Func: std_xor, Params: []string{"x", "y"}, OptStart: 2}},
+	{"xnor", evaluator.NativeFunction{Func: std_xnor, Params: []string{"x", "y"}, OptStart: 2}},
 
 	// -- Sets ---
-	"set": f(std_set, req("arr"), opt("keyF")),
+	{"set", evaluator.NativeFunction{Func: std_set, Params: []string{"arr", "keyF"}, OptStart: 1}},
 
 	// --- Objects ---
-	"get":                 f(std_get, req("o"), req("f"), opt("default"), opt("inc_hidden")),
-	"objectFields":        f(std_objectFields, req("o")),
-	"objectFieldsAll":     f(std_objectFieldsAll, req("o")),
-	"objectFieldsEx":      f(std_objectFieldsEx, req("obj"), req("hidden")),
-	"objectHas":           f(std_objectHas, req("o"), req("f")),
-	"objectHasAll":        f(std_objectHasAll, req("o"), req("f")),
-	"objectHasEx":         f(std_objectHasEx, req("obj"), req("fname"), req("hidden")),
-	"objectValues":        f(std_objectValues, req("o")),
-	"objectValuesAll":     f(std_objectValuesAll, req("o")),
-	"objectKeysValues":    f(std_objectKeysValues, req("o")),
-	"objectKeysValuesAll": f(std_objectKeysValuesAll, req("o")),
-	"mapWithKey":          f(std_mapWithkey, req("func"), req("obj")),
-	"objectRemoveKey":     f(std_objectRemoveKey, req("obj"), req("key")),
-	"mergePatch":          f(std_mergePatch, req("target"), req("patch")),
+	{"get", evaluator.NativeFunction{Func: std_get, Params: []string{"o", "f", "default", "inc_hidden"}, OptStart: 2}},
+	{"objectFields", evaluator.NativeFunction{Func: std_objectFields, Params: []string{"o"}, OptStart: 1}},
+	{"objectFieldsAll", evaluator.NativeFunction{Func: std_objectFieldsAll, Params: []string{"o"}, OptStart: 1}},
+	{"objectFieldsEx", evaluator.NativeFunction{Func: std_objectFieldsEx, Params: []string{"obj", "hidden"}, OptStart: 2}},
+	{"objectHas", evaluator.NativeFunction{Func: std_objectHas, Params: []string{"o", "f"}, OptStart: 2}},
+	{"objectHasAll", evaluator.NativeFunction{Func: std_objectHasAll, Params: []string{"o", "f"}, OptStart: 2}},
+	{"objectHasEx", evaluator.NativeFunction{Func: std_objectHasEx, Params: []string{"obj", "fname", "hidden"}, OptStart: 3}},
+	{"objectValues", evaluator.NativeFunction{Func: std_objectValues, Params: []string{"o"}, OptStart: 1}},
+	{"objectValuesAll", evaluator.NativeFunction{Func: std_objectValuesAll, Params: []string{"o"}, OptStart: 1}},
+	{"objectKeysValues", evaluator.NativeFunction{Func: std_objectKeysValues, Params: []string{"o"}, OptStart: 1}},
+	{"objectKeysValuesAll", evaluator.NativeFunction{Func: std_objectKeysValuesAll, Params: []string{"o"}, OptStart: 1}},
+	{"mapWithKey", evaluator.NativeFunction{Func: std_mapWithkey, Params: []string{"func", "obj"}, OptStart: 2}},
+	{"objectRemoveKey", evaluator.NativeFunction{Func: std_objectRemoveKey, Params: []string{"obj", "key"}, OptStart: 2}},
+	{"mergePatch", evaluator.NativeFunction{Func: std_mergePatch, Params: []string{"target", "patch"}, OptStart: 2}},
 
 	// --- Manifestation ---
-	"manifestYamlDoc":      f(std_manifestYamlDoc, req("value"), opt("indent_array_in_object"), opt("quote_keys")),
-	"manifestYamlStream":   f(std_manifestYamlStream, req("value"), opt("indent_array_in_object"), opt("c_document_end"), opt("quote_keys")),
-	"manifestJson":         f(std_manifestJson, req("value")),
-	"manifestJsonEx":       f(std_manifestJsonEx, req("value"), req("indent"), opt("newline"), opt("key_val_sep")),
-	"manifestJsonMinified": f(std_manifestJsonMinified, req("value")),
-	"manifestIni":          f(std_manifestIni, req("ini")),
-	"manifestPython":       f(std_manifestPython, req("v")),
-	"manifestPythonVars":   f(std_manifestPythonVars, req("conf")),
-	"manifestXmlJsonml":    f(std_manifestXmlJsonml, req("value")),
-	"manifestTomlEx":       f(std_manifestTomlEx, req("value"), req("indent")),
-}
-
-func f(f evaluator.Func, params ...param) func(evaluator.Context) evaluator.Function {
-
-	return func(ctx evaluator.Context) evaluator.Function {
-
-		argIds := make([]uint32, 0, len(params))
-		optStart := -1
-
-		for i, p := range params {
-			id := ctx.State.Interner.Intern(p.Name)
-			argIds = append(argIds, id)
-
-			if p.Optional && optStart == -1 {
-				optStart = i
-			}
-		}
-		if optStart == -1 {
-			optStart = len(params)
-		}
-
-		var fn evaluator.Func
-		fn = func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-
-			if len(args) > len(argIds) {
-				return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("function expected %d positional argument(s), but got %d", len(argIds), len(args)))
-			}
-
-			var onNamedArgs bool
-
-			orderedArgs := ctx.State.Registry.NamedValueBufs.Alloc(len(argIds), len(argIds))
-			posIdx := 0
-
-			for _, na := range args {
-				if na.Key == 0 {
-					// Positional Argument
-					if onNamedArgs {
-						return evaluator.ValueNone, fmt.Errorf("Positional argument after a named argument is not allowed")
-					}
-					na.Key = argIds[posIdx]
-					orderedArgs[posIdx] = na
-					posIdx++
-					continue
-				}
-
-				// Named Argument
-				onNamedArgs = true
-				found := false
-				for j, aid := range argIds {
-					if aid == na.Key {
-						if !orderedArgs[j].Value.IsNone() {
-							argName := ctx.State.Interner.Get(na.Key)
-							return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("Argument %s already provided", argName))
-						}
-						orderedArgs[j] = na
-						found = true
-						break
-					}
-				}
-				if !found {
-					argName := ctx.State.Interner.Get(na.Key)
-					return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("function has no parameter %s", argName))
-				}
-			}
-
-			for i := 0; i < optStart; i++ {
-				if orderedArgs[i].Value.IsNone() {
-					return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("Missing argument: %s", params[i].Name))
-				}
-			}
-
-			return f(orderedArgs, ctx)
-		}
-
-		return evaluator.NewFunction(len(argIds), fn)
-	}
+	{"manifestYamlDoc", evaluator.NativeFunction{Func: std_manifestYamlDoc, Params: []string{"value", "indent_array_in_object", "quote_keys"}, OptStart: 1}},
+	{"manifestYamlStream", evaluator.NativeFunction{Func: std_manifestYamlStream, Params: []string{"value", "indent_array_in_object", "c_document_end", "quote_keys"}, OptStart: 1}},
+	{"manifestJson", evaluator.NativeFunction{Func: std_manifestJson, Params: []string{"value"}, OptStart: 1}},
+	{"manifestJsonEx", evaluator.NativeFunction{Func: std_manifestJsonEx, Params: []string{"value", "indent", "newline", "key_val_sep"}, OptStart: 2}},
+	{"manifestJsonMinified", evaluator.NativeFunction{Func: std_manifestJsonMinified, Params: []string{"value"}, OptStart: 1}},
+	{"manifestIni", evaluator.NativeFunction{Func: std_manifestIni, Params: []string{"ini"}, OptStart: 1}},
+	{"manifestPython", evaluator.NativeFunction{Func: std_manifestPython, Params: []string{"v"}, OptStart: 1}},
+	{"manifestPythonVars", evaluator.NativeFunction{Func: std_manifestPythonVars, Params: []string{"conf"}, OptStart: 1}},
+	{"manifestXmlJsonml", evaluator.NativeFunction{Func: std_manifestXmlJsonml, Params: []string{"value"}, OptStart: 1}},
+	{"manifestTomlEx", evaluator.NativeFunction{Func: std_manifestTomlEx, Params: []string{"value", "indent"}, OptStart: 2}},
 }
 
 func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
 
 	fieldCount := len(functions) + len(constants)
+	allocator := ctx.State.Allocator
 
-	layer := &evaluator.Layer{
-		Keys:   make([]uint32, 0, fieldCount),
-		Values: make([]evaluator.Value, 0, fieldCount),
-		Meta:   make([]uint8, 0, fieldCount),
+	layer := arena.Create[evaluator.Layer](allocator)
+	arena.Memclr(layer)
 
-		Index: make(map[uint32]int, fieldCount),
-	}
+	layer.Keys = arena.Alloc[uint32](allocator, fieldCount)
+	layer.Values = arena.Alloc[evaluator.Value](allocator, fieldCount)
+	layer.Meta = arena.Alloc[uint8](allocator, fieldCount)
+	layer.Index = utils.NewEmptyDescriptorTable(allocator, fieldCount)
 
-	objId := evaluator.NewObject([]*evaluator.Layer{layer}, ctx)
+	nativeFunctions := arena.Alloc[evaluator.NativeFunction](allocator, len(functions))
+	arena.MemclrSlice(nativeFunctions)
 
 	index := 0
-	for name, f := range functions {
-		keyId := ctx.State.Interner.Intern(name)
+	for i := range functions {
+		nativeFunctions[i] = functions[i].fn
 
-		fVal := f(ctx)
+		keyId := ctx.State.Interner.Intern(functions[i].name)
 
-		v := evaluator.MakeFunction(fVal, ctx)
-		layer.Keys = append(layer.Keys, keyId)
-		layer.Values = append(layer.Values, v)
-		layer.Meta = append(layer.Meta, 0)
-		layer.Index[keyId] = index
+		layer.Keys[index] = keyId
+		layer.Values[index] = evaluator.MakeNativeFunctionValue(&nativeFunctions[i], ctx)
 
-		index++
-	}
-
-	for name, v := range constants {
-		keyId := ctx.State.Interner.Intern(name)
-
-		layer.Keys = append(layer.Keys, keyId)
-		layer.Values = append(layer.Values, v)
-		layer.Meta = append(layer.Meta, 0)
-		layer.Index[keyId] = index
+		layer.Index.Append(keyId)
 
 		index++
 	}
 
-	val := evaluator.MakeObjectValue(objId)
+	for _, t := range constants {
+		keyId := ctx.State.Interner.Intern(t.name)
+
+		layer.Keys[index] = keyId
+		layer.Values[index] = t.val
+
+		layer.Index.Append(keyId)
+
+		index++
+	}
+
+	obj := evaluator.NewSingleLayerObject(allocator, layer)
+	val := evaluator.MakeObjectValue(obj)
 
 	return val, nil
 }
@@ -462,11 +382,13 @@ func std_length(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 		// res = float64(len(arg.String(ctx)))
 		res = float64(utf8.RuneCountInString(arg.String(ctx)))
 	case evaluator.ValueTypeArray:
-		res = float64(len(arg.Array(ctx)))
+		res = float64(len(arg.Array()))
 	case evaluator.ValueTypeObject:
-		res = float64(arg.Object(ctx).Length(ctx))
+		res = float64(arg.Object().Length(ctx))
 	case evaluator.ValueTypeFunction:
-		res = float64(arg.Function(ctx).Length())
+		res = float64(arg.Function().Length())
+	case evaluator.ValueTypeNativeFunction:
+		res = float64(arg.NativeFunction().Length())
 	default:
 		return evaluator.ValueNone, evaluator.TypeErrorGeneral(arg.Type())
 	}

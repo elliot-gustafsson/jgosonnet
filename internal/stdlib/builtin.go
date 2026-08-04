@@ -3,6 +3,7 @@ package stdlib
 import (
 	"fmt"
 
+	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 )
 
@@ -13,7 +14,10 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 		return evaluator.ValueNone, err
 	}
 
-	objs := make([]*evaluator.Object, len(inputArr))
+	// TODO: benchmark if stack or arena arrays are better
+	objs := arena.Alloc[*evaluator.Object](ctx.State.Allocator, len(inputArr))
+	arena.MemclrSlice(objs)
+
 	totalLayers := 0
 	for i, v := range inputArr {
 		obj, err := v.EvalObject(ctx)
@@ -25,7 +29,9 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 		totalLayers += len(obj.GetLayers(ctx))
 	}
 
-	layers := make([]*evaluator.Layer, totalLayers)
+	layers := arena.Alloc[*evaluator.Layer](ctx.State.Allocator, totalLayers)
+	arena.MemclrSlice(layers)
+
 	index := 0
 	for _, o := range objs {
 		objLayers := o.GetLayers(ctx)
@@ -33,14 +39,16 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 		index += len(objLayers)
 	}
 
-	objId := evaluator.NewObject(layers, ctx)
+	obj := arena.Create[evaluator.Object](ctx.State.Allocator)
+	arena.Memclr(obj)
+	obj.Layers = layers
 
-	return evaluator.MakeObjectValue(objId), nil
+	return evaluator.MakeObjectValue(obj), nil
 }
 
 func builtin_flatMapArray(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
-	mapperFunc, err := args[0].EvalFunction(ctx)
+	mapperFunc, err := args[0].Eval(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -50,13 +58,14 @@ func builtin_flatMapArray(args []evaluator.NamedValue, ctx evaluator.Context) (e
 		return evaluator.ValueNone, err
 	}
 
-	mapperFuncInput := ctx.State.Registry.NamedValueBufs.Alloc(1, 1)
+	mapperFuncInput := arena.Alloc[evaluator.NamedValue](ctx.State.Allocator, 1)
 
+	// TODO: benchmark if stack or arena arrays are better
 	subArrayValues := make([]evaluator.Value, len(inputArr))
 	totalLen := 0
 	for i, v := range inputArr {
 		mapperFuncInput[0] = evaluator.NamedValue{Value: v}
-		out, err := mapperFunc.Exec(mapperFuncInput, ctx)
+		out, err := mapperFunc.FunctionExec(mapperFuncInput, ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
@@ -64,13 +73,13 @@ func builtin_flatMapArray(args []evaluator.NamedValue, ctx evaluator.Context) (e
 			return evaluator.ValueNone, fmt.Errorf("unexpected response type of builtin_flatMapArray map func call: %s, expected array", out.Type().String())
 		}
 		subArrayValues[i] = out
-		totalLen += len(out.Array(ctx))
+		totalLen += len(out.Array())
 	}
 
 	res, val := evaluator.MakeArraySized(totalLen, ctx)
 	index := 0
 	for _, out := range subArrayValues {
-		arr := out.Array(ctx)
+		arr := out.Array()
 		copy(res[index:], arr)
 		index += len(arr)
 	}

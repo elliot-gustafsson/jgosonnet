@@ -5,7 +5,12 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+	"unsafe"
 )
+
+func resolveUintptr(p uintptr) unsafe.Pointer {
+	return *(*unsafe.Pointer)(unsafe.Pointer(&p))
+}
 
 func naturalStringSort(a, b string) int {
 	i, j := 0, 0

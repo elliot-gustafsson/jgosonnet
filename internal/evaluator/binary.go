@@ -101,8 +101,15 @@ func bopPlus(left, right Value, ctx Context) (Value, error) {
 		return MakeNumber(val), nil
 
 	case ValueTypeArray:
-		leftArr := left.Array(ctx)
-		rightArr := right.Array(ctx)
+		leftArr := left.Array()
+		if len(leftArr) == 0 {
+			return right, nil
+		}
+		rightArr := right.Array()
+		if len(rightArr) == 0 {
+			return left, nil
+		}
+
 		val, arrVal := MakeArraySized(len(leftArr)+len(rightArr), ctx)
 		copy(val, leftArr)
 		copy(val[len(leftArr):], rightArr)
@@ -110,7 +117,7 @@ func bopPlus(left, right Value, ctx Context) (Value, error) {
 
 	case ValueTypeObject:
 		// Virtually combine objects
-		id := MergeObjects(left.RefId(), right.RefId(), ctx)
+		id := MergeObjects(left.Payload(), right.Payload(), ctx)
 		return MakeObjectValue(id), nil
 	default:
 		return ValueNone, fmt.Errorf("bop plus: unexpected type %s", left.Type().String())

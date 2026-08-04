@@ -14,8 +14,6 @@ type JsonManifestConfig struct {
 	SpaceComma  bool
 	Python      bool
 	StrictFloat bool
-
-	hasNewline bool
 }
 
 // Pre-defined configurations matching Jsonnet's standard library.
@@ -27,11 +25,12 @@ var (
 )
 
 func ManifestJson(b *strings.Builder, value Value, ctx Context, config *JsonManifestConfig) error {
-	config.hasNewline = config.Newline != ""
 	return manifestJson(value, ctx, b, 0, config)
 }
 
 func manifestJson(value Value, ctx Context, b *strings.Builder, indentLevel int, config *JsonManifestConfig) error {
+
+	hasNewline := config.Newline != ""
 
 	value, err := value.Eval(ctx)
 	if err != nil {
@@ -77,14 +76,14 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, indentLevel int,
 		writeJsonString(b, data)
 		return nil
 	case ValueTypeArray:
-		data := value.Array(ctx)
+		data := value.Array()
 		if len(data) == 0 {
 			if config.SpaceComma && !config.Python {
 				b.WriteString("[ ]")
 				return nil
 			}
 
-			if config.hasNewline {
+			if hasNewline {
 				b.WriteByte('[')
 				b.WriteString(config.Newline)
 				b.WriteString(config.Newline)
@@ -113,14 +112,14 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, indentLevel int,
 
 			if i > 0 {
 				b.WriteByte(',')
-				if config.hasNewline {
+				if hasNewline {
 					b.WriteString(config.Newline)
 				} else if config.SpaceComma {
 					b.WriteByte(' ')
 				}
 			}
 
-			if i != 0 || config.hasNewline {
+			if i != 0 || hasNewline {
 				writeIndent(b, nextIndentLevel, config.IndentStep)
 			}
 
@@ -136,7 +135,7 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, indentLevel int,
 		b.WriteByte(']')
 		return nil
 	case ValueTypeObject:
-		obj := value.Object(ctx)
+		obj := value.Object()
 		plans := CompileObjectPlan(obj, ctx)
 		if len(plans) == 0 {
 			if config.SpaceComma && !config.Python {
@@ -144,7 +143,7 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, indentLevel int,
 				return nil
 			}
 
-			if config.hasNewline {
+			if hasNewline {
 				b.WriteByte('{')
 				b.WriteString(config.Newline)
 				b.WriteString(config.Newline)
@@ -176,7 +175,7 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, indentLevel int,
 
 			if hasWritten {
 				b.WriteByte(',')
-				if config.hasNewline {
+				if hasNewline {
 					b.WriteString(config.Newline)
 				} else if config.SpaceComma {
 					b.WriteByte(' ')

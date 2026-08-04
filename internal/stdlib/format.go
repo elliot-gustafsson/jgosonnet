@@ -30,16 +30,23 @@ func std_format(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 		return evaluator.ValueNone, err
 	}
 
-	buf := make([]byte, 0, len(format)+64)
+	// add a min buffer of 128
+	initialCap := len(format) + max(128, len(format))
+	// if the underlaying buffer need to resize it will escape to the heap.
+	// keeping track of when a resize and grow using the arena is much slower in the hot path.
+	ptr, buf := evaluator.AllocStringBuilder(ctx, initialCap)
 
 	buf, err = formatString(buf, format, arg, ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	id := ctx.State.Registry.Strings.AllocBytes(buf)
+	if cap(buf) > initialCap {
+		// It has grown to the heap and need to be put back in the arena
+		return evaluator.MakeStringFromBytes(buf, ctx), nil
+	}
 
-	return evaluator.MakeStringValue(id), nil
+	return evaluator.FinalizeStringBuilder(ptr, len(buf)), nil
 }
 
 const (
@@ -79,9 +86,9 @@ func formatString(b []byte, str string, data evaluator.Value, ctx evaluator.Cont
 	default:
 		return nil, fmt.Errorf("unsupported data type passed to format: %s, expected string, array, object", data.Type().String())
 	case evaluator.ValueTypeArray:
-		args = data.Array(ctx)
+		args = data.Array()
 	case evaluator.ValueTypeObject:
-		dict = data.Object(ctx)
+		dict = data.Object()
 		useNamed = true
 	case evaluator.ValueTypeString, evaluator.ValueTypeBool, evaluator.ValueTypeNumber, evaluator.ValueTypeNull:
 		argBuf := [1]evaluator.Value{data}

@@ -3,6 +3,7 @@ package stdlib
 import (
 	"unsafe"
 
+	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 )
 
@@ -85,7 +86,7 @@ func std_get(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 	childCtx := ctx
 	childCtx.Self = objVal
 
-	val, visible, err := objVal.Object(ctx).GetField(keyId, childCtx)
+	val, visible, err := objVal.Object().GetField(keyId, childCtx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -96,12 +97,12 @@ func std_get(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 }
 
 var std_objectFields = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
-	res := evaluator.GetObjectFields(v.Object(ctx), ctx, false)
+	res := evaluator.GetObjectFields(v.Object(), ctx, false)
 	return evaluator.MakeArray(res, ctx), nil
 })
 
 var std_objectFieldsAll = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
-	res := evaluator.GetObjectFields(v.Object(ctx), ctx, true)
+	res := evaluator.GetObjectFields(v.Object(), ctx, true)
 	return evaluator.MakeArray(res, ctx), nil
 })
 
@@ -119,7 +120,7 @@ func std_objectFieldsEx(args []evaluator.NamedValue, ctx evaluator.Context) (eva
 }
 
 var std_objectValues = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
-	res, err := evaluator.GetObjectValues(v.Object(ctx), ctx, false)
+	res, err := evaluator.GetObjectValues(v.Object(), ctx, false)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -127,7 +128,7 @@ var std_objectValues = liftObjectToValueErr(func(v evaluator.Value, ctx evaluato
 })
 
 var std_objectValuesAll = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
-	res, err := evaluator.GetObjectValues(v.Object(ctx), ctx, true)
+	res, err := evaluator.GetObjectValues(v.Object(), ctx, true)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -135,7 +136,7 @@ var std_objectValuesAll = liftObjectToValueErr(func(v evaluator.Value, ctx evalu
 })
 
 var std_objectKeysValues = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
-	res, err := evaluator.GetObjectKeysValues(v.Object(ctx), ctx, false)
+	res, err := evaluator.GetObjectKeysValues(v.Object(), ctx, false)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -143,7 +144,7 @@ var std_objectKeysValues = liftObjectToValueErr(func(v evaluator.Value, ctx eval
 })
 
 var std_objectKeysValuesAll = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
-	res, err := evaluator.GetObjectKeysValues(v.Object(ctx), ctx, true)
+	res, err := evaluator.GetObjectKeysValues(v.Object(), ctx, true)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -154,7 +155,7 @@ var std_objectHas = liftObjectStringToValueErr(func(v evaluator.Value, s string,
 	keyId := ctx.State.Interner.Intern(s)
 	subCtx := ctx
 	subCtx.Self = v
-	value, _, err := v.Object(ctx).GetField(keyId, subCtx)
+	value, _, err := v.Object().GetField(keyId, subCtx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -165,7 +166,7 @@ var std_objectHasAll = liftObjectStringToValueErr(func(v evaluator.Value, s stri
 	keyId := ctx.State.Interner.Intern(s)
 	subCtx := ctx
 	subCtx.Self = v
-	value, _, err := v.Object(ctx).GetField(keyId, subCtx)
+	value, _, err := v.Object().GetField(keyId, subCtx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -196,7 +197,7 @@ func std_objectHasEx(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 	subCtx := ctx
 	subCtx.Self = objVal
 
-	value, visible, err := objVal.Object(ctx).GetField(keyId, subCtx)
+	value, visible, err := objVal.Object().GetField(keyId, subCtx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -209,7 +210,7 @@ func std_objectHasEx(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 
 func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
-	mapFunc, err := args[0].EvalFunction(ctx)
+	mapFunc, err := args[0].Eval(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -225,21 +226,22 @@ func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	}
 
 	fieldCount := len(keys)
+	allocator := ctx.State.Allocator
 
-	layer := &evaluator.Layer{
-		Keys:   make([]uint32, 0, fieldCount),
-		Values: make([]evaluator.Value, 0, fieldCount),
-		Meta:   make([]uint8, 0, fieldCount),
-	}
+	layer := arena.Create[evaluator.Layer](allocator)
+	arena.Memclr(layer)
 
-	resId := evaluator.NewObject([]*evaluator.Layer{layer}, ctx)
+	layer.Keys = arena.Alloc[uint32](allocator, fieldCount)
+	layer.Values = arena.Alloc[evaluator.Value](allocator, fieldCount)
+	layer.Meta = arena.Alloc[uint8](allocator, fieldCount)
 
-	resObjVal := evaluator.MakeObjectValue(resId)
+	resObj := evaluator.NewSingleLayerObject(allocator, layer)
+	resObjVal := evaluator.MakeObjectValue(resObj)
 
 	mapCtx := ctx
 	mapCtx.Self = resObjVal
 
-	allArgs := ctx.State.Registry.NamedValueBufs.Alloc(len(keys)*2, len(keys)*2)
+	allArgs := arena.Alloc[evaluator.NamedValue](allocator, len(keys)*2)
 	for i, k := range keys {
 		v := vals[i]
 		idx := i * 2
@@ -249,13 +251,16 @@ func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 		allArgs[idx] = evaluator.NamedValue{Value: evaluator.MakeString(keyString, ctx)}
 		allArgs[idx+1] = evaluator.NamedValue{Value: v}
 
-		n, _ := ctx.State.Registry.GoCallbackNodes.New()
-		n.Func = mapFunc
-		n.Args = allArgs[idx : idx+2]
+		n := arena.Create[evaluator.GoCallbackNode](allocator)
+		arena.Memclr(n)
+		*n = evaluator.GoCallbackNode{
+			FuncVal: mapFunc,
+			Args:    allArgs[idx : idx+2],
+		}
 
-		layer.Keys = append(layer.Keys, k)
-		layer.Values = append(layer.Values, evaluator.NewThunk(evaluator.ThunkTypeGoCallback, unsafe.Pointer(n), 0, mapCtx))
-		layer.Meta = append(layer.Meta, evaluator.DefaultFieldMeta)
+		layer.Keys[i] = k
+		layer.Values[i] = evaluator.NewThunk(evaluator.ThunkTypeGoCallback, unsafe.Pointer(n), 0, mapCtx)
+		layer.Meta[i] = evaluator.DefaultFieldMeta
 
 	}
 
@@ -271,29 +276,42 @@ func std_objectRemoveKey(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 	if !objVal.IsObject() {
 		return evaluator.ValueNone, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, objVal.Type())
 	}
-	obj := objVal.Object(ctx)
+	obj := objVal.Object()
 
 	key, err := args[1].EvalString(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
+	allocator := ctx.State.Allocator
+
 	keyId := ctx.State.Interner.Intern(key)
 
 	existingLayers := obj.GetLayers(ctx)
 
-	tombstoneLayer, _ := ctx.State.Registry.Layers.New()
-	tombstoneLayer.Keys = []uint32{keyId}
-	tombstoneLayer.Values = []evaluator.Value{evaluator.MakeTombstoneValue(len(existingLayers))}
-	tombstoneLayer.Meta = []uint8{evaluator.FlagTombstone | evaluator.DefaultFieldMeta}
+	tombstoneLayer := arena.Create[evaluator.Layer](allocator)
+	arena.Memclr(tombstoneLayer)
+
+	tombstoneLayer.Keys = arena.Alloc[uint32](allocator, 1)
+	tombstoneLayer.Keys[0] = keyId
+
+	tombstoneLayer.Values = arena.Alloc[evaluator.Value](allocator, 1)
+	tombstoneLayer.Values[0] = evaluator.MakeTombstoneValue(len(existingLayers))
+
+	tombstoneLayer.Meta = arena.Alloc[uint8](allocator, 1)
+	tombstoneLayer.Meta[0] = evaluator.FlagTombstone | evaluator.DefaultFieldMeta
 
 	newLen := len(existingLayers) + 1
-	newLayers := ctx.State.Registry.LayerBufs.Alloc(newLen, newLen)
+	newLayers := arena.Alloc[*evaluator.Layer](allocator, newLen)
+	arena.MemclrSlice(newLayers)
 	copy(newLayers, existingLayers)
 	newLayers[newLen-1] = tombstoneLayer
 
-	resObjId := evaluator.NewObject(newLayers, ctx)
-	return evaluator.MakeObjectValue(resObjId), nil
+	resObj := arena.Create[evaluator.Object](allocator)
+	arena.Memclr(resObj)
+
+	resObj.Layers = newLayers
+	return evaluator.MakeObjectValue(resObj), nil
 }
 
 func std_mergePatch(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -306,7 +324,7 @@ func std_mergePatch(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	if !patchVal.IsObject() {
 		return patchVal, nil
 	}
-	// patchObj := patchVal.Object(ctx)
+	// patchObj := patchVal.Object()
 
 	targetVal, err := args[0].Eval(ctx)
 	if err != nil {
@@ -319,27 +337,30 @@ func std_mergePatch(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	// std.mergePatch({ a: 1 }, { b: 2, c: self.a }) should not work according to go-jsonnet
 	// but with this kinda merge it does... so some solution where the objects are individually evaled is needed
 	if targetVal.IsObject() {
-		mergedObjId := evaluator.MergeObjects(targetVal.RefId(), patchVal.RefId(), ctx)
+		mergedObjId := evaluator.MergeObjects(targetVal.Payload(), patchVal.Payload(), ctx)
 		objVal = evaluator.MakeObjectValue(mergedObjId)
 	} else {
 		// If target val is not an object, just scrap it and only use the patch object
 		objVal = patchVal
 	}
-	obj := objVal.Object(ctx)
+	obj := objVal.Object()
 
 	plans := evaluator.CompileObjectPlan(obj, ctx)
 
 	fieldCount := len(plans)
+	allocator := ctx.State.Allocator
 
-	layer := &evaluator.Layer{
-		Keys:   make([]uint32, 0, fieldCount),
-		Values: make([]evaluator.Value, 0, fieldCount),
-		Meta:   make([]uint8, 0, fieldCount),
-	}
+	layer := arena.Create[evaluator.Layer](allocator)
+	arena.Memclr(layer)
+
+	layer.Keys = arena.Alloc[uint32](allocator, fieldCount)
+	layer.Values = arena.Alloc[evaluator.Value](allocator, fieldCount)
+	layer.Meta = arena.Alloc[uint8](allocator, fieldCount)
 
 	subCtx := ctx
 	subCtx.Self = objVal
 
+	var index int
 	for _, plan := range plans {
 		if plan.IsHidden() {
 			continue
@@ -354,14 +375,21 @@ func std_mergePatch(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 			continue
 		}
 
-		layer.Keys = append(layer.Keys, plan.KeyId)
-		layer.Values = append(layer.Values, val)
-		layer.Meta = append(layer.Meta, evaluator.DefaultFieldMeta)
+		layer.Keys[index] = plan.KeyId
+		layer.Values[index] = val
+		layer.Meta[index] = evaluator.DefaultFieldMeta
 
+		index++
 	}
 
-	resObjId := evaluator.NewObject([]*evaluator.Layer{layer}, ctx)
+	if index < fieldCount {
+		layer.Keys = layer.Keys[:index]
+		layer.Values = layer.Values[:index]
+		layer.Meta = layer.Meta[:index]
+	}
 
-	return evaluator.MakeObjectValue(resObjId), nil
+	res := evaluator.NewSingleLayerObject(allocator, layer)
+
+	return evaluator.MakeObjectValue(res), nil
 
 }

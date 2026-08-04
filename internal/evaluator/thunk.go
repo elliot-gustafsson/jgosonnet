@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"unsafe"
 
+	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
 	"github.com/google/go-jsonnet/ast"
 )
 
@@ -41,22 +42,19 @@ const (
 type ThunkNodePtr uint64
 
 type Thunk struct {
-	NodePtr             ThunkNodePtr
-	CapturedSelf        Value
-	CapturedSuperOffset uint32
-	ScopeId             uint32
-
-	Value Value
+	NodePtr   ThunkNodePtr
+	ScopePtr  uintptr
+	Value     Value
+	EvalState int
 }
 
-func NewThunk(nodeType ThunkType, nodePtr unsafe.Pointer, scopeId uint32, ctx Context) Value {
-	t := Thunk{
-		NodePtr:             boxThunkNodePtr(nodeType, nodePtr),
-		ScopeId:             scopeId,
-		CapturedSelf:        ctx.Self,
-		CapturedSuperOffset: ctx.SuperOffset,
-	}
-	return MakeThunk(t, ctx)
+func NewThunk(nodeType ThunkType, nodePtr unsafe.Pointer, scopePtr uintptr, ctx Context) Value {
+	t := arena.Create[Thunk](ctx.State.Allocator)
+	t.NodePtr = boxThunkNodePtr(nodeType, nodePtr)
+	t.ScopePtr = scopePtr
+	t.Value = ctx.Self
+	t.EvalState = int(ctx.SuperOffset)
+	return MakeThunkValue(t, ctx)
 }
 
 func boxThunkNodePtr(nodeType ThunkType, nodePtr unsafe.Pointer) ThunkNodePtr {
@@ -67,23 +65,24 @@ func (v ThunkNodePtr) unbox() (t ThunkType, p unsafe.Pointer) {
 	const typeMask = 0xFF00000000000000
 
 	t = ThunkType(v >> 56)
-	p = unsafe.Pointer(uintptr(*(*unsafe.Pointer)(unsafe.Pointer(&v))) &^ typeMask)
 
-	// Note: The row above is equal to "p = unsafe.Pointer(uintptr(v &^ typeMask))",
-	// 	they result the same assembly code. Its done this way to not make "go vet"
-	// 	flag it as "possible misuse of unsafe.Pointer".
+	addr := uintptr(v &^ tagMask)
+	p = *(*unsafe.Pointer)(unsafe.Pointer(&addr))
 	return
 }
 
 //go:noinline
 func (t *Thunk) Eval(baseCtx Context) (value Value, err error) {
+	if t.EvalState == -1 {
+		return t.Value, nil
+	}
 
 	nodeType, nodePtr := t.NodePtr.unbox()
-	scopeId := t.ScopeId
+	scopeId := t.ScopePtr
 
 	ctx := baseCtx
-	ctx.Self = t.CapturedSelf
-	ctx.SuperOffset = t.CapturedSuperOffset
+	ctx.Self = t.Value
+	ctx.SuperOffset = uint32(t.EvalState)
 
 	switch nodeType {
 	default:
@@ -137,7 +136,7 @@ func (t *Thunk) Eval(baseCtx Context) (value Value, err error) {
 
 	case ThunkTypeGoCallback:
 		node := (*GoCallbackNode)(nodePtr)
-		value, err = node.Func.Exec(node.Args, ctx)
+		value, err = node.FuncVal.FunctionExec(node.Args, ctx)
 	}
 
 	if err != nil {
@@ -150,5 +149,6 @@ func (t *Thunk) Eval(baseCtx Context) (value Value, err error) {
 	}
 
 	t.Value = value
+	t.EvalState = -1
 	return
 }
