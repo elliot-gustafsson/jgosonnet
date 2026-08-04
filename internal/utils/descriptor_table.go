@@ -36,6 +36,7 @@ func NewDescriptorTable(a *arena.Allocator, symbols []uint32) (dt *DescriptorTab
 	}
 
 	dt = arena.Create[DescriptorTable](a)
+	arena.Memclr(dt)
 	*dt = DescriptorTable{
 		entries: entries,
 		capMask: capMask,
@@ -51,6 +52,7 @@ func NewEmptyDescriptorTable(a *arena.Allocator, l int) (dt *DescriptorTable) {
 	capMask := cap - 1
 
 	dt = arena.Create[DescriptorTable](a)
+	arena.Memclr(dt)
 	*dt = DescriptorTable{
 		entries: arena.Alloc[Descriptor](a, int(cap)),
 		capMask: capMask,

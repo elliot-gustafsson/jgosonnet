@@ -21,6 +21,7 @@ const (
 	ValueTypeObject
 	ValueTypeArray
 	ValueTypeFunction
+	ValueTypeNativeFunction
 	ValueTypeThunk
 )
 
@@ -44,43 +45,13 @@ func (t ValueType) String() string {
 		return "object"
 	case ValueTypeArray:
 		return "array"
-	case ValueTypeFunction:
+	case ValueTypeFunction, ValueTypeNativeFunction:
 		return "function"
 	case ValueTypeThunk:
 		return "thunk"
 	default:
 		return fmt.Sprintf("unknown (%d)", t)
 	}
-}
-
-type Func = func(args []NamedValue, ctx Context) (Value, error)
-
-type Function struct {
-	argsCount int
-
-	fn Func
-}
-
-func NewFunction(argsCount int, fn Func) Function {
-	return Function{
-		argsCount: argsCount,
-		fn:        fn,
-	}
-}
-
-func (t Function) Exec(args []NamedValue, ctx Context) (Value, error) {
-	if t.fn == nil {
-		return ValueNone, fmt.Errorf("function not instantiated")
-	}
-	return t.fn(args, ctx)
-}
-
-func (t Function) Noop() bool {
-	return t.fn == nil
-}
-
-func (t Function) Length() int {
-	return t.argsCount
 }
 
 // Value represents a NaN-boxed 64-bit value.
@@ -121,8 +92,8 @@ func boxPtr(t ValueType, p unsafe.Pointer) Value {
 }
 
 func (v Value) unboxPtr() unsafe.Pointer {
-	// return unsafe.Pointer(uintptr(uint64(v) &^ tagMask))
-	return unsafe.Pointer(uintptr(*(*unsafe.Pointer)(unsafe.Pointer(&v))) &^ tagMask)
+	addr := uintptr(v &^ tagMask)
+	return *(*unsafe.Pointer)(unsafe.Pointer(&addr))
 }
 
 type NamedValue struct {
@@ -235,20 +206,6 @@ func MakeObjectValue(v *Object) (rv Value) {
 	return
 }
 
-func MakeArray(v []Value, ctx Context) (rv Value) {
-	n := len(v)
-	totalSize := intSize + (uintptr(n) * valueSize)
-
-	ptr := arena.AlignedAlloc(ctx.State.Registry.Allocator, totalSize, valueAlign)
-
-	*(*int)(ptr) = n
-
-	elemPtr := (*Value)(unsafe.Add(ptr, intSize))
-	copy(unsafe.Slice(elemPtr, n), v)
-
-	return boxPtr(ValueTypeArray, ptr)
-}
-
 func MakeArraySized(n int, ctx Context) (arr []Value, rv Value) {
 	if n < 0 {
 		panic("MakeArraySized: called with negative size")
@@ -259,17 +216,40 @@ func MakeArraySized(n int, ctx Context) (arr []Value, rv Value) {
 
 	*(*int)(ptr) = n
 
-	elemPtr := (*Value)(unsafe.Add(ptr, intSize))
-	arr = unsafe.Slice(elemPtr, n)
+	if n > 0 {
+		elemPtr := (*Value)(unsafe.Add(ptr, intSize))
+		arr = unsafe.Slice(elemPtr, n)
+	} else {
+		arr = unsafe.Slice((*Value)(nil), 0)
+	}
 
 	rv = boxPtr(ValueTypeArray, ptr)
 	return
 }
 
-// TODO: handle functions
-func MakeFunction(v Function, ctx Context) (rv Value) {
-	refId := ctx.State.Registry.Functions.Alloc(v)
-	rv = box(ValueTypeFunction, refId)
+func MakeArray(v []Value, ctx Context) (rv Value) {
+	n := len(v)
+	totalSize := intSize + (uintptr(n) * valueSize)
+
+	ptr := arena.AlignedAlloc(ctx.State.Registry.Allocator, totalSize, valueAlign)
+
+	*(*int)(ptr) = n
+
+	if n > 0 {
+		elemPtr := (*Value)(unsafe.Add(ptr, intSize))
+		copy(unsafe.Slice(elemPtr, n), v)
+	}
+
+	return boxPtr(ValueTypeArray, ptr)
+}
+
+func MakeFunctionValue(v *Function, ctx Context) (rv Value) {
+	rv = boxPtr(ValueTypeFunction, unsafe.Pointer(v))
+	return
+}
+
+func MakeNativeFunctionValue(v *NativeFunction, ctx Context) (rv Value) {
+	rv = boxPtr(ValueTypeNativeFunction, unsafe.Pointer(v))
 	return
 }
 
@@ -331,8 +311,12 @@ func (v Value) Object() *Object {
 	return (*Object)(v.unboxPtr())
 }
 
-func (v Value) Function(ctx Context) Function {
-	return ctx.State.Registry.Functions.GetValue(v.RefId())
+func (v Value) Function() *Function {
+	return (*Function)(v.unboxPtr())
+}
+
+func (v Value) NativeFunction() *NativeFunction {
+	return (*NativeFunction)(v.unboxPtr())
 }
 
 func (v Value) Thunk() *Thunk {
@@ -449,16 +433,16 @@ func (v Value) EvalObject(ctx Context) (*Object, error) {
 	return x.Object(), nil
 }
 
-func (v Value) EvalFunction(ctx Context) (Function, error) {
-	x, err := v.Eval(ctx)
-	if err != nil {
-		return Function{}, err
-	}
-	if !x.IsFunction() {
-		return Function{}, TypeErrorSpecific(ValueTypeFunction, x.Type())
-	}
-	return x.Function(ctx), nil
-}
+// func (v Value) EvalFunction(ctx Context) (*Function, error) {
+// 	x, err := v.Eval(ctx)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	if !x.IsFunction() {
+// 		return nil, TypeErrorSpecific(ValueTypeFunction, x.Type())
+// 	}
+// 	return x.Function(), nil
+// }
 
 func (v Value) ToString(ctx Context) (string, error) {
 
@@ -537,7 +521,8 @@ func (v Value) IsObject() bool {
 }
 
 func (v Value) IsFunction() bool {
-	return uint64(v)>>typeShift == uint64(ValueTypeFunction)
+	t := uint64(v) >> typeShift
+	return t == uint64(ValueTypeFunction) || t == uint64(ValueTypeNativeFunction)
 }
 
 func (v Value) IsArray() bool {
@@ -562,6 +547,14 @@ func (v Value) AsStringConst() uint32 {
 		return 0
 	}
 	return uint32(v.Payload() >> 1)
+}
+
+func (v Value) FunctionExec(args []NamedValue, ctx Context) (Value, error) {
+	v, err := v.Eval(ctx)
+	if err != nil {
+		return ValueNone, err
+	}
+	return execFunction(v, args, ctx)
 }
 
 func (v Value) Prune(ctx Context) (Value, error) {

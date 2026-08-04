@@ -65,11 +65,9 @@ func (v ThunkNodePtr) unbox() (t ThunkType, p unsafe.Pointer) {
 	const typeMask = 0xFF00000000000000
 
 	t = ThunkType(v >> 56)
-	p = unsafe.Pointer(uintptr(*(*unsafe.Pointer)(unsafe.Pointer(&v))) &^ typeMask)
 
-	// Note: The row above is equal to "p = unsafe.Pointer(uintptr(v &^ typeMask))",
-	// 	they result the same assembly code. Its done this way to not make "go vet"
-	// 	flag it as "possible misuse of unsafe.Pointer".
+	addr := uintptr(v &^ tagMask)
+	p = *(*unsafe.Pointer)(unsafe.Pointer(&addr))
 	return
 }
 
@@ -138,7 +136,7 @@ func (t *Thunk) Eval(baseCtx Context) (value Value, err error) {
 
 	case ThunkTypeGoCallback:
 		node := (*GoCallbackNode)(nodePtr)
-		value, err = node.Func.Exec(node.Args, ctx)
+		value, err = node.FuncVal.FunctionExec(node.Args, ctx)
 	}
 
 	if err != nil {

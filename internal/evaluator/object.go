@@ -77,19 +77,17 @@ func (l *Layer) unpackAsserts() []ast.Node {
 	// mask of the top 16 bits
 	const lenMask = 0xFFFF << 48
 
-	ptr := unsafe.Pointer(uintptr(*(*unsafe.Pointer)(unsafe.Pointer(&l.AssertsPtr))) &^ lenMask)
-
-	// Note: The row above is equal to "ptr := unsafe.Pointer(l.AssertsPtr &^ lenMask)",
-	// 	they result the same assembly code. Its done this way to not make "go vet"
-	// 	flag it as "possible misuse of unsafe.Pointer".
+	addr := l.AssertsPtr &^ lenMask
+	ptr := *(*unsafe.Pointer)(unsafe.Pointer(&addr))
 
 	return unsafe.Slice((*ast.Node)(ptr), length)
 }
 
 func NewSingleLayerObject(allocator *arena.Allocator, layer *Layer) *Object {
 	o := arena.Create[Object](allocator)
-	*o = Object{}
+	arena.Memclr(o)
 	o.Layers = arena.Alloc[*Layer](allocator, 1)
+	arena.MemclrSlice(o.Layers)
 	o.Layers[0] = layer
 	return o
 }
@@ -385,7 +383,7 @@ func (t *Object) GetLayers(ctx Context) []*Layer {
 	}
 
 	layers := arena.Alloc[*Layer](ctx.State.Registry.Allocator, 8)
-	clear(layers)
+	arena.MemclrSlice(layers)
 	layers = t.appendLayers(layers[:0], ctx)
 
 	t.Layers = layers
@@ -397,7 +395,7 @@ func (t *Object) GetLayers(ctx Context) []*Layer {
 
 func MergeObjects(leftPtr, rightPtr uintptr, ctx Context) *Object {
 	o := arena.Create[Object](ctx.State.Registry.Allocator)
-	*o = Object{}
+	arena.Memclr(o)
 	o.LeftPtr = leftPtr
 	o.RightPtr = rightPtr
 	return o
@@ -834,7 +832,7 @@ func GetObjectKeysValues(obj *Object, ctx Context, inclHidden bool) ([]Value, er
 		}
 
 		layer := arena.Create[Layer](allocator)
-		*layer = Layer{}
+		arena.Memclr(layer)
 
 		layer.Keys = arena.Alloc[uint32](allocator, 2)
 		layer.Keys[0] = keyIdx
@@ -899,7 +897,7 @@ func (t *Object) Prune(ctx Context) (Value, error) {
 	allocator := ctx.State.Registry.Allocator
 
 	layer := arena.Create[Layer](allocator)
-	*layer = Layer{}
+	arena.Memclr(layer)
 	layer.Keys = arena.Alloc[uint32](allocator, n)
 	layer.Values = arena.Alloc[Value](allocator, n)
 	layer.Meta = arena.Alloc[uint8](allocator, n)

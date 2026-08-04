@@ -60,8 +60,8 @@ func ManifestValue(value Value, ctx Context) (any, error) {
 			res = append(res, ev)
 		}
 		return res, nil
-	case ValueTypeFunction:
-		res, err := value.Function(ctx).Exec(nil, ctx)
+	case ValueTypeFunction, ValueTypeNativeFunction:
+		res, err := value.FunctionExec(nil, ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -81,7 +81,7 @@ func CreateFileScope(filename string, baseStd Value, ctx Context) uintptr {
 	keyId := ctx.State.Interner.Intern("thisFile")
 
 	layer := arena.Create[Layer](allocator)
-	*layer = Layer{}
+	arena.Memclr(layer)
 
 	layer.Keys = arena.Alloc[uint32](allocator, 1)
 	layer.Keys[0] = keyId
@@ -123,6 +123,9 @@ func evaluateNodeLazy(n ast.Node, scopePtr uintptr, ctx Context) (Value, error) 
 		}
 		return MakeNumber(num), nil
 	case *ast.Self:
+		// if !ctx.Self.IsObject() {
+		// 	return ValueNone, MakeRuntimeError(fmt.Errorf("self not initialized"))
+		// }
 		return ctx.Self, nil
 
 	case *ast.DesugaredObject:
@@ -204,6 +207,9 @@ func evaluateNode(n ast.Node, scopePtr uintptr, ctx Context) (Value, error) {
 	case *ast.ImportStr:
 		return handleImportStr(node, ctx)
 	case *ast.Self:
+		// if !ctx.Self.IsObject() {
+		// 	return ValueNone, MakeRuntimeError(fmt.Errorf("self not initialized"))
+		// }
 		return ctx.Self, nil
 	case *ast.SuperIndex:
 		return handleSuperIndex(node, scopePtr, ctx)
@@ -212,13 +218,13 @@ func evaluateNode(n ast.Node, scopePtr uintptr, ctx Context) (Value, error) {
 	case *ast.Error:
 		return handleError(node, scopePtr, ctx)
 	case *GoCallbackNode:
-		return node.Func.Exec(node.Args, ctx)
+		return node.FuncVal.FunctionExec(node.Args, ctx)
 	}
 }
 
 type GoCallbackNode struct {
-	Func Function
-	Args []NamedValue
+	FuncVal Value
+	Args    []NamedValue
 }
 
 func (n *GoCallbackNode) Context() ast.Context             { return nil }
@@ -248,21 +254,21 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopePtr uintptr, ctx Cont
 	localsCount := len(node.Locals)
 
 	layer := arena.Create[Layer](allocator)
-	*layer = Layer{}
+	arena.Memclr(layer)
 
 	layer.ParentScopePtr = scopePtr
 
 	if fieldCount > 0 {
 		layer.Keys = arena.Alloc[uint32](allocator, fieldCount)
 		layer.Nodes = arena.Alloc[ast.Node](allocator, fieldCount)
-		clear(layer.Nodes)
+		arena.MemclrSlice(layer.Nodes)
 		layer.Meta = arena.Alloc[uint8](allocator, fieldCount)
 	}
 
 	if localsCount > 0 {
 		layer.LocalKeys = arena.Alloc[uint32](allocator, localsCount)
 		layer.LocalNodes = arena.Alloc[ast.Node](allocator, localsCount)
-		clear(layer.LocalNodes)
+		arena.MemclrSlice(layer.LocalNodes)
 	}
 
 	if len(node.Asserts) > 0 {
@@ -385,7 +391,7 @@ func handleApply(node *ast.Apply, scopePtr uintptr, ctx Context) (Value, error) 
 		args[i+posCount] = NamedValue{nameKeyId, v}
 	}
 
-	res, err := val.Function(ctx).Exec(args, ctx)
+	res, err := val.FunctionExec(args, ctx)
 	if err != nil {
 		return ValueNone, err
 	}
@@ -501,73 +507,22 @@ func handleVar(node *ast.Var, scopePtr uintptr, ctx Context) (Value, error) {
 
 func handleFunction(node *ast.Function, scopePtr uintptr, ctx Context) (Value, error) {
 
-	paramCount := len(node.Parameters)
-
-	paramKeyIds := arena.Alloc[uint32](ctx.State.Registry.Allocator, paramCount)
+	paramKeyIds := arena.Alloc[uint32](ctx.State.Registry.Allocator, len(node.Parameters))
 	for i, p := range node.Parameters {
 		paramKeyIds[i] = ctx.State.Interner.Intern(string(p.Name))
 	}
 
-	var fn Func = func(args []NamedValue, _ Context) (Value, error) {
-		if len(args) > paramCount {
-			return ValueNone, fmt.Errorf("unexpected amount of args passed to function")
-		}
-
-		if paramCount == 0 {
-			return EvaluateNode(node.Body, scopePtr, ctx)
-		}
-
-		s, childScopeId := ctx.NewScope(scopePtr, paramCount)
-
-		// TODO: Throw err on argument x already provided
-
-		posIndex := 0
-		for i := range paramCount {
-			keyId := paramKeyIds[i]
-
-			var bindVal NamedValue
-
-			if posIndex < len(args) && args[posIndex].Key == 0 {
-				bindVal = args[posIndex]
-				bindVal.Key = keyId
-				posIndex++
-			} else {
-				for _, a := range args {
-					if a.Key == keyId {
-						bindVal = a
-						break
-					}
-				}
-			}
-
-			if !bindVal.IsNone() {
-				s.Bindings[i] = bindVal
-				continue
-			}
-
-			// No arg was passed, fallback to default arg
-			defArgNode := node.Parameters[i].DefaultArg
-			if defArgNode == nil {
-				return ValueNone, fmt.Errorf("arg (%d) with no default arg had no value passed", i)
-			}
-
-			da, err := evaluateNodeLazy(defArgNode, childScopeId, ctx)
-			if err != nil {
-				return ValueNone, err
-			}
-
-			s.Bindings[i] = NamedValue{keyId, da}
-		}
-
-		return EvaluateNode(node.Body, childScopeId, ctx)
+	f := arena.Create[Function](ctx.State.Registry.Allocator)
+	arena.Memclr(f)
+	*f = Function{
+		Node:        node,
+		ScopePtr:    scopePtr,
+		ParamKeyIds: paramKeyIds,
+		Self:        ctx.Self,
+		SuperOffset: ctx.SuperOffset,
 	}
 
-	f := Function{
-		argsCount: len(paramKeyIds),
-		fn:        fn,
-	}
-
-	return MakeFunction(f, ctx), nil
+	return MakeFunctionValue(f, ctx), nil
 }
 
 func handleConditional(node *ast.Conditional, scopePtr uintptr, ctx Context) (Value, error) {

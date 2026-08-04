@@ -282,22 +282,22 @@ func TestEvaluatorParallel(t *testing.T) {
 					t.Fatal(err.Error())
 				}
 
-				// dir := filepath.Join(infraDir, "manifests", c)
-				for _, err := range stuff {
+				dir := filepath.Join(infraDir, "manifests", c)
+				for fo, err := range stuff {
 
 					if err != nil {
 						t.Fatal(err.Error())
 					}
 
-					// f, err := os.Create(filepath.Join(dir, fo.Filename+".yaml"))
-					// if err != nil {
-					// 	t.Fatal(err.Error())
-					// }
+					f, err := os.Create(filepath.Join(dir, fo.Filename+".yaml"))
+					if err != nil {
+						t.Fatal(err.Error())
+					}
 
-					// _, err = f.WriteString(fo.Content)
-					// if err != nil {
-					// 	t.Fatal(err.Error())
-					// }
+					_, err = f.WriteString(fo.Content)
+					if err != nil {
+						t.Fatal(err.Error())
+					}
 				}
 
 				fmt.Println("done", c)

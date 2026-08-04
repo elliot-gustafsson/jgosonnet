@@ -27,11 +27,11 @@ type Registry struct {
 	// Arrays    *arena.SliceArena[Value]
 	// Strings   *arena.StringArena
 	// Thunks    *arena.Arena[Thunk]
-	Functions *arena.Arena[Function]
+	// Functions *arena.Arena[Function]
 
 	// Scopes *arena.Arena[Scope]
 
-	GoCallbackNodes *arena.Arena[GoCallbackNode]
+	// GoCallbackNodes *arena.Arena[GoCallbackNode]
 
 	Allocator *arena.Allocator
 }
@@ -43,9 +43,9 @@ type Scope struct {
 
 func NewRegistry() *Registry {
 	return &Registry{
-		Functions: arena.NewArena[Function](),
+		// Functions: arena.NewArena[Function](),
 
-		GoCallbackNodes: arena.NewArena[GoCallbackNode](),
+		// GoCallbackNodes: arena.NewArena[GoCallbackNode](),
 
 		Allocator: arena.NewAllocator(),
 	}
@@ -53,16 +53,16 @@ func NewRegistry() *Registry {
 
 func (t *Registry) Reset() {
 
-	t.Functions.Reset()
+	// t.Functions.Reset()
 
-	t.GoCallbackNodes.Reset()
+	// t.GoCallbackNodes.Reset()
 
 	t.Allocator.Reset()
 }
 
 func (c Context) NewScope(parentPtr uintptr, length int) (*Scope, uintptr) {
 	s := arena.Create[Scope](c.State.Registry.Allocator)
-	*s = Scope{}
+	arena.Memclr(s)
 
 	s.ParentPtr = parentPtr
 	s.Bindings = arena.Alloc[NamedValue](c.State.Registry.Allocator, length)

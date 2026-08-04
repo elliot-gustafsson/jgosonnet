@@ -1,23 +1,6 @@
-{
-  a+: 1,
-}
-+
-{
-  a+: 2,
-}
-+
-{
-  a+: 3,
-}
-+
-{
-  a+: 4,
-}
-+
-{
-  a+: 5,
-}
-+
-{
-  a+: 6,
-}
+// std.map(function(x) x * 10, [1, 2, 4, 5])
+local d = {
+  secret: 'asdf',
+};
+
+std.objectHas(d, 'secret')

@@ -39,7 +39,7 @@ func BenchmarkByteArena_Alloc(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		x := Create[DummyStruct](a)
-		*x = DummyStruct{}
+		Memclr(x)
 		_ = x.A
 	}
 }

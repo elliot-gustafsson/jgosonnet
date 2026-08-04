@@ -43,21 +43,30 @@ func std_makeArray(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 		return evaluator.ValueNone, err
 	}
 
-	mapperFunc, err := args[1].EvalFunction(ctx)
+	funcVal, err := args[1].Eval(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	allArgs := arena.Alloc[evaluator.NamedValue](ctx.State.Registry.Allocator, size)
+	if !funcVal.IsFunction() {
+		return evaluator.ValueNone, evaluator.TypeErrorSpecific(evaluator.ValueTypeFunction, funcVal.Type())
+	}
+
+	allocator := ctx.State.Registry.Allocator
+
+	allArgs := arena.Alloc[evaluator.NamedValue](allocator, size)
 
 	res, arrVal := evaluator.MakeArraySized(size, ctx)
 	for i := range size {
 
 		allArgs[i] = evaluator.NamedValue{Value: evaluator.MakeNumber(float64(i))}
 
-		n, _ := ctx.State.Registry.GoCallbackNodes.New()
-		n.Func = mapperFunc
-		n.Args = allArgs[i : i+1]
+		n := arena.Create[evaluator.GoCallbackNode](allocator)
+		arena.Memclr(n)
+		*n = evaluator.GoCallbackNode{
+			FuncVal: funcVal,
+			Args:    allArgs[i : i+1],
+		}
 
 		res[i] = evaluator.NewThunk(evaluator.ThunkTypeGoCallback, unsafe.Pointer(n), 0, ctx)
 
@@ -238,7 +247,7 @@ func flattenArray(b *strings.Builder, arr []evaluator.Value, ctx evaluator.Conte
 
 func std_filter(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
-	mapperFunc, err := args[0].EvalFunction(ctx)
+	mapperFunc, err := args[0].Eval(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -253,7 +262,7 @@ func std_filter(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 	res := []evaluator.Value{}
 	for _, v := range inputArray {
 		mapperFuncInput[0] = evaluator.NamedValue{Value: v}
-		out, err := mapperFunc.Exec(mapperFuncInput, ctx)
+		out, err := mapperFunc.FunctionExec(mapperFuncInput, ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
@@ -274,7 +283,7 @@ func std_filter(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 
 func std_flatMap(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
-	mapFunc, err := args[0].EvalFunction(ctx)
+	mapFunc, err := args[0].Eval(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -291,7 +300,7 @@ func std_flatMap(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.
 
 		mapFuncArgs[0] = evaluator.NamedValue{Value: v}
 
-		out, err := mapFunc.Exec(mapFuncArgs, ctx)
+		out, err := mapFunc.FunctionExec(mapFuncArgs, ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
@@ -309,12 +318,12 @@ func std_flatMap(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.
 
 func std_filterMap(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
-	filterFunc, err := args[0].EvalFunction(ctx)
+	filterFunc, err := args[0].Eval(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	mapFunc, err := args[1].EvalFunction(ctx)
+	mapFunc, err := args[1].Eval(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -329,7 +338,7 @@ func std_filterMap(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 	filteredArr := make([]evaluator.Value, 0, len(inputArray)/2)
 	for _, v := range inputArray {
 		funcArgs[0] = evaluator.NamedValue{Value: v}
-		out, err := filterFunc.Exec(funcArgs, ctx)
+		out, err := filterFunc.FunctionExec(funcArgs, ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
@@ -348,7 +357,7 @@ func std_filterMap(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 	res := make([]evaluator.Value, 0, len(filteredArr))
 	for _, v := range filteredArr {
 		funcArgs[0] = evaluator.NamedValue{Value: v}
-		out, err := mapFunc.Exec(funcArgs, ctx)
+		out, err := mapFunc.FunctionExec(funcArgs, ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
@@ -365,9 +374,9 @@ func std_uniq(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 		return evaluator.ValueNone, err
 	}
 
-	var keyF evaluator.Function
+	var keyF evaluator.Value
 	if !args[1].IsNone() {
-		f, err := args[1].EvalFunction(ctx)
+		f, err := args[1].Eval(ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
@@ -391,16 +400,16 @@ func std_uniq(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 		var y evaluator.Value
 		var err error
 
-		if !keyF.Noop() {
+		if !keyF.IsNone() {
 
 			mapperFuncInput[0] = evaluator.NamedValue{Value: last}
-			x, err = keyF.Exec(mapperFuncInput, ctx)
+			x, err = keyF.FunctionExec(mapperFuncInput, ctx)
 			if err != nil {
 				return evaluator.ValueNone, err
 			}
 
 			mapperFuncInput[0] = evaluator.NamedValue{Value: v}
-			y, err = keyF.Exec(mapperFuncInput, ctx)
+			y, err = keyF.FunctionExec(mapperFuncInput, ctx)
 			if err != nil {
 				return evaluator.ValueNone, err
 			}
@@ -446,9 +455,9 @@ func std_sort(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 		return evaluator.ValueNone, err
 	}
 
-	var keyF evaluator.Function
+	var keyF evaluator.Value
 	if !args[1].IsNone() {
-		f, err := args[1].EvalFunction(ctx)
+		f, err := args[1].Eval(ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
@@ -464,7 +473,7 @@ func std_sort(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 
 }
 
-func sortArray(arr []evaluator.Value, keyF evaluator.Function, ctx evaluator.Context) (val evaluator.Value, err error) {
+func sortArray(arr []evaluator.Value, keyF evaluator.Value, ctx evaluator.Context) (val evaluator.Value, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			if e, ok := r.(error); ok {
@@ -480,17 +489,16 @@ func sortArray(arr []evaluator.Value, keyF evaluator.Function, ctx evaluator.Con
 
 	mapperFuncInput := arena.Alloc[evaluator.NamedValue](ctx.State.Registry.Allocator, 1)
 
-	// TODO: now we eval the values over and over, think abt this
 	slices.SortStableFunc(result, func(a, b evaluator.Value) int {
 
-		if !keyF.Noop() {
+		if !keyF.IsNone() {
 			mapperFuncInput[0] = evaluator.NamedValue{Value: a}
-			a, err = keyF.Exec(mapperFuncInput, ctx)
+			a, err = keyF.FunctionExec(mapperFuncInput, ctx)
 			if err != nil {
 				panic(err)
 			}
 			mapperFuncInput[0] = evaluator.NamedValue{Value: b}
-			b, err = keyF.Exec(mapperFuncInput, ctx)
+			b, err = keyF.FunctionExec(mapperFuncInput, ctx)
 			if err != nil {
 				panic(err)
 			}
@@ -549,7 +557,7 @@ func std_set(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 
 func std_map(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
-	mapFunc, err := args[0].EvalFunction(ctx)
+	mapFunc, err := args[0].Eval(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -559,16 +567,21 @@ func std_map(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 		return evaluator.ValueNone, err
 	}
 
-	allArgs := arena.Alloc[evaluator.NamedValue](ctx.State.Registry.Allocator, len(arr))
+	allocator := ctx.State.Registry.Allocator
+
+	allArgs := arena.Alloc[evaluator.NamedValue](allocator, len(arr))
 
 	res, arrVal := evaluator.MakeArraySized(len(arr), ctx)
 	for i, v := range arr {
 
 		allArgs[i] = evaluator.NamedValue{Value: v}
 
-		n, _ := ctx.State.Registry.GoCallbackNodes.New()
-		n.Func = mapFunc
-		n.Args = allArgs[i : i+1]
+		n := arena.Create[evaluator.GoCallbackNode](allocator)
+		arena.Memclr(n)
+		*n = evaluator.GoCallbackNode{
+			FuncVal: mapFunc,
+			Args:    allArgs[i : i+1],
+		}
 
 		res[i] = evaluator.NewThunk(evaluator.ThunkTypeGoCallback, unsafe.Pointer(n), 0, ctx)
 
@@ -579,7 +592,7 @@ func std_map(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 
 func std_mapWithIndex(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
-	mapFunc, err := args[0].EvalFunction(ctx)
+	mapFunc, err := args[0].Eval(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -589,7 +602,9 @@ func std_mapWithIndex(args []evaluator.NamedValue, ctx evaluator.Context) (evalu
 		return evaluator.ValueNone, err
 	}
 
-	allArgs := arena.Alloc[evaluator.NamedValue](ctx.State.Registry.Allocator, len(arr)*2)
+	allocator := ctx.State.Registry.Allocator
+
+	allArgs := arena.Alloc[evaluator.NamedValue](allocator, len(arr)*2)
 
 	res, arrVal := evaluator.MakeArraySized(len(arr), ctx)
 	for i, v := range arr {
@@ -598,9 +613,12 @@ func std_mapWithIndex(args []evaluator.NamedValue, ctx evaluator.Context) (evalu
 		allArgs[idx] = evaluator.NamedValue{Value: evaluator.MakeNumber(float64(i))}
 		allArgs[idx+1] = evaluator.NamedValue{Value: v}
 
-		n, _ := ctx.State.Registry.GoCallbackNodes.New()
-		n.Func = mapFunc
-		n.Args = allArgs[idx : idx+2]
+		n := arena.Create[evaluator.GoCallbackNode](allocator)
+		arena.Memclr(n)
+		*n = evaluator.GoCallbackNode{
+			FuncVal: mapFunc,
+			Args:    allArgs[idx : idx+2],
+		}
 
 		res[i] = evaluator.NewThunk(evaluator.ThunkTypeGoCallback, unsafe.Pointer(n), 0, ctx)
 
@@ -673,9 +691,9 @@ func std_setMember(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 		return evaluator.ValueNone, err
 	}
 
-	var keyF evaluator.Function
+	var keyF evaluator.Value
 	if !args[2].IsNone() {
-		f, err := args[2].EvalFunction(ctx)
+		f, err := args[2].Eval(ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
@@ -693,15 +711,15 @@ func std_setMember(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 		ar := v
 		br := member
 
-		if !keyF.Noop() {
+		if !keyF.IsNone() {
 			mapperFuncInput[0] = evaluator.NamedValue{Value: v}
-			ar, err = keyF.Exec(mapperFuncInput, ctx)
+			ar, err = keyF.FunctionExec(mapperFuncInput, ctx)
 			if err != nil {
 				return evaluator.ValueNone, err
 			}
 
 			mapperFuncInput[0] = evaluator.NamedValue{Value: member}
-			br, err = keyF.Exec(mapperFuncInput, ctx)
+			br, err = keyF.FunctionExec(mapperFuncInput, ctx)
 			if err != nil {
 				return evaluator.ValueNone, err
 			}
@@ -891,19 +909,12 @@ func std_reverse(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.
 }
 
 func std_foldl(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	// std.foldl(func, arr, init)
-	if len(args) != 3 {
-		return evaluator.ValueNone, fmt.Errorf("unexpected number of args passed to std.foldl %d, expected 3", len(args))
-	}
 
 	fVal, err := args[0].Eval(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	if !fVal.IsFunction() {
-		return evaluator.ValueNone, fmt.Errorf("unexpected type passed to std.foldl (arg 0): %s, expected function", fVal.Type().String())
-	}
-	foldFunc := fVal.Function(ctx)
+
 	foldFuncArgs := arena.Alloc[evaluator.NamedValue](ctx.State.Registry.Allocator, 2)
 
 	state, err := args[2].Eval(ctx)
@@ -922,7 +933,7 @@ func std_foldl(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 			foldFuncArgs[0] = evaluator.NamedValue{Value: state}
 			foldFuncArgs[1] = evaluator.NamedValue{Value: str}
 
-			val, err := foldFunc.Exec(foldFuncArgs, ctx)
+			val, err := fVal.FunctionExec(foldFuncArgs, ctx)
 			if err != nil {
 				return evaluator.ValueNone, err
 			}
@@ -942,7 +953,7 @@ func std_foldl(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 		foldFuncArgs[0] = evaluator.NamedValue{Value: state}
 		foldFuncArgs[1] = evaluator.NamedValue{Value: v}
 
-		val, err := foldFunc.Exec(foldFuncArgs, ctx)
+		val, err := fVal.FunctionExec(foldFuncArgs, ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
@@ -954,19 +965,12 @@ func std_foldl(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 }
 
 func std_foldr(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	// std.foldr(func, arr, init)
-	if len(args) != 3 {
-		return evaluator.ValueNone, fmt.Errorf("unexpected number of args passed to std.foldr %d, expected 3", len(args))
-	}
 
 	fVal, err := args[0].Eval(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	if !fVal.IsFunction() {
-		return evaluator.ValueNone, fmt.Errorf("unexpected type passed to std.foldr (arg 0): %s, expected function", fVal.Type().String())
-	}
-	foldFunc := fVal.Function(ctx)
+
 	foldFuncArgs := arena.Alloc[evaluator.NamedValue](ctx.State.Registry.Allocator, 2)
 
 	state, err := args[2].Eval(ctx)
@@ -989,7 +993,7 @@ func std_foldr(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 			foldFuncArgs[0] = evaluator.NamedValue{Value: str}
 			foldFuncArgs[1] = evaluator.NamedValue{Value: state}
 
-			val, err := foldFunc.Exec(foldFuncArgs, ctx)
+			val, err := fVal.FunctionExec(foldFuncArgs, ctx)
 			if err != nil {
 				return evaluator.ValueNone, err
 			}
@@ -1011,7 +1015,7 @@ func std_foldr(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 		foldFuncArgs[0] = evaluator.NamedValue{Value: v}
 		foldFuncArgs[1] = evaluator.NamedValue{Value: state}
 
-		val, err := foldFunc.Exec(foldFuncArgs, ctx)
+		val, err := fVal.FunctionExec(foldFuncArgs, ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
@@ -1191,17 +1195,13 @@ func std_setUnion(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator
 		return evaluator.ValueNone, fmt.Errorf("unexpected type passed to std.setUnion (arg 1): %s, expected array", bVal.Type().String())
 	}
 
-	var keyF evaluator.Function
+	var keyF evaluator.Value
 	var funcArgs []evaluator.NamedValue
 	if !args[2].IsNone() {
-		f, err := args[2].Eval(ctx)
+		keyF, err = args[2].Eval(ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
-		if !f.IsFunction() {
-			return evaluator.ValueNone, fmt.Errorf("unexpected type passed to std.setUnion (arg 1): %s, expected function", f.Type().String())
-		}
-		keyF = f.Function(ctx)
 		funcArgs = arena.Alloc[evaluator.NamedValue](ctx.State.Registry.Allocator, 1)
 	}
 
@@ -1225,10 +1225,10 @@ func std_setUnion(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator
 
 		var x int
 
-		if !keyF.Noop() {
+		if !keyF.IsNone() {
 
 			funcArgs[0] = evaluator.NamedValue{Value: aV}
-			aVC, err := keyF.Exec(funcArgs, ctx)
+			aVC, err := keyF.FunctionExec(funcArgs, ctx)
 			if err != nil {
 				return evaluator.ValueNone, err
 			}
@@ -1238,7 +1238,7 @@ func std_setUnion(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator
 			}
 
 			funcArgs[0] = evaluator.NamedValue{Value: bV}
-			bVC, err := keyF.Exec(funcArgs, ctx)
+			bVC, err := keyF.FunctionExec(funcArgs, ctx)
 			if err != nil {
 				return evaluator.ValueNone, err
 			}
@@ -1320,17 +1320,13 @@ func std_setInter(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator
 		return evaluator.ValueNone, fmt.Errorf("unexpected type passed to std.setInter (arg 1): %s, expected array", bVal.Type().String())
 	}
 
-	var keyF evaluator.Function
+	var keyF evaluator.Value
 	var funcArgs []evaluator.NamedValue
 	if !args[2].IsNone() {
-		f, err := args[2].Eval(ctx)
+		keyF, err = args[2].Eval(ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
-		if !f.IsFunction() {
-			return evaluator.ValueNone, fmt.Errorf("unexpected type passed to std.setInter (arg 1): %s, expected function", f.Type().String())
-		}
-		keyF = f.Function(ctx)
 		funcArgs = arena.Alloc[evaluator.NamedValue](ctx.State.Registry.Allocator, 1)
 	}
 
@@ -1354,10 +1350,10 @@ func std_setInter(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator
 
 		var x int
 
-		if !keyF.Noop() {
+		if !keyF.IsNone() {
 
 			funcArgs[0] = evaluator.NamedValue{Value: aV}
-			aVC, err := keyF.Exec(funcArgs, ctx)
+			aVC, err := keyF.FunctionExec(funcArgs, ctx)
 			if err != nil {
 				return evaluator.ValueNone, err
 			}
@@ -1367,7 +1363,7 @@ func std_setInter(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator
 			}
 
 			funcArgs[0] = evaluator.NamedValue{Value: bV}
-			bVC, err := keyF.Exec(funcArgs, ctx)
+			bVC, err := keyF.FunctionExec(funcArgs, ctx)
 			if err != nil {
 				return evaluator.ValueNone, err
 			}
@@ -1417,14 +1413,13 @@ func std_setDiff(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.
 		return evaluator.ValueNone, err
 	}
 
-	var keyF evaluator.Function
+	var keyF evaluator.Value
 	var funcArgs []evaluator.NamedValue
 	if !args[2].IsNone() {
-		f, err := args[2].EvalFunction(ctx)
+		keyF, err = args[2].Eval(ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
-		keyF = f
 		funcArgs = arena.Alloc[evaluator.NamedValue](ctx.State.Registry.Allocator, 1)
 	}
 
@@ -1442,9 +1437,9 @@ func std_setDiff(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.
 		}
 
 		var x int
-		if !keyF.Noop() {
+		if !keyF.IsNone() {
 			funcArgs[0] = evaluator.NamedValue{Value: aV}
-			aVC, err := keyF.Exec(funcArgs, ctx)
+			aVC, err := keyF.FunctionExec(funcArgs, ctx)
 			if err != nil {
 				return evaluator.ValueNone, err
 			}
@@ -1455,7 +1450,7 @@ func std_setDiff(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.
 			}
 
 			funcArgs[0] = evaluator.NamedValue{Value: bV}
-			bVC, err := keyF.Exec(funcArgs, ctx)
+			bVC, err := keyF.FunctionExec(funcArgs, ctx)
 			if err != nil {
 				return evaluator.ValueNone, err
 			}
@@ -1615,14 +1610,13 @@ func minMaxArray(args []evaluator.NamedValue, ctx evaluator.Context, max bool, n
 		return evaluator.ValueNone, err
 	}
 
-	var keyF evaluator.Function
+	var keyF evaluator.Value
 	var funcArgs []evaluator.NamedValue
 	if !args[1].IsNone() {
-		f, err := args[1].EvalFunction(ctx)
+		keyF, err = args[1].Eval(ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
-		keyF = f
 		funcArgs = arena.Alloc[evaluator.NamedValue](ctx.State.Registry.Allocator, 1)
 	}
 
@@ -1654,15 +1648,15 @@ func minMaxArray(args []evaluator.NamedValue, ctx evaluator.Context, max bool, n
 		}
 
 		x, y := last, v
-		if !keyF.Noop() {
+		if !keyF.IsNone() {
 			funcArgs[0] = evaluator.NamedValue{Value: last}
-			x, err = keyF.Exec(funcArgs, ctx)
+			x, err = keyF.FunctionExec(funcArgs, ctx)
 			if err != nil {
 				return evaluator.ValueNone, err
 			}
 
 			funcArgs[0] = evaluator.NamedValue{Value: v}
-			y, err = keyF.Exec(funcArgs, ctx)
+			y, err = keyF.FunctionExec(funcArgs, ctx)
 			if err != nil {
 				return evaluator.ValueNone, err
 			}

@@ -377,7 +377,7 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 	}
 
 	if value.IsFunction() {
-		res, err := value.Function(ctx).Exec(nil, ctx)
+		res, err := value.FunctionExec(nil, ctx)
 		if err != nil {
 			return evaluator.ValueNone, evaluator.Context{}, cleanup, err
 		}

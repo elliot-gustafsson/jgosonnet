@@ -226,6 +226,7 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, indentLevel in
 			} else if fieldValue.IsObject() {
 				hasFields := false
 
+				// TODO: write a more optmized Object.HasVisibleFields for this
 				plans := compileObjectPlan(fieldValue.Object(), subCtx)
 				for i := range plans {
 					if !plans[i].IsHidden() {
