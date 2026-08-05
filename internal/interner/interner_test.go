@@ -3,7 +3,6 @@ package interner
 import (
 	"crypto/rand"
 	"fmt"
-	"runtime"
 	"testing"
 )
 
@@ -27,7 +26,6 @@ func init() {
 }
 
 func BenchmarkInterner_Unique(b *testing.B) {
-	runtime.GOMAXPROCS(1)
 
 	for i := 0; i < b.N; i++ {
 		interner := NewInterner()
@@ -38,7 +36,6 @@ func BenchmarkInterner_Unique(b *testing.B) {
 }
 
 func BenchmarkInterner_Repeated(b *testing.B) {
-	runtime.GOMAXPROCS(1)
 
 	interner := NewInterner()
 	for _, k := range benchKeysRepeated {

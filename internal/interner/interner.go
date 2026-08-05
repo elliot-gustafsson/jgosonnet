@@ -1,9 +1,5 @@
 package interner
 
-import (
-	"hash/maphash"
-)
-
 const (
 	defaultInternerSize = 16384 // Must be a power of 2
 	defaultInternerMask = defaultInternerSize - 1
@@ -19,7 +15,6 @@ type Interner struct {
 	strings []string
 	mask    uint32
 	count   uint32
-	seed    maphash.Seed
 }
 
 func NewInterner() *Interner {
@@ -27,7 +22,6 @@ func NewInterner() *Interner {
 		table:   make([]entry, defaultInternerSize),
 		strings: make([]string, 1, defaultInternerSize/2), // burn 0 index
 		mask:    defaultInternerMask,
-		seed:    maphash.MakeSeed(),
 	}
 	interner.strings[0] = ""
 	return interner
@@ -35,7 +29,7 @@ func NewInterner() *Interner {
 
 func (i *Interner) Intern(s string) uint32 {
 
-	h := uint32(maphash.String(i.seed, s))
+	h := uint32(HashString(s))
 	idx := h & i.mask
 
 	for {
