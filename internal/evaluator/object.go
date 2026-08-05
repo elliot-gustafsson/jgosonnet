@@ -357,8 +357,11 @@ func (t *Object) appendLayers(dest []*Layer, ctx Context) []*Layer {
 	if t.Layers != nil {
 		targetLen := len(dest) + len(t.Layers)
 		if targetLen > cap(dest) {
+			n := len(dest)
 			newCap := max(targetLen, cap(dest)*2)
-			dest = arena.Realloc(ctx.State.Allocator, dest, newCap)[:len(dest)]
+			dest = arena.Realloc(ctx.State.Allocator, dest, newCap)
+			arena.MemclrSlice(dest[n:])
+			dest = dest[:n]
 		}
 
 		return append(dest, t.Layers...)
@@ -497,7 +500,7 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 
 			if pIdx == -1 {
 				lrs := arena.Alloc[LayerRef](allocator, 4)
-				clear(lrs)
+				arena.MemclrSlice(lrs)
 
 				plans = append(plans, FieldPlan{
 					KeyId:            keyID,
@@ -543,7 +546,7 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 			if len(plan.Layers) == cap(plan.Layers) {
 				n := len(plan.Layers)
 				plan.Layers = arena.Realloc(allocator, plan.Layers, n*2)
-				clear(plan.Layers[n:])
+				arena.MemclrSlice(plan.Layers[n:])
 				plan.Layers = plan.Layers[:n]
 			}
 			plan.Layers = append(plan.Layers, LayerRef{int32(l), int32(f)})

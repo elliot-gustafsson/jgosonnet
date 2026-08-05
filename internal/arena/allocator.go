@@ -29,7 +29,9 @@ func NewAllocator() (a *Allocator) {
 	return
 }
 
-// Create type T, memory can be uninitialized. If all slots arent set a clear must be made first
+// Create create type T in the arena.
+//
+//	Note: If creating a type with pointers, be sure to call Memclr directly to avoid gc panics
 func Create[T any](a *Allocator) (ptr *T) {
 	var zero T
 	size := unsafe.Sizeof(zero)
@@ -49,6 +51,9 @@ func Create[T any](a *Allocator) (ptr *T) {
 	return
 }
 
+// Allocate a slice of type T in the arena with the provided lenght.
+//
+//	Note: If allocating a slice of a type with pointers, be sure to call MemclrSlice directly to avoid gc panics
 func Alloc[T any](a *Allocator, length int) (s []T) {
 	if length <= 0 {
 		return nil
@@ -75,6 +80,7 @@ func Alloc[T any](a *Allocator, length int) (s []T) {
 	return
 }
 
+// Allocate raw aligned memory inside the arena
 func AlignedAlloc(a *Allocator, size, align uintptr) (ptr unsafe.Pointer) {
 
 	ptr = allocRaw(a, size, align)
@@ -86,10 +92,9 @@ func AlignedAlloc(a *Allocator, size, align uintptr) (ptr unsafe.Pointer) {
 	return
 }
 
-// Realloc takes an existing slice and a new desired length. It allocates a
-// new slice in the arena, copies over the existing values, and returns it.
-// If the requested length is less than or equal to the current length, it
-// simply returns the original slice.
+// Realloc a slice of type T in the arena with the provided lenght.
+//
+//	Note: If reallocating a slice of a type with pointers, be sure to call MemclrSlice directly to avoid gc panics
 func Realloc[T any](a *Allocator, slice []T, length int) (s []T) {
 	// If the slice already has enough capacity, we can just reslice it.
 	if length <= cap(slice) {

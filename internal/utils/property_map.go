@@ -23,6 +23,7 @@ func NewPropertyMap[T any](a *arena.Allocator, initialCap uint32) *PropertyMap[T
 	}
 
 	pm := arena.Create[PropertyMap[T]](a)
+	arena.Memclr(pm)
 	pm.entries = arena.Alloc[Property[T]](a, int(cap))
 	arena.MemclrSlice(pm.entries)
 	pm.capMask = cap - 1

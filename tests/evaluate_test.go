@@ -380,16 +380,22 @@ func TestEvaluatorSerial(t *testing.T) {
 	interpreter := jgosonnet.NewEvaluator()
 	interpreter.JPaths([]string{filepath.Join(infraDir, "vendor")})
 
-	f, err := os.Create("cpu.prof")
+	cpuFile, err := os.Create("cpu.prof")
 	if err != nil {
 		t.Fatal(err.Error())
 	}
-	defer f.Close()
-	err = pprof.StartCPUProfile(f)
+	defer cpuFile.Close()
+	err = pprof.StartCPUProfile(cpuFile)
 	if err != nil {
 		t.Fatal(err.Error())
 	}
 	defer pprof.StopCPUProfile()
+
+	memFile, err := os.Create("mem.prof")
+	if err != nil {
+		t.Fatalf("could not create memory profile: %v", err)
+	}
+	defer memFile.Close()
 
 	jgosonnetStart := time.Now()
 
@@ -413,12 +419,21 @@ func TestEvaluatorSerial(t *testing.T) {
 
 	jgosonnetDur := time.Since(jgosonnetStart)
 
+	runtime.GC()
+
+	err = pprof.WriteHeapProfile(memFile)
+	if err != nil {
+		t.Fatalf("could not write memory profile: %v", err)
+	}
+
 	println()
 	println("jgosonnet:", jgosonnetDur.String())
 
 }
 
 func BenchmarkEvaluatorLoop(b *testing.B) {
+	b.ReportAllocs()
+
 	runtime.GOMAXPROCS(1)
 
 	// originalGC := debug.SetGCPercent(-1)
@@ -444,31 +459,42 @@ func BenchmarkEvaluatorLoop(b *testing.B) {
 		b.Fatal(err.Error())
 	}
 
-	f, err := os.Create("cpu.prof")
+	cpuFile, err := os.Create("cpu.prof")
 	if err != nil {
 		b.Fatal(err.Error())
 	}
-	defer f.Close()
-	err = pprof.StartCPUProfile(f)
+	defer cpuFile.Close()
+	err = pprof.StartCPUProfile(cpuFile)
 	if err != nil {
 		b.Fatal(err.Error())
 	}
 	defer pprof.StopCPUProfile()
 
+	memFile, err := os.Create("mem.prof")
+	if err != nil {
+		b.Fatalf("could not create memory profile: %v", err)
+	}
+	defer memFile.Close()
+
+	// jgosonnetStart := time.Now()
 	b.ResetTimer()
 
-	jgosonnetStart := time.Now()
-
-	for range 10 {
+	for i := 0; i < b.N; i++ {
 		_, err := interpreter.EvaluateYaml(file)
 		if err != nil {
 			b.Fatal(err.Error())
 		}
 	}
 
-	jgosonnetDur := time.Since(jgosonnetStart)
+	// jgosonnetDur := time.Since(jgosonnetStart)
 
-	println()
-	println("jgosonnet:", jgosonnetDur.String())
+	runtime.GC()
+	err = pprof.WriteHeapProfile(memFile)
+	if err != nil {
+		b.Fatalf("could not write memory profile: %v", err)
+	}
+
+	// println()
+	// println("jgosonnet:", jgosonnetDur.String())
 
 }
