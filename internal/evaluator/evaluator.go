@@ -391,7 +391,7 @@ func handleApply(node *ast.Apply, scopePtr uintptr, ctx Context) (Value, error) 
 		args[i+posCount] = NamedValue{nameKeyId, v}
 	}
 
-	res, err := val.FunctionExec(args, ctx)
+	res, err := val.FunctionExecEx(args, ctx, node.TailStrict)
 	if err != nil {
 		return ValueNone, err
 	}

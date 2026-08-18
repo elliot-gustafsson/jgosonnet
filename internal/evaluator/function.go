@@ -42,22 +42,22 @@ func (t *Function) Length() int {
 	return n
 }
 
-func execFunction(funcVal Value, args []NamedValue, ctx Context) (Value, error) {
+func execFunction(funcVal Value, args []NamedValue, ctx Context, tailstrict bool) (Value, error) {
 	t := uint64(funcVal) >> typeShift
 
 	if t == uint64(ValueTypeNativeFunction) {
-		return execNativeFunction(funcVal, args, ctx)
+		return execNativeFunction(funcVal, args, ctx, tailstrict)
 	}
 
 	if t == uint64(ValueTypeFunction) {
-		return execUserFunction(funcVal, args, ctx)
+		return execUserFunction(funcVal, args, ctx, tailstrict)
 	}
 
 	return ValueNone, TypeErrorSpecific(ValueTypeFunction, funcVal.Type())
 }
 
 //go:noinline
-func execUserFunction(funcVal Value, args []NamedValue, callCtx Context) (Value, error) {
+func execUserFunction(funcVal Value, args []NamedValue, callCtx Context, tailstrict bool) (Value, error) {
 	f := funcVal.Function()
 
 	paramCount := len(f.Node.Parameters)
@@ -116,6 +116,13 @@ func execUserFunction(funcVal Value, args []NamedValue, callCtx Context) (Value,
 			return ValueNone, err
 		}
 
+		if tailstrict {
+			da, err = da.Eval(ctx)
+			if err != nil {
+				return ValueNone, err
+			}
+		}
+
 		s.Bindings[i] = NamedValue{keyId, da}
 	}
 
@@ -131,7 +138,7 @@ func (t *NativeFunction) Length() int {
 }
 
 //go:noinline
-func execNativeFunction(funcVal Value, args []NamedValue, ctx Context) (Value, error) {
+func execNativeFunction(funcVal Value, args []NamedValue, ctx Context, tailstrict bool) (Value, error) {
 	f := funcVal.NativeFunction()
 	paramCount := len(f.Params)
 	fn := f.Func
@@ -159,6 +166,15 @@ func execNativeFunction(funcVal Value, args []NamedValue, ctx Context) (Value, e
 	posIdx := 0
 
 	for _, na := range args {
+
+		if tailstrict {
+			v, err := na.Eval(ctx)
+			if err != nil {
+				return ValueNone, err
+			}
+			na.Value = v
+		}
+
 		if na.Key == 0 {
 			// Positional Argument
 			if onNamedArgs {
@@ -177,7 +193,7 @@ func execNativeFunction(funcVal Value, args []NamedValue, ctx Context) (Value, e
 		found := false
 		for j, paramName := range params {
 			if passedName == paramName {
-				if !orderedArgs[j].Value.IsNone() {
+				if !orderedArgs[j].IsNone() {
 					argName := ctx.State.Interner.Get(na.Key)
 					return ValueNone, MakeRuntimeError(fmt.Errorf("Argument %s already provided", argName))
 				}

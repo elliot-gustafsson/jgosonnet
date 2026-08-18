@@ -565,11 +565,15 @@ func (v Value) AsStringConst() uint32 {
 }
 
 func (v Value) FunctionExec(args []NamedValue, ctx Context) (Value, error) {
+	return v.FunctionExecEx(args, ctx, false)
+}
+
+func (v Value) FunctionExecEx(args []NamedValue, ctx Context, tailstrict bool) (Value, error) {
 	v, err := v.Eval(ctx)
 	if err != nil {
 		return ValueNone, err
 	}
-	return execFunction(v, args, ctx)
+	return execFunction(v, args, ctx, tailstrict)
 }
 
 func (v Value) Prune(ctx Context) (Value, error) {
