@@ -697,7 +697,17 @@ func (a Value) Compare(b Value, ctx Context) (int, error) {
 		i, j := 0, 0
 		for i < len(aArr) && j < len(bArr) {
 
-			x, err := aArr[i].Compare(bArr[j], ctx)
+			iv, err := aArr[i].Eval(ctx)
+			if err != nil {
+				return 0, err
+			}
+
+			jv, err := bArr[j].Eval(ctx)
+			if err != nil {
+				return 0, err
+			}
+
+			x, err := iv.Compare(jv, ctx)
 			if err != nil {
 				return 0, err
 			}
