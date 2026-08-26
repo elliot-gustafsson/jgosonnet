@@ -1,10 +1,13 @@
 package stdlib
 
 import (
+	"errors"
 	"fmt"
+	"math"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
+	"github.com/elliot-gustafsson/jgosonnet/internal/utils"
 )
 
 func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -14,32 +17,62 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 		return evaluator.ValueNone, err
 	}
 
-	// TODO: benchmark if stack or arena arrays are better
-	objs := arena.Alloc[*evaluator.Object](ctx.State.Allocator, len(inputArr))
-	arena.MemclrSlice(objs)
+	n := len(inputArr)
+	allocator := ctx.State.Allocator
 
-	totalLayers := 0
-	for i, v := range inputArr {
+	layers := arena.Alloc[*evaluator.Layer](allocator, n)
+	arena.MemclrSlice(layers)
+
+	var dt *utils.DescriptorTable
+	if n > evaluator.MaxLayerLinearKeys {
+		dt = utils.NewEmptyDescriptorTable(allocator, n)
+	}
+
+	index := 0
+	for _, v := range inputArr {
 		obj, err := v.EvalObject(ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
+		l := obj.GetLayers(ctx)
+		if len(l) == 0 {
+			continue
+		}
+		if len(l) != 1 {
+			return evaluator.ValueNone, evaluator.MakeRuntimeError(errors.New("Object comprehension can only have one layer"))
+		}
 
-		objs[i] = obj
-		totalLayers += len(obj.GetLayers(ctx))
+		if len(l[0].Keys) == 0 {
+			continue
+		}
+		if len(l[0].Keys) != 1 {
+			return evaluator.ValueNone, evaluator.MakeRuntimeError(errors.New("Object comprehension can only have one field"))
+		}
+
+		key := l[0].Keys[0]
+
+		if dt != nil {
+			if dt.Append(key) == math.MaxUint32 {
+				return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("Duplicate field name: %q", ctx.State.Interner.Get(key)))
+			}
+		} else {
+			for j := 0; j < index; j++ {
+				if layers[j].Keys[0] == key {
+					return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("Duplicate field name: %q", ctx.State.Interner.Get(key)))
+				}
+			}
+		}
+
+		layers[index] = l[0]
+
+		index++
 	}
 
-	layers := arena.Alloc[*evaluator.Layer](ctx.State.Allocator, totalLayers)
-	arena.MemclrSlice(layers)
-
-	index := 0
-	for _, o := range objs {
-		objLayers := o.GetLayers(ctx)
-		copy(layers[index:], objLayers)
-		index += len(objLayers)
+	if index < n {
+		layers = layers[:index]
 	}
 
-	obj := arena.Create[evaluator.Object](ctx.State.Allocator)
+	obj := arena.Create[evaluator.Object](allocator)
 	arena.Memclr(obj)
 	obj.Layers = layers
 
