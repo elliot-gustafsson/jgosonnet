@@ -468,7 +468,7 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 	}
 
 	plans := arena.Alloc[FieldPlan](allocator, maxKeys)
-	clear(plans)
+	arena.MemclrSlice(plans)
 	plans = plans[:0]
 
 	var planIdxMap *utils.DescriptorTable

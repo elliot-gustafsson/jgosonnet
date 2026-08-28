@@ -97,7 +97,7 @@ func (pm *PropertyMap[T]) grow(a *arena.Allocator) {
 
 	// Fast allocation of the larger backing table
 	newEntries := arena.Alloc[Property[T]](a, int(newCap))
-	clear(newEntries)
+	arena.MemclrSlice(newEntries)
 
 	for i := range oldEntries {
 		old := &oldEntries[i]
