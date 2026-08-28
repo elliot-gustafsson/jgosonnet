@@ -62,12 +62,8 @@ func boxThunkNodePtr(nodeType ThunkType, nodePtr unsafe.Pointer) ThunkNodePtr {
 }
 
 func (v ThunkNodePtr) unbox() (t ThunkType, p unsafe.Pointer) {
-	const typeMask = 0xFF00000000000000
-
 	t = ThunkType(v >> 56)
-
-	addr := uintptr(v &^ tagMask)
-	p = *(*unsafe.Pointer)(unsafe.Pointer(&addr))
+	p = unsafe.Pointer(uintptr(v &^ tagMask))
 	return
 }
 

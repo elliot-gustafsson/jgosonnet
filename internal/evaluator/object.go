@@ -77,9 +77,7 @@ func (l *Layer) unpackAsserts() []ast.Node {
 	// mask of the top 16 bits
 	const lenMask = 0xFFFF << 48
 
-	addr := l.AssertsPtr &^ lenMask
-	ptr := *(*unsafe.Pointer)(unsafe.Pointer(&addr))
-
+	ptr := unsafe.Pointer(uintptr(l.AssertsPtr &^ lenMask))
 	return unsafe.Slice((*ast.Node)(ptr), length)
 }
 

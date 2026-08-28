@@ -92,8 +92,7 @@ func boxPtr(t ValueType, p unsafe.Pointer) Value {
 }
 
 func (v Value) unboxPtr() unsafe.Pointer {
-	addr := uintptr(v &^ tagMask)
-	return *(*unsafe.Pointer)(unsafe.Pointer(&addr))
+	return unsafe.Pointer(uintptr(v &^ tagMask))
 }
 
 type NamedValue struct {

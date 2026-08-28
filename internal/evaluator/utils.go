@@ -9,7 +9,7 @@ import (
 )
 
 func resolveUintptr(p uintptr) unsafe.Pointer {
-	return *(*unsafe.Pointer)(unsafe.Pointer(&p))
+	return unsafe.Pointer(p)
 }
 
 func naturalStringSort(a, b string) int {
