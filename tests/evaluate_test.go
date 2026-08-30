@@ -10,32 +10,20 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/pprof"
-	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/elliot-gustafsson/jgosonnet"
 	"github.com/google/go-jsonnet"
 	"github.com/stretchr/testify/assert"
-	"gopkg.in/yaml.v3"
 )
 
 func TestEvaluator(t *testing.T) {
 	slog.SetLogLoggerLevel(slog.LevelDebug)
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err.Error())
-	}
-
-	infraDir := filepath.Join(filepath.Dir(filepath.Dir(cwd)), "infra", "jsonnet", "proact")
-	assert.NotEmpty(t, infraDir)
-
 	file := filepath.Join("resources", "test.jsonnet")
 
 	interpreter := jgosonnet.NewEvaluator()
-	interpreter.JPaths([]string{filepath.Join(infraDir, "vendor")})
 
 	jgosonnetStart := time.Now()
 	stuff, err := interpreter.EvaluateJson(file)
@@ -48,7 +36,7 @@ func TestEvaluator(t *testing.T) {
 	println("jgosonnet:", jgosonnetDur.String())
 
 	goJsonnetStart := time.Now()
-	og, err := GetExpected(file, filepath.Join(infraDir, "vendor"))
+	og, err := GetExpected(file)
 	goJsonnetDur := time.Since(goJsonnetStart)
 	if err != nil {
 		t.Fatal(err.Error())
@@ -61,77 +49,10 @@ func TestEvaluator(t *testing.T) {
 
 	assert.Equal(t, og, stuff)
 
+	println("expected")
+	println(og)
+	println("actual")
 	println(stuff)
-
-}
-
-func TestJgosonnetYaml(t *testing.T) {
-	slog.SetLogLoggerLevel(slog.LevelDebug)
-
-	cwd, err := os.Getwd()
-	assert.NoError(t, err)
-
-	infraDir := filepath.Join(filepath.Dir(filepath.Dir(cwd)), "infra", "jsonnet", "proact")
-	assert.NotEmpty(t, infraDir)
-
-	file := filepath.Join("resources", "test.jsonnet")
-
-	interpreter := jgosonnet.NewEvaluator()
-	interpreter.JPaths([]string{filepath.Join(infraDir, "vendor")})
-
-	// stuff, err := interpreter.EvaluateJson(file)
-	stuff, err := interpreter.EvaluateYaml(file)
-	assert.NoError(t, err)
-
-	fmt.Println("jgosonnet:")
-	fmt.Println()
-	fmt.Print(stuff)
-
-	fmt.Println()
-	fmt.Println()
-
-	fmt.Println("yaml v3:")
-	fmt.Println()
-	data := map[string]string{
-		// "a":  "\n",
-		// "a2": "\n\n",
-		// "a3": "\n\nasdf",
-		// "a4": "\n\n ",
-		// "b":  "\ta",
-		// "b2": "\ta\n",
-		// "c":  " ",
-		// "d":  " asdf",
-		// "e":  " asdf\n",
-
-		"0X123": "asdf",
-		"0O123": "asdf",
-		"0B123": "asdf",
-		// "0b1":    "asdf",
-		// "0o1":    "asdf",
-		// "123_123.2": "asdf",
-	}
-
-	var b strings.Builder
-	enc := yaml.NewEncoder(&b)
-	enc.SetIndent(2)
-
-	err = enc.Encode(data)
-	assert.NoError(t, err)
-	fmt.Print(b.String())
-
-	assert.Equal(t, b.String(), string(stuff))
-
-}
-
-func TestYamlV3(t *testing.T) {
-	data := map[string]string{
-		"0O123": "banan",
-	}
-
-	out, err := yaml.Marshal(data)
-	assert.NoError(t, err)
-
-	fmt.Print(string(out))
 
 }
 
@@ -197,238 +118,6 @@ func GetChange(old, new time.Duration) float64 {
 	baseline := float64(old)
 
 	return (diff / baseline)
-}
-
-func TestEvaluatorParallel(t *testing.T) {
-	// curr := debug.SetGCPercent(-1)
-	// defer func() {
-	// 	debug.SetGCPercent(curr)
-	// }()
-
-	slog.SetLogLoggerLevel(slog.LevelDebug)
-
-	cwd, err := os.Getwd()
-	assert.NoError(t, err)
-
-	infraDir := filepath.Join(filepath.Dir(filepath.Dir(cwd)), "infra", "jsonnet", "proact")
-	assert.NotEmpty(t, infraDir)
-
-	// x := []string{
-	// 	"sto1-prod001",
-	// 	"sto2-prod001",
-	// 	"sto3-prod001",
-	// }
-	x := []string{
-		"it-it001",
-		"it-rancher",
-		"sto1-acce001",
-		"sto1-build001",
-		"sto1-dev-analytics001",
-		"sto1-dev001",
-		"sto1-harvester001",
-		"sto1-infra-edge001",
-		"sto1-infra-public001",
-		"sto1-infra001",
-		"sto1-lb001",
-		"sto1-prod-analytics001",
-		"sto1-prod-gpu001",
-		"sto1-prod001",
-		"sto1-rancher",
-		"sto2-acce001",
-		"sto2-build001",
-		"sto2-dev-gpu001",
-		"sto2-dev001",
-		"sto2-harvester001",
-		"sto2-infra-edge001",
-		"sto2-infra-public001",
-		"sto2-infra001",
-		"sto2-lb001",
-		"sto2-prod-analytics001",
-		"sto2-prod-gpu001",
-		"sto2-prod001",
-		"sto2-rancher",
-		"sto3-acce001",
-		"sto3-build-gpu001",
-		"sto3-build001",
-		"sto3-dev001",
-		"sto3-harvester001",
-		"sto3-infra-edge001",
-		"sto3-infra-public001",
-		"sto3-infra001",
-		"sto3-lb001",
-		"sto3-prod-analytics001",
-		"sto3-prod-gpu001",
-		"sto3-prod001",
-		"sto3-rancher",
-	}
-	interpreter := jgosonnet.NewEvaluator()
-	interpreter.JPaths([]string{filepath.Join(infraDir, "vendor")})
-
-	wg := sync.WaitGroup{}
-
-	jgosonnetStart := time.Now()
-
-	jobCh := make(chan string)
-
-	for range 6 {
-		wg.Go(func() {
-
-			for c := range jobCh {
-
-				fmt.Println("running", c)
-
-				stuff, err := interpreter.EvaluateYamlMultiIter(filepath.Join(infraDir, c+".jsonnet"))
-				if err != nil {
-					t.Fatal(err.Error())
-				}
-
-				dir := filepath.Join(infraDir, "manifests", c)
-				for fo, err := range stuff {
-
-					if err != nil {
-						t.Fatal(err.Error())
-					}
-
-					f, err := os.Create(filepath.Join(dir, fo.Filename+".yaml"))
-					if err != nil {
-						t.Fatal(err.Error())
-					}
-
-					_, err = f.WriteString(fo.Content)
-					if err != nil {
-						t.Fatal(err.Error())
-					}
-				}
-
-				fmt.Println("done", c)
-
-			}
-		})
-	}
-
-	for _, c := range x {
-		jobCh <- c
-	}
-	close(jobCh)
-
-	wg.Wait()
-
-	jgosonnetDur := time.Since(jgosonnetStart)
-
-	println()
-	println("jgosonnet:", jgosonnetDur.String())
-
-}
-
-func TestEvaluatorSerial(t *testing.T) {
-	slog.SetLogLoggerLevel(slog.LevelDebug)
-
-	cwd, err := os.Getwd()
-	assert.NoError(t, err)
-
-	infraDir := filepath.Join(filepath.Dir(filepath.Dir(cwd)), "infra", "jsonnet", "proact")
-	assert.NotEmpty(t, infraDir)
-
-	// x := []string{
-	// 	"sto1-prod001",
-	// 	"sto2-prod001",
-	// 	"sto3-prod001",
-	// }
-	x := []string{
-		"it-it001",
-		"it-rancher",
-		"sto1-acce001",
-		"sto1-build001",
-		"sto1-dev-analytics001",
-		"sto1-dev001",
-		"sto1-harvester001",
-		"sto1-infra-edge001",
-		"sto1-infra-public001",
-		"sto1-infra001",
-		"sto1-lb001",
-		"sto1-prod-analytics001",
-		"sto1-prod-gpu001",
-		"sto1-prod001",
-		"sto1-rancher",
-		"sto2-acce001",
-		"sto2-build001",
-		"sto2-dev-gpu001",
-		"sto2-dev001",
-		"sto2-harvester001",
-		"sto2-infra-edge001",
-		"sto2-infra-public001",
-		"sto2-infra001",
-		"sto2-lb001",
-		"sto2-prod-analytics001",
-		"sto2-prod-gpu001",
-		"sto2-prod001",
-		"sto2-rancher",
-		"sto3-acce001",
-		"sto3-build-gpu001",
-		"sto3-build001",
-		"sto3-dev001",
-		"sto3-harvester001",
-		"sto3-infra-edge001",
-		"sto3-infra-public001",
-		"sto3-infra001",
-		"sto3-lb001",
-		"sto3-prod-analytics001",
-		"sto3-prod-gpu001",
-		"sto3-prod001",
-		"sto3-rancher",
-	}
-	interpreter := jgosonnet.NewEvaluator()
-	interpreter.JPaths([]string{filepath.Join(infraDir, "vendor")})
-
-	cpuFile, err := os.Create("cpu.prof")
-	if err != nil {
-		t.Fatal(err.Error())
-	}
-	defer cpuFile.Close()
-	err = pprof.StartCPUProfile(cpuFile)
-	if err != nil {
-		t.Fatal(err.Error())
-	}
-	defer pprof.StopCPUProfile()
-
-	memFile, err := os.Create("mem.prof")
-	if err != nil {
-		t.Fatalf("could not create memory profile: %v", err)
-	}
-	defer memFile.Close()
-
-	jgosonnetStart := time.Now()
-
-	for _, c := range x {
-		fmt.Println("running", c)
-
-		stuff, err := interpreter.EvaluateYamlMultiIter(filepath.Join(infraDir, c+".jsonnet"))
-		if err != nil {
-			t.Fatal(err.Error())
-		}
-
-		// dir := filepath.Join(infraDir, "manifests", c)
-		for _, err := range stuff {
-			if err != nil {
-				t.Fatal(err.Error())
-			}
-		}
-
-		fmt.Println("done", c)
-	}
-
-	jgosonnetDur := time.Since(jgosonnetStart)
-
-	runtime.GC()
-
-	err = pprof.WriteHeapProfile(memFile)
-	if err != nil {
-		t.Fatalf("could not write memory profile: %v", err)
-	}
-
-	println()
-	println("jgosonnet:", jgosonnetDur.String())
-
 }
 
 func BenchmarkEvaluatorLoop(b *testing.B) {

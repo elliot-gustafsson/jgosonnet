@@ -5,6 +5,7 @@ import (
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
+	"github.com/elliot-gustafsson/jgosonnet/internal/utils"
 )
 
 func liftObjectToValueErr(f func(evaluator.Value, evaluator.Context) (evaluator.Value, error)) evaluator.Func {
@@ -315,40 +316,50 @@ func std_objectRemoveKey(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 }
 
 func std_mergePatch(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	targetVal, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
 
 	patchVal, err := args[1].Eval(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	if !patchVal.IsObject() {
-		return patchVal, nil
-	}
-	// patchObj := patchVal.Object()
+	return doMergePatch(targetVal, patchVal, ctx)
+}
 
-	targetVal, err := args[0].Eval(ctx)
+func doMergePatch(target, patch evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
+	var err error
+	patch, err = patch.Eval(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	var objVal evaluator.Value
-
-	// TODO: think abt this
-	// std.mergePatch({ a: 1 }, { b: 2, c: self.a }) should not work according to go-jsonnet
-	// but with this kinda merge it does... so some solution where the objects are individually evaled is needed
-	if targetVal.IsObject() {
-		mergedObjId := evaluator.MergeObjects(targetVal.Payload(), patchVal.Payload(), ctx)
-		objVal = evaluator.MakeObjectValue(mergedObjId)
-	} else {
-		// If target val is not an object, just scrap it and only use the patch object
-		objVal = patchVal
+	// RFC 7396: If patch is not an object, it replaces target completely.
+	if !patch.IsObject() {
+		return patch, nil
 	}
-	obj := objVal.Object()
 
-	plans := evaluator.CompileObjectPlan(obj, ctx)
+	patchObj := patch.Object()
+	patchPlans := evaluator.CompileObjectPlan(patchObj, ctx)
 
-	fieldCount := len(plans)
 	allocator := ctx.State.Allocator
+
+	var targetObj *evaluator.Object
+	var targetLayers []*evaluator.Layer
+	if !target.IsNone() {
+		target, err = target.Eval(ctx)
+		if err != nil {
+			return evaluator.ValueNone, err
+		}
+		if target.IsObject() {
+			targetObj = target.Object()
+			targetLayers = targetObj.GetLayers(ctx)
+		}
+	}
+
+	fieldCount := len(patchPlans)
 
 	layer := arena.Create[evaluator.Layer](allocator)
 	arena.Memclr(layer)
@@ -357,28 +368,96 @@ func std_mergePatch(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	layer.Values = arena.Alloc[evaluator.Value](allocator, fieldCount)
 	layer.Meta = arena.Alloc[uint8](allocator, fieldCount)
 
-	subCtx := ctx
-	subCtx.Self = objVal
+	useMap := fieldCount > evaluator.MaxLayerLinearKeys
+	if useMap {
+		layer.Index = utils.NewEmptyDescriptorTable(allocator, fieldCount)
+	}
 
 	var index int
-	for _, plan := range plans {
+	for _, plan := range patchPlans {
 		if plan.IsHidden() {
 			continue
 		}
 
-		val, err := plan.GetValue(obj, subCtx)
+		// Evaluate patch field in patch's context
+		val, err := plan.GetValue(patchObj, ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
 
+		val, err = val.Eval(ctx)
+		if err != nil {
+			return evaluator.ValueNone, err
+		}
+
+		keyId := plan.KeyId
+
+		// RFC 7396: Null patch value removes the field from target
 		if val.IsNull() {
+			if targetObj != nil {
+				layer.Keys[index] = keyId
+				layer.Values[index] = evaluator.MakeTombstoneValue(len(targetLayers))
+				layer.Meta[index] = evaluator.FlagTombstone | evaluator.DefaultFieldMeta
+				if useMap {
+					layer.Index.Append(keyId)
+				}
+				index++
+			}
 			continue
 		}
 
-		layer.Keys[index] = plan.KeyId
+		// RFC 7396: Object patch value recursively merges with target[keyId] if target[keyId] is an object
+		if val.IsObject() {
+			var mergedVal evaluator.Value
+			if targetObj != nil {
+				targetFieldVal, vis, err := targetObj.GetField(keyId, ctx)
+				if err != nil {
+					return evaluator.ValueNone, err
+				}
+				if vis {
+					targetFieldVal, err = targetFieldVal.Eval(ctx)
+					if err != nil {
+						return evaluator.ValueNone, err
+					}
+				}
+				if vis && targetFieldVal.IsObject() {
+					m, err := doMergePatch(targetFieldVal, val, ctx)
+					if err != nil {
+						return evaluator.ValueNone, err
+					}
+					mergedVal = m
+				} else {
+					m, err := doMergePatch(evaluator.ValueNone, val, ctx)
+					if err != nil {
+						return evaluator.ValueNone, err
+					}
+					mergedVal = m
+				}
+			} else {
+				m, err := doMergePatch(evaluator.ValueNone, val, ctx)
+				if err != nil {
+					return evaluator.ValueNone, err
+				}
+				mergedVal = m
+			}
+
+			layer.Keys[index] = keyId
+			layer.Values[index] = mergedVal
+			layer.Meta[index] = evaluator.DefaultFieldMeta
+			if useMap {
+				layer.Index.Append(keyId)
+			}
+			index++
+			continue
+		}
+
+		// Primitive, array, or boolean values replace target field directly
+		layer.Keys[index] = keyId
 		layer.Values[index] = val
 		layer.Meta[index] = evaluator.DefaultFieldMeta
-
+		if useMap {
+			layer.Index.Append(keyId)
+		}
 		index++
 	}
 
@@ -388,8 +467,22 @@ func std_mergePatch(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 		layer.Meta = layer.Meta[:index]
 	}
 
-	res := evaluator.NewSingleLayerObject(allocator, layer)
+	// If target was not an object, return a single-layer object containing non-null patch fields
+	if targetObj == nil {
+		res := evaluator.NewSingleLayerObject(allocator, layer)
+		return evaluator.MakeObjectValue(res), nil
+	}
 
-	return evaluator.MakeObjectValue(res), nil
+	// Stack patch layer on top of existing target layers
+	newLen := len(targetLayers) + 1
+	newLayers := arena.Alloc[*evaluator.Layer](allocator, newLen)
+	arena.MemclrSlice(newLayers)
+	copy(newLayers, targetLayers)
+	newLayers[newLen-1] = layer
 
+	resObj := arena.Create[evaluator.Object](allocator)
+	arena.Memclr(resObj)
+	resObj.Layers = newLayers
+
+	return evaluator.MakeObjectValue(resObj), nil
 }

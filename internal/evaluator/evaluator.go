@@ -624,7 +624,8 @@ func handleSuperIndex(node *ast.SuperIndex, scopePtr uintptr, ctx Context) (Valu
 	}
 
 	if ctx.Self.IsNone() {
-		return ValueNone, errors.New("ctx.Self not set")
+		// return ValueNone, errors.New("ctx.Self not set")
+		return ValueNone, MakeRuntimeError(errors.New("Attempt to use super when there is no super class."))
 	}
 
 	keyId := index.AsStringConst()
@@ -661,7 +662,8 @@ func handleInSuper(node *ast.InSuper, scopePtr uintptr, ctx Context) (Value, err
 	}
 
 	if ctx.Self.IsNone() {
-		return ValueNone, errors.New("ctx.Self not set")
+		// return ValueNone, errors.New("ctx.Self not set")
+		return ValueNone, MakeRuntimeError(errors.New("Attempt to use super when there is no super class."))
 	}
 
 	keyId := index.AsStringConst()
