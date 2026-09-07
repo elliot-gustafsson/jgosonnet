@@ -1,4 +1,4 @@
-package arena
+package alloc
 
 import (
 	"runtime"
@@ -17,7 +17,7 @@ func BenchmarkByteArena_Alloc(b *testing.B) {
 
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		x := Create[DummyStruct](a)
+		x := a.Create[DummyStruct]()
 		Memclr(x)
 		_ = x.A
 	}

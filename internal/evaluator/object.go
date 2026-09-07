@@ -8,7 +8,7 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
+	"github.com/elliot-gustafsson/jgosonnet/internal/alloc"
 	"github.com/elliot-gustafsson/jgosonnet/internal/utils"
 	"github.com/google/go-jsonnet/ast"
 )
@@ -81,11 +81,11 @@ func (l *Layer) unpackAsserts() []ast.Node {
 	return unsafe.Slice((*ast.Node)(ptr), length)
 }
 
-func NewSingleLayerObject(allocator *arena.Allocator, layer *Layer) *Object {
-	o := arena.Create[Object](allocator)
-	arena.Memclr(o)
-	o.Layers = arena.Alloc[*Layer](allocator, 1)
-	arena.MemclrSlice(o.Layers)
+func NewSingleLayerObject(allocator *alloc.Allocator, layer *Layer) *Object {
+	o := allocator.Create[Object]()
+	alloc.Memclr(o)
+	o.Layers = allocator.Alloc[*Layer](1)
+	alloc.MemclrSlice(o.Layers)
 	o.Layers[0] = layer
 	return o
 }
@@ -294,7 +294,7 @@ func (t *Object) getScope(layerIndex int, layer *Layer, ctx Context) (uintptr, e
 //go:noinline
 func (t *Object) createLayerScope(layerIndex int, layer *Layer, ctx Context) (uintptr, error) {
 	if t.Scopes == nil {
-		t.Scopes = arena.Alloc[uintptr](ctx.State.Allocator, len(t.GetLayers(ctx)))
+		t.Scopes = ctx.State.Allocator.Alloc[uintptr](len(t.GetLayers(ctx)))
 		clear(t.Scopes)
 	}
 
@@ -357,8 +357,8 @@ func (t *Object) appendLayers(dest []*Layer, ctx Context) []*Layer {
 		if targetLen > cap(dest) {
 			n := len(dest)
 			newCap := max(targetLen, cap(dest)*2)
-			dest = arena.Realloc(ctx.State.Allocator, dest, newCap)
-			arena.MemclrSlice(dest[n:])
+			dest = ctx.State.Allocator.Realloc(dest, newCap)
+			alloc.MemclrSlice(dest[n:])
 			dest = dest[:n]
 		}
 
@@ -383,8 +383,8 @@ func (t *Object) GetLayers(ctx Context) []*Layer {
 		return t.Layers
 	}
 
-	layers := arena.Alloc[*Layer](ctx.State.Allocator, 8)
-	arena.MemclrSlice(layers)
+	layers := ctx.State.Allocator.Alloc[*Layer](8)
+	alloc.MemclrSlice(layers)
 	layers = t.appendLayers(layers[:0], ctx)
 
 	t.Layers = layers
@@ -395,8 +395,8 @@ func (t *Object) GetLayers(ctx Context) []*Layer {
 }
 
 func MergeObjects(leftPtr, rightPtr uintptr, ctx Context) *Object {
-	o := arena.Create[Object](ctx.State.Allocator)
-	arena.Memclr(o)
+	o := ctx.State.Allocator.Create[Object]()
+	alloc.Memclr(o)
 	o.LeftPtr = leftPtr
 	o.RightPtr = rightPtr
 	return o
@@ -465,8 +465,8 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 		maxKeys += len(layers[i].Keys)
 	}
 
-	plans := arena.Alloc[FieldPlan](allocator, maxKeys)
-	arena.MemclrSlice(plans)
+	plans := allocator.Alloc[FieldPlan](maxKeys)
+	alloc.MemclrSlice(plans)
 	plans = plans[:0]
 
 	var planIdxMap *utils.DescriptorTable
@@ -497,8 +497,8 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 			}
 
 			if pIdx == -1 {
-				lrs := arena.Alloc[LayerRef](allocator, 4)
-				arena.MemclrSlice(lrs)
+				lrs := allocator.Alloc[LayerRef](4)
+				alloc.MemclrSlice(lrs)
 
 				plans = append(plans, FieldPlan{
 					KeyId:            keyID,
@@ -543,8 +543,8 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 
 			if len(plan.Layers) == cap(plan.Layers) {
 				n := len(plan.Layers)
-				plan.Layers = arena.Realloc(allocator, plan.Layers, n*2)
-				arena.MemclrSlice(plan.Layers[n:])
+				plan.Layers = allocator.Realloc(plan.Layers, n*2)
+				alloc.MemclrSlice(plan.Layers[n:])
 				plan.Layers = plan.Layers[:n]
 			}
 			plan.Layers = append(plan.Layers, LayerRef{int32(l), int32(f)})
@@ -676,7 +676,7 @@ func ManifestObjectRoot(obj *Object, ctx Context) ([]NamedValue, error) {
 
 	plans := CompileObjectPlan(obj, ctx)
 
-	res := arena.Alloc[NamedValue](ctx.State.Allocator, len(plans))
+	res := ctx.State.Allocator.Alloc[NamedValue](len(plans))
 	var index int
 	for _, plan := range plans {
 
@@ -818,7 +818,7 @@ func GetObjectKeysValues(obj *Object, ctx Context, inclHidden bool) ([]Value, er
 	keyIdx := ctx.State.Interner.Intern("key")
 	valueIdx := ctx.State.Interner.Intern("value")
 
-	res := arena.Alloc[Value](allocator, len(plans))
+	res := allocator.Alloc[Value](len(plans))
 
 	var index int
 	for _, plan := range plans {
@@ -832,18 +832,18 @@ func GetObjectKeysValues(obj *Object, ctx Context, inclHidden bool) ([]Value, er
 			return nil, err
 		}
 
-		layer := arena.Create[Layer](allocator)
-		arena.Memclr(layer)
+		layer := allocator.Create[Layer]()
+		alloc.Memclr(layer)
 
-		layer.Keys = arena.Alloc[uint32](allocator, 2)
+		layer.Keys = allocator.Alloc[uint32](2)
 		layer.Keys[0] = keyIdx
 		layer.Keys[1] = valueIdx
 
-		layer.Values = arena.Alloc[Value](allocator, 2)
+		layer.Values = allocator.Alloc[Value](2)
 		layer.Values[0] = MakeString(ctx.State.Interner.Get(plan.KeyId), ctx)
 		layer.Values[1] = val
 
-		layer.Meta = arena.Alloc[uint8](allocator, 2)
+		layer.Meta = allocator.Alloc[uint8](2)
 		layer.Meta[0] = DefaultFieldMeta
 		layer.Meta[1] = DefaultFieldMeta
 
@@ -897,11 +897,11 @@ func (t *Object) Prune(ctx Context) (Value, error) {
 	n := len(plans)
 	allocator := ctx.State.Allocator
 
-	layer := arena.Create[Layer](allocator)
-	arena.Memclr(layer)
-	layer.Keys = arena.Alloc[uint32](allocator, n)
-	layer.Values = arena.Alloc[Value](allocator, n)
-	layer.Meta = arena.Alloc[uint8](allocator, n)
+	layer := allocator.Create[Layer]()
+	alloc.Memclr(layer)
+	layer.Keys = allocator.Alloc[uint32](n)
+	layer.Values = allocator.Alloc[Value](n)
+	layer.Meta = allocator.Alloc[uint8](n)
 
 	useMap := n > MaxLayerLinearKeys
 	if useMap {

@@ -1,4 +1,4 @@
-package arena
+package alloc
 
 import "unsafe"
 

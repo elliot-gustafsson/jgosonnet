@@ -3,7 +3,6 @@ package evaluator
 import (
 	"fmt"
 
-	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
 	"github.com/google/go-jsonnet/ast"
 )
 
@@ -159,7 +158,7 @@ func execNativeFunction(funcVal Value, args []NamedValue, ctx Context, tailstric
 		orderedArgs = stackArgs[:paramCount]
 	} else {
 		// just in case a user defines a custom native extension with 5+ args
-		orderedArgs = arena.Alloc[NamedValue](ctx.State.Allocator, paramCount)
+		orderedArgs = ctx.State.Allocator.Alloc[NamedValue](paramCount)
 		clear(orderedArgs)
 	}
 

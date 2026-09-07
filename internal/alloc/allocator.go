@@ -1,4 +1,4 @@
-package arena
+package alloc
 
 import (
 	"unsafe"
@@ -32,7 +32,7 @@ func NewAllocator() (a *Allocator) {
 // Create create type T in the arena.
 //
 //	Note: If creating a type with pointers, be sure to call Memclr directly to avoid gc panics
-func Create[T any](a *Allocator) (ptr *T) {
+func (a *Allocator) Create[T any]() (ptr *T) {
 	var zero T
 	size := unsafe.Sizeof(zero)
 	align := unsafe.Alignof(zero)
@@ -54,7 +54,7 @@ func Create[T any](a *Allocator) (ptr *T) {
 // Allocate a slice of type T in the arena with the provided lenght.
 //
 //	Note: If allocating a slice of a type with pointers, be sure to call MemclrSlice directly to avoid gc panics
-func Alloc[T any](a *Allocator, length int) (s []T) {
+func (a *Allocator) Alloc[T any](length int) (s []T) {
 	if length <= 0 {
 		return nil
 	}
@@ -81,7 +81,7 @@ func Alloc[T any](a *Allocator, length int) (s []T) {
 }
 
 // Allocate raw aligned memory inside the arena
-func AlignedAlloc(a *Allocator, size, align uintptr) (ptr unsafe.Pointer) {
+func (a *Allocator) AlignedAlloc(size, align uintptr) (ptr unsafe.Pointer) {
 
 	ptr = allocRaw(a, size, align)
 	if ptr != nil {
@@ -95,7 +95,7 @@ func AlignedAlloc(a *Allocator, size, align uintptr) (ptr unsafe.Pointer) {
 // Realloc a slice of type T in the arena with the provided lenght.
 //
 //	Note: If reallocating a slice of a type with pointers, be sure to call MemclrSlice directly to avoid gc panics
-func Realloc[T any](a *Allocator, slice []T, length int) (s []T) {
+func (a *Allocator) Realloc[T any](slice []T, length int) (s []T) {
 	// If the slice already has enough capacity, we can just reslice it.
 	if length <= cap(slice) {
 		return slice[:length]
@@ -135,7 +135,7 @@ func Realloc[T any](a *Allocator, slice []T, length int) (s []T) {
 	}
 
 	// allocate new space and copy the existing elements over
-	s = Alloc[T](a, length)
+	s = a.Alloc[T](length)
 	copy(s, slice)
 	return
 }
@@ -194,3 +194,70 @@ func allocRawSlow(a *Allocator, size, align uintptr) (ptr unsafe.Pointer) {
 	// clear(unsafe.Slice((*byte)(ptr), size))
 	return
 }
+
+type AllocatorBackend interface {
+	Alloc(size, align uintptr) unsafe.Pointer
+	Realloc(ptr unsafe.Pointer, oldSize, newSize, align uintptr) unsafe.Pointer
+	Free(ptr unsafe.Pointer, size, align uintptr)
+}
+
+/*
+
+type Allocator struct {
+	raw RawBackend
+}
+
+// Wrap any backend into an Allocator
+func New(raw RawBackend) Allocator {
+	return Allocator{raw: raw}
+}
+
+func (a Allocator) Create[T any]() *T {
+	var zero T
+	size := unsafe.Sizeof(zero)
+	align := unsafe.Alignof(zero)
+
+	if size == 0 {
+		var empty struct{}
+		return (*T)(unsafe.Pointer(&empty))
+	}
+	return (*T)(a.raw.AllocRaw(size, align))
+}
+
+func (a Allocator) Alloc[T any](length int) []T {
+	if length <= 0 {
+		return nil
+	}
+	var zero T
+	elemSize := unsafe.Sizeof(zero)
+	align := unsafe.Alignof(zero)
+
+	ptr := a.raw.AllocRaw(elemSize*uintptr(length), align)
+	return unsafe.Slice((*T)(ptr), length)
+}
+
+func (a Allocator) Realloc[T any](slice []T, length int) []T {
+	if length <= cap(slice) {
+		return slice[:length]
+	}
+	var zero T
+	elemSize := unsafe.Sizeof(zero)
+	align := unsafe.Alignof(zero)
+
+	oldSize := elemSize * uintptr(cap(slice))
+	newSize := elemSize * uintptr(length)
+	oldPtr := unsafe.Pointer(unsafe.SliceData(slice))
+
+	newPtr := a.raw.ReallocRaw(oldPtr, oldSize, newSize, align)
+	return unsafe.Slice((*T)(newPtr), length)
+}
+
+func (a Allocator) Free[T any](ptr *T) {
+	if ptr == nil {
+		return
+	}
+	var zero T
+	a.raw.FreeRaw(unsafe.Pointer(ptr), unsafe.Sizeof(zero), unsafe.Alignof(zero))
+}
+
+*/

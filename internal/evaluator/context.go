@@ -4,13 +4,13 @@ import (
 	"io"
 	"unsafe"
 
-	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
+	"github.com/elliot-gustafsson/jgosonnet/internal/alloc"
 	"github.com/elliot-gustafsson/jgosonnet/internal/interner"
 )
 
 type ContextState struct {
 	Interner    *interner.Interner
-	Allocator   *arena.Allocator
+	Allocator   *alloc.Allocator
 	Environment *Environment
 }
 
@@ -28,11 +28,11 @@ type Scope struct {
 }
 
 func (c Context) NewScope(parentPtr uintptr, length int) (*Scope, uintptr) {
-	s := arena.Create[Scope](c.State.Allocator)
-	arena.Memclr(s)
+	s := c.State.Allocator.Create[Scope]()
+	alloc.Memclr(s)
 
 	s.ParentPtr = parentPtr
-	s.Bindings = arena.Alloc[NamedValue](c.State.Allocator, length)
+	s.Bindings = c.State.Allocator.Alloc[NamedValue](length)
 	clear(s.Bindings)
 
 	return s, uintptr(unsafe.Pointer(s))

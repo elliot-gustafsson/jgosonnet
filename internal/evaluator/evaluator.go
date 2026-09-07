@@ -9,7 +9,7 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
+	"github.com/elliot-gustafsson/jgosonnet/internal/alloc"
 	"github.com/elliot-gustafsson/jgosonnet/internal/utils"
 	"github.com/google/go-jsonnet/ast"
 )
@@ -80,16 +80,16 @@ func CreateFileScope(filename string, baseStd Value, ctx Context) uintptr {
 
 	keyId := ctx.State.Interner.Intern("thisFile")
 
-	layer := arena.Create[Layer](allocator)
-	arena.Memclr(layer)
+	layer := allocator.Create[Layer]()
+	alloc.Memclr(layer)
 
-	layer.Keys = arena.Alloc[uint32](allocator, 1)
+	layer.Keys = allocator.Alloc[uint32](1)
 	layer.Keys[0] = keyId
 
-	layer.Values = arena.Alloc[Value](allocator, 1)
+	layer.Values = allocator.Alloc[Value](1)
 	layer.Values[0] = MakeString(filename, ctx)
 
-	layer.Meta = arena.Alloc[uint8](allocator, 1)
+	layer.Meta = allocator.Alloc[uint8](1)
 
 	fileObj := NewSingleLayerObject(allocator, layer)
 
@@ -253,22 +253,22 @@ func handleDesugaredObject(node *ast.DesugaredObject, scopePtr uintptr, ctx Cont
 	fieldCount := len(node.Fields)
 	localsCount := len(node.Locals)
 
-	layer := arena.Create[Layer](allocator)
-	arena.Memclr(layer)
+	layer := allocator.Create[Layer]()
+	alloc.Memclr(layer)
 
 	layer.ParentScopePtr = scopePtr
 
 	if fieldCount > 0 {
-		layer.Keys = arena.Alloc[uint32](allocator, fieldCount)
-		layer.Nodes = arena.Alloc[ast.Node](allocator, fieldCount)
-		arena.MemclrSlice(layer.Nodes)
-		layer.Meta = arena.Alloc[uint8](allocator, fieldCount)
+		layer.Keys = allocator.Alloc[uint32](fieldCount)
+		layer.Nodes = allocator.Alloc[ast.Node](fieldCount)
+		alloc.MemclrSlice(layer.Nodes)
+		layer.Meta = allocator.Alloc[uint8](fieldCount)
 	}
 
 	if localsCount > 0 {
-		layer.LocalKeys = arena.Alloc[uint32](allocator, localsCount)
-		layer.LocalNodes = arena.Alloc[ast.Node](allocator, localsCount)
-		arena.MemclrSlice(layer.LocalNodes)
+		layer.LocalKeys = allocator.Alloc[uint32](localsCount)
+		layer.LocalNodes = allocator.Alloc[ast.Node](localsCount)
+		alloc.MemclrSlice(layer.LocalNodes)
 	}
 
 	if len(node.Asserts) > 0 {
@@ -370,7 +370,7 @@ func handleApply(node *ast.Apply, scopePtr uintptr, ctx Context) (Value, error) 
 	posCount := len(node.Arguments.Positional)
 	nameCount := len(node.Arguments.Named)
 
-	args := arena.Alloc[NamedValue](ctx.State.Allocator, posCount+nameCount)
+	args := ctx.State.Allocator.Alloc[NamedValue](posCount + nameCount)
 	clear(args)
 	for i, a := range node.Arguments.Positional {
 		// v, err := EvaluateNodeStrict(a.Expr, scopeId, ctx)
@@ -507,13 +507,13 @@ func handleVar(node *ast.Var, scopePtr uintptr, ctx Context) (Value, error) {
 
 func handleFunction(node *ast.Function, scopePtr uintptr, ctx Context) (Value, error) {
 
-	paramKeyIds := arena.Alloc[uint32](ctx.State.Allocator, len(node.Parameters))
+	paramKeyIds := ctx.State.Allocator.Alloc[uint32](len(node.Parameters))
 	for i, p := range node.Parameters {
 		paramKeyIds[i] = ctx.State.Interner.Intern(string(p.Name))
 	}
 
-	f := arena.Create[Function](ctx.State.Allocator)
-	arena.Memclr(f)
+	f := ctx.State.Allocator.Create[Function]()
+	alloc.Memclr(f)
 	*f = Function{
 		Node:        node,
 		ScopePtr:    scopePtr,

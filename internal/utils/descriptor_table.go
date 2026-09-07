@@ -3,7 +3,7 @@ package utils
 import (
 	"math"
 
-	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
+	"github.com/elliot-gustafsson/jgosonnet/internal/alloc"
 )
 
 type Descriptor struct {
@@ -17,13 +17,13 @@ type DescriptorTable struct {
 	count   uint32
 }
 
-func NewDescriptorTable(a *arena.Allocator, symbols []uint32) (dt *DescriptorTable) {
+func NewDescriptorTable(a *alloc.Allocator, symbols []uint32) (dt *DescriptorTable) {
 	n := uint32(len(symbols))
 	// 1.4x capacity guarantees a max load factor of ~70% for minimal probing
 	cap := nextPowerOf2(n + (n >> 1))
 	capMask := cap - 1
 
-	entries := arena.Alloc[Descriptor](a, int(cap))
+	entries := a.Alloc[Descriptor](int(cap))
 	clear(entries)
 
 	for i, sym := range symbols {
@@ -35,8 +35,8 @@ func NewDescriptorTable(a *arena.Allocator, symbols []uint32) (dt *DescriptorTab
 		entries[idx].Value = uint32(i)
 	}
 
-	dt = arena.Create[DescriptorTable](a)
-	arena.Memclr(dt)
+	dt = a.Create[DescriptorTable]()
+	alloc.Memclr(dt)
 	*dt = DescriptorTable{
 		entries: entries,
 		capMask: capMask,
@@ -45,16 +45,16 @@ func NewDescriptorTable(a *arena.Allocator, symbols []uint32) (dt *DescriptorTab
 	return
 }
 
-func NewEmptyDescriptorTable(a *arena.Allocator, l int) (dt *DescriptorTable) {
+func NewEmptyDescriptorTable(a *alloc.Allocator, l int) (dt *DescriptorTable) {
 	n := uint32(l)
 	// 1.4x capacity guarantees a max load factor of ~70% for minimal probing
 	cap := nextPowerOf2(n + (n >> 1))
 	capMask := cap - 1
 
-	dt = arena.Create[DescriptorTable](a)
-	arena.Memclr(dt)
+	dt = a.Create[DescriptorTable]()
+	alloc.Memclr(dt)
 	*dt = DescriptorTable{
-		entries: arena.Alloc[Descriptor](a, int(cap)),
+		entries: a.Alloc[Descriptor](int(cap)),
 		capMask: capMask,
 		count:   0,
 	}

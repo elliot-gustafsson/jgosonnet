@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
+	"github.com/elliot-gustafsson/jgosonnet/internal/alloc"
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 	"github.com/elliot-gustafsson/jgosonnet/internal/utils"
 )
@@ -20,8 +20,8 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 	n := len(inputArr)
 	allocator := ctx.State.Allocator
 
-	layers := arena.Alloc[*evaluator.Layer](allocator, n)
-	arena.MemclrSlice(layers)
+	layers := allocator.Alloc[*evaluator.Layer](n)
+	alloc.MemclrSlice(layers)
 
 	var dt *utils.DescriptorTable
 	if n > evaluator.MaxLayerLinearKeys {
@@ -72,8 +72,8 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 		layers = layers[:index]
 	}
 
-	obj := arena.Create[evaluator.Object](allocator)
-	arena.Memclr(obj)
+	obj := allocator.Create[evaluator.Object]()
+	alloc.Memclr(obj)
 	obj.Layers = layers
 
 	return evaluator.MakeObjectValue(obj), nil
@@ -91,7 +91,7 @@ func builtin_flatMapArray(args []evaluator.NamedValue, ctx evaluator.Context) (e
 		return evaluator.ValueNone, err
 	}
 
-	mapperFuncInput := arena.Alloc[evaluator.NamedValue](ctx.State.Allocator, 1)
+	mapperFuncInput := ctx.State.Allocator.Alloc[evaluator.NamedValue](1)
 
 	// TODO: benchmark if stack or arena arrays are better
 	subArrayValues := make([]evaluator.Value, len(inputArr))

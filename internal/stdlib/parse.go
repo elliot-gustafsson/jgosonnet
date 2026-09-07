@@ -9,7 +9,7 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
+	"github.com/elliot-gustafsson/jgosonnet/internal/alloc"
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 	"github.com/elliot-gustafsson/jgosonnet/internal/utils"
 	"gopkg.in/yaml.v3"
@@ -127,12 +127,12 @@ func rawDataToValue(x any, ctx evaluator.Context) (evaluator.Value, error) {
 		fieldCount := len(data)
 		allocator := ctx.State.Allocator
 
-		layer := arena.Create[evaluator.Layer](allocator)
-		arena.Memclr(layer)
+		layer := allocator.Create[evaluator.Layer]()
+		alloc.Memclr(layer)
 
-		layer.Keys = arena.Alloc[uint32](allocator, fieldCount)
-		layer.Values = arena.Alloc[evaluator.Value](allocator, fieldCount)
-		layer.Meta = arena.Alloc[uint8](allocator, fieldCount)
+		layer.Keys = allocator.Alloc[uint32](fieldCount)
+		layer.Values = allocator.Alloc[evaluator.Value](fieldCount)
+		layer.Meta = allocator.Alloc[uint8](fieldCount)
 
 		useMap := fieldCount > evaluator.MaxLayerLinearKeys
 		if useMap {

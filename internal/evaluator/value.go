@@ -6,8 +6,6 @@ import (
 	"math"
 	"strings"
 	"unsafe"
-
-	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
 )
 
 type ValueType uint8
@@ -124,7 +122,7 @@ func MakeString(s string, ctx Context) (rv Value) {
 
 	totalSize := intSize + uintptr(n)
 
-	ptr := arena.AlignedAlloc(ctx.State.Allocator, totalSize, intAlign)
+	ptr := ctx.State.Allocator.AlignedAlloc(totalSize, intAlign)
 
 	// write len at beginning of block
 	*(*int)(ptr) = n
@@ -142,7 +140,7 @@ func MakeStringFromBytes(in []byte, ctx Context) (rv Value) {
 
 	totalSize := intSize + uintptr(n)
 
-	ptr := arena.AlignedAlloc(ctx.State.Allocator, totalSize, intAlign)
+	ptr := ctx.State.Allocator.AlignedAlloc(totalSize, intAlign)
 
 	// write len at beginning of block
 	*(*int)(ptr) = n
@@ -160,7 +158,7 @@ func MakeStringConcat(v1, v2 string, ctx Context) (rv Value) {
 
 	totalSize := intSize + uintptr(n)
 
-	ptr := arena.AlignedAlloc(ctx.State.Allocator, totalSize, intAlign)
+	ptr := ctx.State.Allocator.AlignedAlloc(totalSize, intAlign)
 
 	// write len at beginning of block
 	*(*int)(ptr) = n
@@ -178,7 +176,7 @@ func MakeStringConcat(v1, v2 string, ctx Context) (rv Value) {
 
 func AllocStringBuilder(ctx Context, capacity int) (unsafe.Pointer, []byte) {
 	totalSize := intSize + uintptr(capacity)
-	ptr := arena.AlignedAlloc(ctx.State.Allocator, totalSize, intAlign)
+	ptr := ctx.State.Allocator.AlignedAlloc(totalSize, intAlign)
 
 	// Create a 0-length slice pointing to the space right after the length header
 	buf := unsafe.Slice((*byte)(unsafe.Add(ptr, intSize)), capacity)[:0]
@@ -226,7 +224,7 @@ func MakeArraySized(n int, ctx Context) (arr []Value, rv Value) {
 	}
 
 	totalSize := intSize + (uintptr(n) * valueSize)
-	ptr := arena.AlignedAlloc(ctx.State.Allocator, totalSize, valueAlign)
+	ptr := ctx.State.Allocator.AlignedAlloc(totalSize, valueAlign)
 
 	*(*int)(ptr) = n
 
@@ -245,7 +243,7 @@ func MakeArray(v []Value, ctx Context) (rv Value) {
 	n := len(v)
 	totalSize := intSize + (uintptr(n) * valueSize)
 
-	ptr := arena.AlignedAlloc(ctx.State.Allocator, totalSize, valueAlign)
+	ptr := ctx.State.Allocator.AlignedAlloc(totalSize, valueAlign)
 
 	*(*int)(ptr) = n
 

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
+	"github.com/elliot-gustafsson/jgosonnet/internal/alloc"
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 	"github.com/elliot-gustafsson/jgosonnet/internal/interner"
 	"github.com/stretchr/testify/assert"
@@ -359,7 +359,7 @@ func TestFormat(t *testing.T) {
 			ctx := evaluator.Context{
 				State: &evaluator.ContextState{
 					Interner:  interner.NewInterner(),
-					Allocator: arena.NewAllocator(),
+					Allocator: alloc.NewAllocator(),
 				},
 			}
 			val := toValue(tt.args, ctx)
@@ -440,7 +440,7 @@ func TestFormatStrings(t *testing.T) {
 			ctx := evaluator.Context{
 				State: &evaluator.ContextState{
 					Interner:  interner.NewInterner(),
-					Allocator: arena.NewAllocator(),
+					Allocator: alloc.NewAllocator(),
 				},
 			}
 			val := toValue(tt.args, ctx)
@@ -570,7 +570,7 @@ func TestFormatIntegers(t *testing.T) {
 			ctx := evaluator.Context{
 				State: &evaluator.ContextState{
 					Interner:  interner.NewInterner(),
-					Allocator: arena.NewAllocator(),
+					Allocator: alloc.NewAllocator(),
 				},
 			}
 			val := toValue(tt.args, ctx)
@@ -706,7 +706,7 @@ func TestFormatOctal(t *testing.T) {
 			ctx := evaluator.Context{
 				State: &evaluator.ContextState{
 					Interner:  interner.NewInterner(),
-					Allocator: arena.NewAllocator(),
+					Allocator: alloc.NewAllocator(),
 				},
 			}
 			val := toValue(tt.args, ctx)
@@ -955,7 +955,7 @@ func TestFormatHex(t *testing.T) {
 			ctx := evaluator.Context{
 				State: &evaluator.ContextState{
 					Interner:  interner.NewInterner(),
-					Allocator: arena.NewAllocator(),
+					Allocator: alloc.NewAllocator(),
 				},
 			}
 			val := toValue(tt.args, ctx)
@@ -1001,7 +1001,7 @@ func TestFormatFloat(t *testing.T) {
 			ctx := evaluator.Context{
 				State: &evaluator.ContextState{
 					Interner:  interner.NewInterner(),
-					Allocator: arena.NewAllocator(),
+					Allocator: alloc.NewAllocator(),
 				},
 			}
 			val := toValue(tt.args, ctx)

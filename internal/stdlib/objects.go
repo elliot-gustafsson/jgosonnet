@@ -3,7 +3,7 @@ package stdlib
 import (
 	"unsafe"
 
-	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
+	"github.com/elliot-gustafsson/jgosonnet/internal/alloc"
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 	"github.com/elliot-gustafsson/jgosonnet/internal/utils"
 )
@@ -229,12 +229,12 @@ func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	fieldCount := len(keys)
 	allocator := ctx.State.Allocator
 
-	layer := arena.Create[evaluator.Layer](allocator)
-	arena.Memclr(layer)
+	layer := allocator.Create[evaluator.Layer]()
+	alloc.Memclr(layer)
 
-	layer.Keys = arena.Alloc[uint32](allocator, fieldCount)
-	layer.Values = arena.Alloc[evaluator.Value](allocator, fieldCount)
-	layer.Meta = arena.Alloc[uint8](allocator, fieldCount)
+	layer.Keys = allocator.Alloc[uint32](fieldCount)
+	layer.Values = allocator.Alloc[evaluator.Value](fieldCount)
+	layer.Meta = allocator.Alloc[uint8](fieldCount)
 
 	resObj := evaluator.NewSingleLayerObject(allocator, layer)
 	resObjVal := evaluator.MakeObjectValue(resObj)
@@ -242,7 +242,7 @@ func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	mapCtx := ctx
 	mapCtx.Self = resObjVal
 
-	allArgs := arena.Alloc[evaluator.NamedValue](allocator, len(keys)*2)
+	allArgs := allocator.Alloc[evaluator.NamedValue](len(keys) * 2)
 	for i, k := range keys {
 		v := vals[i]
 		idx := i * 2
@@ -252,8 +252,8 @@ func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 		allArgs[idx] = evaluator.NamedValue{Value: evaluator.MakeString(keyString, ctx)}
 		allArgs[idx+1] = evaluator.NamedValue{Value: v}
 
-		n := arena.Create[evaluator.GoCallbackNode](allocator)
-		arena.Memclr(n)
+		n := allocator.Create[evaluator.GoCallbackNode]()
+		alloc.Memclr(n)
 		*n = evaluator.GoCallbackNode{
 			FuncVal: mapFunc,
 			Args:    allArgs[idx : idx+2],
@@ -290,26 +290,26 @@ func std_objectRemoveKey(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 
 	existingLayers := obj.GetLayers(ctx)
 
-	tombstoneLayer := arena.Create[evaluator.Layer](allocator)
-	arena.Memclr(tombstoneLayer)
+	tombstoneLayer := allocator.Create[evaluator.Layer]()
+	alloc.Memclr(tombstoneLayer)
 
-	tombstoneLayer.Keys = arena.Alloc[uint32](allocator, 1)
+	tombstoneLayer.Keys = allocator.Alloc[uint32](1)
 	tombstoneLayer.Keys[0] = keyId
 
-	tombstoneLayer.Values = arena.Alloc[evaluator.Value](allocator, 1)
+	tombstoneLayer.Values = allocator.Alloc[evaluator.Value](1)
 	tombstoneLayer.Values[0] = evaluator.MakeTombstoneValue(len(existingLayers))
 
-	tombstoneLayer.Meta = arena.Alloc[uint8](allocator, 1)
+	tombstoneLayer.Meta = allocator.Alloc[uint8](1)
 	tombstoneLayer.Meta[0] = evaluator.FlagTombstone | evaluator.DefaultFieldMeta
 
 	newLen := len(existingLayers) + 1
-	newLayers := arena.Alloc[*evaluator.Layer](allocator, newLen)
-	arena.MemclrSlice(newLayers)
+	newLayers := allocator.Alloc[*evaluator.Layer](newLen)
+	alloc.MemclrSlice(newLayers)
 	copy(newLayers, existingLayers)
 	newLayers[newLen-1] = tombstoneLayer
 
-	resObj := arena.Create[evaluator.Object](allocator)
-	arena.Memclr(resObj)
+	resObj := allocator.Create[evaluator.Object]()
+	alloc.Memclr(resObj)
 
 	resObj.Layers = newLayers
 	return evaluator.MakeObjectValue(resObj), nil
@@ -361,12 +361,12 @@ func doMergePatch(target, patch evaluator.Value, ctx evaluator.Context) (evaluat
 
 	fieldCount := len(patchPlans)
 
-	layer := arena.Create[evaluator.Layer](allocator)
-	arena.Memclr(layer)
+	layer := allocator.Create[evaluator.Layer]()
+	alloc.Memclr(layer)
 
-	layer.Keys = arena.Alloc[uint32](allocator, fieldCount)
-	layer.Values = arena.Alloc[evaluator.Value](allocator, fieldCount)
-	layer.Meta = arena.Alloc[uint8](allocator, fieldCount)
+	layer.Keys = allocator.Alloc[uint32](fieldCount)
+	layer.Values = allocator.Alloc[evaluator.Value](fieldCount)
+	layer.Meta = allocator.Alloc[uint8](fieldCount)
 
 	useMap := fieldCount > evaluator.MaxLayerLinearKeys
 	if useMap {
@@ -475,13 +475,13 @@ func doMergePatch(target, patch evaluator.Value, ctx evaluator.Context) (evaluat
 
 	// Stack patch layer on top of existing target layers
 	newLen := len(targetLayers) + 1
-	newLayers := arena.Alloc[*evaluator.Layer](allocator, newLen)
-	arena.MemclrSlice(newLayers)
+	newLayers := allocator.Alloc[*evaluator.Layer](newLen)
+	alloc.MemclrSlice(newLayers)
 	copy(newLayers, targetLayers)
 	newLayers[newLen-1] = layer
 
-	resObj := arena.Create[evaluator.Object](allocator)
-	arena.Memclr(resObj)
+	resObj := allocator.Create[evaluator.Object]()
+	alloc.Memclr(resObj)
 	resObj.Layers = newLayers
 
 	return evaluator.MakeObjectValue(resObj), nil

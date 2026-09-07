@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
+	"github.com/elliot-gustafsson/jgosonnet/internal/alloc"
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 )
 
@@ -54,15 +54,15 @@ func std_makeArray(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 
 	allocator := ctx.State.Allocator
 
-	allArgs := arena.Alloc[evaluator.NamedValue](allocator, size)
+	allArgs := allocator.Alloc[evaluator.NamedValue](size)
 
 	res, arrVal := evaluator.MakeArraySized(size, ctx)
 	for i := range size {
 
 		allArgs[i] = evaluator.NamedValue{Value: evaluator.MakeNumber(float64(i))}
 
-		n := arena.Create[evaluator.GoCallbackNode](allocator)
-		arena.Memclr(n)
+		n := allocator.Create[evaluator.GoCallbackNode]()
+		alloc.Memclr(n)
 		*n = evaluator.GoCallbackNode{
 			FuncVal: funcVal,
 			Args:    allArgs[i : i+1],
@@ -257,7 +257,7 @@ func std_filter(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 		return evaluator.ValueNone, err
 	}
 
-	mapperFuncInput := arena.Alloc[evaluator.NamedValue](ctx.State.Allocator, 1)
+	mapperFuncInput := ctx.State.Allocator.Alloc[evaluator.NamedValue](1)
 
 	res := []evaluator.Value{}
 	for _, v := range inputArray {
@@ -293,7 +293,7 @@ func std_flatMap(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.
 		return evaluator.ValueNone, err
 	}
 
-	mapFuncArgs := arena.Alloc[evaluator.NamedValue](ctx.State.Allocator, 1)
+	mapFuncArgs := ctx.State.Allocator.Alloc[evaluator.NamedValue](1)
 
 	res := make([]evaluator.Value, 0, len(arr))
 	for _, v := range arr {
@@ -333,7 +333,7 @@ func std_filterMap(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 		return evaluator.ValueNone, err
 	}
 
-	funcArgs := arena.Alloc[evaluator.NamedValue](ctx.State.Allocator, 1)
+	funcArgs := ctx.State.Allocator.Alloc[evaluator.NamedValue](1)
 
 	filteredArr := make([]evaluator.Value, 0, len(inputArray)/2)
 	for _, v := range inputArray {
@@ -384,7 +384,7 @@ func std_uniq(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 	}
 
 	// Create the array once and mutate it to reduce objects on the heap
-	mapperFuncInput := arena.Alloc[evaluator.NamedValue](ctx.State.Allocator, 1)
+	mapperFuncInput := ctx.State.Allocator.Alloc[evaluator.NamedValue](1)
 
 	var last evaluator.Value
 	res := make([]evaluator.Value, 0, len(arr))
@@ -487,7 +487,7 @@ func sortArray(arr []evaluator.Value, keyF evaluator.Value, ctx evaluator.Contex
 	result, val := evaluator.MakeArraySized(len(arr), ctx)
 	copy(result, arr)
 
-	mapperFuncInput := arena.Alloc[evaluator.NamedValue](ctx.State.Allocator, 1)
+	mapperFuncInput := ctx.State.Allocator.Alloc[evaluator.NamedValue](1)
 
 	slices.SortStableFunc(result, func(a, b evaluator.Value) int {
 
@@ -543,7 +543,7 @@ func std_set(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 		return evaluator.ValueNone, err
 	}
 
-	uniqArgs := arena.Alloc[evaluator.NamedValue](ctx.State.Allocator, 2)
+	uniqArgs := ctx.State.Allocator.Alloc[evaluator.NamedValue](2)
 	uniqArgs[0] = evaluator.NamedValue{Value: sorted}
 	uniqArgs[1] = args[1]
 
@@ -569,15 +569,15 @@ func std_map(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 
 	allocator := ctx.State.Allocator
 
-	allArgs := arena.Alloc[evaluator.NamedValue](allocator, len(arr))
+	allArgs := allocator.Alloc[evaluator.NamedValue](len(arr))
 
 	res, arrVal := evaluator.MakeArraySized(len(arr), ctx)
 	for i, v := range arr {
 
 		allArgs[i] = evaluator.NamedValue{Value: v}
 
-		n := arena.Create[evaluator.GoCallbackNode](allocator)
-		arena.Memclr(n)
+		n := allocator.Create[evaluator.GoCallbackNode]()
+		alloc.Memclr(n)
 		*n = evaluator.GoCallbackNode{
 			FuncVal: mapFunc,
 			Args:    allArgs[i : i+1],
@@ -604,7 +604,7 @@ func std_mapWithIndex(args []evaluator.NamedValue, ctx evaluator.Context) (evalu
 
 	allocator := ctx.State.Allocator
 
-	allArgs := arena.Alloc[evaluator.NamedValue](allocator, len(arr)*2)
+	allArgs := allocator.Alloc[evaluator.NamedValue](len(arr) * 2)
 
 	res, arrVal := evaluator.MakeArraySized(len(arr), ctx)
 	for i, v := range arr {
@@ -613,8 +613,8 @@ func std_mapWithIndex(args []evaluator.NamedValue, ctx evaluator.Context) (evalu
 		allArgs[idx] = evaluator.NamedValue{Value: evaluator.MakeNumber(float64(i))}
 		allArgs[idx+1] = evaluator.NamedValue{Value: v}
 
-		n := arena.Create[evaluator.GoCallbackNode](allocator)
-		arena.Memclr(n)
+		n := allocator.Create[evaluator.GoCallbackNode]()
+		alloc.Memclr(n)
 		*n = evaluator.GoCallbackNode{
 			FuncVal: mapFunc,
 			Args:    allArgs[idx : idx+2],
@@ -700,7 +700,7 @@ func std_setMember(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 		keyF = f
 	}
 
-	mapperFuncInput := arena.Alloc[evaluator.NamedValue](ctx.State.Allocator, 1)
+	mapperFuncInput := ctx.State.Allocator.Alloc[evaluator.NamedValue](1)
 
 	for _, v := range arr {
 		v, err := v.Eval(ctx)
@@ -915,7 +915,7 @@ func std_foldl(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 		return evaluator.ValueNone, err
 	}
 
-	foldFuncArgs := arena.Alloc[evaluator.NamedValue](ctx.State.Allocator, 2)
+	foldFuncArgs := ctx.State.Allocator.Alloc[evaluator.NamedValue](2)
 
 	state, err := args[2].Eval(ctx)
 	if err != nil {
@@ -971,7 +971,7 @@ func std_foldr(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 		return evaluator.ValueNone, err
 	}
 
-	foldFuncArgs := arena.Alloc[evaluator.NamedValue](ctx.State.Allocator, 2)
+	foldFuncArgs := ctx.State.Allocator.Alloc[evaluator.NamedValue](2)
 
 	state, err := args[2].Eval(ctx)
 	if err != nil {
@@ -1202,7 +1202,7 @@ func std_setUnion(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
-		funcArgs = arena.Alloc[evaluator.NamedValue](ctx.State.Allocator, 1)
+		funcArgs = ctx.State.Allocator.Alloc[evaluator.NamedValue](1)
 	}
 
 	aArr := aVal.Array()
@@ -1327,7 +1327,7 @@ func std_setInter(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
-		funcArgs = arena.Alloc[evaluator.NamedValue](ctx.State.Allocator, 1)
+		funcArgs = ctx.State.Allocator.Alloc[evaluator.NamedValue](1)
 	}
 
 	aArr := aVal.Array()
@@ -1420,7 +1420,7 @@ func std_setDiff(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
-		funcArgs = arena.Alloc[evaluator.NamedValue](ctx.State.Allocator, 1)
+		funcArgs = ctx.State.Allocator.Alloc[evaluator.NamedValue](1)
 	}
 
 	i, j := 0, 0
@@ -1617,7 +1617,7 @@ func minMaxArray(args []evaluator.NamedValue, ctx evaluator.Context, max bool, n
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
-		funcArgs = arena.Alloc[evaluator.NamedValue](ctx.State.Allocator, 1)
+		funcArgs = ctx.State.Allocator.Alloc[evaluator.NamedValue](1)
 	}
 
 	var defaultValue evaluator.Value

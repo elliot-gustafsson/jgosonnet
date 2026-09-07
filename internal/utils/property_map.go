@@ -1,6 +1,8 @@
 package utils
 
-import "github.com/elliot-gustafsson/jgosonnet/internal/arena"
+import (
+	"github.com/elliot-gustafsson/jgosonnet/internal/alloc"
+)
 
 type Property[T any] struct {
 	Key   uint32
@@ -16,16 +18,16 @@ type PropertyMap[T any] struct {
 }
 
 // NewPropertyMap initializes a PropertyMap with arena-allocated storage.
-func NewPropertyMap[T any](a *arena.Allocator, initialCap uint32) *PropertyMap[T] {
+func NewPropertyMap[T any](a *alloc.Allocator, initialCap uint32) *PropertyMap[T] {
 	cap := nextPowerOf2(initialCap)
 	if cap == 0 {
 		cap = 8
 	}
 
-	pm := arena.Create[PropertyMap[T]](a)
-	arena.Memclr(pm)
-	pm.entries = arena.Alloc[Property[T]](a, int(cap))
-	arena.MemclrSlice(pm.entries)
+	pm := a.Create[PropertyMap[T]]()
+	alloc.Memclr(pm)
+	pm.entries = a.Alloc[Property[T]](int(cap))
+	alloc.MemclrSlice(pm.entries)
 	pm.capMask = cap - 1
 	pm.count = 0
 	return pm
@@ -55,12 +57,12 @@ func (pm *PropertyMap[T]) GetEx(sym uint32) (T, uint8, bool) {
 	}
 }
 
-func (pm *PropertyMap[T]) Put(a *arena.Allocator, key uint32, val T) {
+func (pm *PropertyMap[T]) Put(a *alloc.Allocator, key uint32, val T) {
 	pm.PutEx(a, key, val, 0)
 }
 
 // Put inserts or updates a property, growing the arena allocation if load factor >= 75%.
-func (pm *PropertyMap[T]) PutEx(a *arena.Allocator, key uint32, val T, meta uint8) {
+func (pm *PropertyMap[T]) PutEx(a *alloc.Allocator, key uint32, val T, meta uint8) {
 	if len(pm.entries) == 0 || (pm.count*4 >= (pm.capMask+1)*3) {
 		pm.grow(a)
 	}
@@ -87,7 +89,7 @@ func (pm *PropertyMap[T]) PutEx(a *arena.Allocator, key uint32, val T, meta uint
 // grow doubles capacity by allocating a new slice from the arena and re-inserting active entries.
 //
 //go:noinline
-func (pm *PropertyMap[T]) grow(a *arena.Allocator) {
+func (pm *PropertyMap[T]) grow(a *alloc.Allocator) {
 	oldEntries := pm.entries
 	newCap := uint32(len(oldEntries)) * 2
 	if newCap == 0 {
@@ -96,8 +98,8 @@ func (pm *PropertyMap[T]) grow(a *arena.Allocator) {
 	newMask := newCap - 1
 
 	// Fast allocation of the larger backing table
-	newEntries := arena.Alloc[Property[T]](a, int(newCap))
-	arena.MemclrSlice(newEntries)
+	newEntries := a.Alloc[Property[T]](int(newCap))
+	alloc.MemclrSlice(newEntries)
 
 	for i := range oldEntries {
 		old := &oldEntries[i]
