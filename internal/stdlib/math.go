@@ -13,6 +13,12 @@ func liftNumeric(f func(float64) float64) evaluator.Func {
 			return evaluator.ValueNone, err
 		}
 		res := f(a)
+		if math.IsNaN(res) {
+			return evaluator.ValueNone, evaluator.NanErr
+		}
+		if math.IsInf(res, 0) {
+			return evaluator.ValueNone, evaluator.OverflowErr
+		}
 		return evaluator.MakeNumber(res), nil
 	}
 }
@@ -28,6 +34,12 @@ func liftNumeric2(f func(float64, float64) float64) evaluator.Func {
 			return evaluator.ValueNone, err
 		}
 		res := f(a, b)
+		if math.IsNaN(res) {
+			return evaluator.ValueNone, evaluator.NanErr
+		}
+		if math.IsInf(res, 0) {
+			return evaluator.ValueNone, evaluator.OverflowErr
+		}
 		return evaluator.MakeNumber(res), nil
 	}
 }
@@ -45,7 +57,6 @@ func liftNumericToBoolean(f func(float64) bool) evaluator.Func {
 
 var std_floor = liftNumeric(math.Floor)
 var std_pow = liftNumeric2(math.Pow)
-var std_modulo = liftNumeric2(math.Mod)
 var std_sqrt = liftNumeric(math.Sqrt)
 var std_hypot = liftNumeric2(math.Hypot)
 var std_ceil = liftNumeric(math.Ceil)
@@ -109,6 +120,25 @@ var std_deg2rad = liftNumeric(func(f float64) float64 {
 var std_rad2deg = liftNumeric(func(f float64) float64 {
 	return f * (180.0 / math.Pi)
 })
+
+var std_modulo = func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	b, err := args[1].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	if b == 0 {
+		return evaluator.ValueNone, evaluator.DivisionByZeroErr
+	}
+	res := math.Mod(a, b)
+	if math.IsNaN(res) {
+		return evaluator.ValueNone, evaluator.NanErr
+	}
+	return evaluator.MakeNumber(res), nil
+}
 
 func std_clamp(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 

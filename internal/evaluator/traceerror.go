@@ -2,10 +2,34 @@ package evaluator
 
 import (
 	"fmt"
+	"io"
+	"path/filepath"
 	"strings"
 
 	"github.com/google/go-jsonnet/ast"
 )
+
+type TraceSignal struct {
+	Str  string
+	Rest Value
+}
+
+func (t *TraceSignal) Error() string {
+	return "TRACE: " + t.Str
+}
+
+func (t *TraceSignal) Print(w io.Writer, n ast.Node) error {
+	loc := n.Loc()
+	if loc == nil {
+		// Set filename to <unknown> here?
+		_, err := fmt.Fprintf(w, "TRACE: %s\n", t.Str)
+		return err
+	}
+	filename := filepath.Base(loc.FileName)
+	line := loc.Begin.Line
+	_, err := fmt.Fprintf(w, "TRACE: %s:%d %s\n", filename, line, t.Str)
+	return err
+}
 
 type TraceError struct {
 	Err    error
@@ -19,7 +43,14 @@ func (t *TraceError) Error() string {
 	b.WriteByte('\n')
 
 	for _, frame := range t.Frames {
-		fmt.Fprintf(&b, "\t%s\t%s\n", frame.Pos, frame.Name)
+		if frame.Pos == "" && frame.Name == "" {
+			continue
+		}
+		if frame.Name != "" {
+			fmt.Fprintf(&b, "\t%s\t%s\n", frame.Pos, frame.Name)
+		} else {
+			fmt.Fprintf(&b, "\t%s\n", frame.Pos)
+		}
 	}
 	return b.String()
 }
@@ -46,7 +77,12 @@ func WrapError(err error, node ast.Node) error {
 		return traceErr
 	}
 
-	frame := Frame{Pos: node.Loc().String()}
+	pos := node.Loc().String()
+	if pos == "" {
+		return traceErr
+	}
+
+	frame := Frame{Pos: pos}
 	if ctx := node.Context(); ctx != nil {
 		frame.Name = *ctx
 	}

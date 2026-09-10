@@ -3,6 +3,7 @@ package stdlib
 import (
 	"fmt"
 	"math"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
@@ -29,6 +30,7 @@ var functions = []struct {
 	{"toString", evaluator.NativeFunction{Func: std_toString, Params: []string{"a"}, OptStart: 1}},
 	{"length", evaluator.NativeFunction{Func: std_length, Params: []string{"x"}, OptStart: 1}},
 	{"mod", evaluator.NativeFunction{Func: std_mod, Params: []string{"a", "b"}, OptStart: 2}},
+	{"primitiveEquals", evaluator.NativeFunction{Func: std_primitiveEquals, Params: []string{"a", "b"}, OptStart: 2}},
 
 	// --- Types ---
 	{"type", evaluator.NativeFunction{Func: std_type, Params: []string{"x"}, OptStart: 1}},
@@ -301,11 +303,11 @@ func std_trace(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 		return evaluator.ValueNone, err
 	}
 
-	_, err = fmt.Fprint(ctx.State.Environment.TraceOut, "TRACE: "+str+"\n")
-	if err != nil {
-		return evaluator.ValueNone, err
+	return evaluator.ValueNone, &evaluator.TraceSignal{
+		Str:  str,
+		Rest: args[1].Value,
 	}
-	return args[1].Value, nil
+
 }
 
 func std_type(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -341,16 +343,19 @@ func std_assertEqual(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 		return evaluator.MakeBool(true), nil
 	}
 
-	aStr, err := a.ToString(ctx)
-	if err != nil {
-		return evaluator.ValueNone, err
-	}
-	bStr, err := b.ToString(ctx)
+	var aStrB strings.Builder
+	err = evaluator.ManifestJson(&aStrB, a, ctx, evaluator.JsonConfigToString)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	return evaluator.MakeBool(false), fmt.Errorf("assertion failed %s != %s", aStr, bStr)
+	var bStrB strings.Builder
+	err = evaluator.ManifestJson(&bStrB, b, ctx, evaluator.JsonConfigToString)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+
+	return evaluator.MakeBool(false), evaluator.MakeRuntimeError(fmt.Errorf("Assertion failed. %s != %s", aStrB.String(), bStrB.String()))
 }
 
 var std_isString = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsString() })
@@ -428,4 +433,28 @@ func std_prune(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 		return evaluator.ValueNone, err
 	}
 	return res, nil
+}
+
+func std_primitiveEquals(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+
+	a, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+
+	b, err := args[1].Eval(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+
+	if a.Type() != b.Type() {
+		return evaluator.MakeBool(false), nil
+	}
+
+	res, err := a.Equal(b, ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+
+	return evaluator.MakeBool(res), nil
 }

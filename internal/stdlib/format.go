@@ -247,6 +247,26 @@ func formatString(b []byte, str string, data evaluator.Value, ctx evaluator.Cont
 		verb, size := utf8.DecodeRuneInString(str[i:])
 		i += size
 
+		// If the verb is '%', it formats a literal '%' with flags/width and does NOT consume an argument
+		if verb == '%' {
+			width := 0
+			if widthVal != -1 {
+				width = widthVal
+			}
+			if width < 0 {
+				width = -width
+				flags |= FormatFlagLeftJustify
+			}
+
+			if width == 0 && flags == 0 {
+				b = append(b, '%')
+				continue
+			}
+
+			b = writeFormatString(b, "%", width, flags)
+			continue
+		}
+
 		// --- RETRIEVE ARGUMENT ---
 		var currentArg evaluator.Value
 
@@ -316,8 +336,7 @@ func formatString(b []byte, str string, data evaluator.Value, ctx evaluator.Cont
 				continue
 			}
 
-			// note: jsonnet doesnt support precision on integer types
-			b = writeFormatInteger(b, num, width, flags)
+			b = writeFormatInteger(b, num, width, precVal, flags)
 
 		case 'o': // Octal
 
@@ -351,7 +370,7 @@ func formatString(b []byte, str string, data evaluator.Value, ctx evaluator.Cont
 				continue
 			}
 
-			b = writeFormatHex(b, num, width, flags, uppercase)
+			b = writeFormatHex(b, num, width, prec, flags, uppercase)
 
 		case 'f', 'F', 'e', 'E', 'g', 'G': // Float types
 
@@ -455,7 +474,7 @@ func writePad(b []byte, zeroPad bool, count int) []byte {
 	return b
 }
 
-func writePadded(b []byte, content []byte, prefix string, padLen int, flags uint8) []byte {
+func writePadded(b []byte, content []byte, prefix string, padLen, precZeros int, flags uint8) []byte {
 	leftJustify := flags&FormatFlagLeftJustify != 0
 	zeroPad := !leftJustify && flags&FormatFlagZeroPad != 0
 
@@ -466,6 +485,11 @@ func writePadded(b []byte, content []byte, prefix string, padLen int, flags uint
 
 	if prefix != "" {
 		b = append(b, prefix...)
+	}
+
+	// precision zeros
+	if precZeros > 0 {
+		b = writePad(b, true, precZeros)
 	}
 
 	// right justified, zero padded
@@ -490,14 +514,12 @@ func writeFormatString(b []byte, s string, width int, flags uint8) []byte {
 	content := unsafe.Slice(unsafe.StringData(s), len(s))
 
 	flags &^= FormatFlagZeroPad
-	return writePadded(b, content, "", padLen, flags)
+	return writePadded(b, content, "", padLen, 0, flags)
 }
 
 //go:noinline
-func writeFormatInteger(b []byte, num int64, width int, flags uint8) []byte {
-
+func writeFormatInteger(b []byte, num int64, width, prec int, flags uint8) []byte {
 	var dst [64]byte
-
 	var prefix string
 	u := uint64(num)
 
@@ -511,9 +533,20 @@ func writeFormatInteger(b []byte, num int64, width int, flags uint8) []byte {
 	}
 
 	res := strconv.AppendUint(dst[:0], u, 10)
+	if prec == 0 && num == 0 {
+		res = res[:0]
+	}
 
-	padLen := width - len(res) - len(prefix)
-	return writePadded(b, res, prefix, padLen, flags)
+	precZeros := 0
+	if prec >= 0 {
+		flags &^= FormatFlagZeroPad
+		if prec > len(res) {
+			precZeros = prec - len(res)
+		}
+	}
+
+	padLen := width - len(res) - len(prefix) - precZeros
+	return writePadded(b, res, prefix, padLen, precZeros, flags)
 }
 
 //go:noinline
@@ -527,39 +560,39 @@ func writeFormatOctal(b []byte, num int64, width, prec int, flags uint8) []byte 
 	}
 
 	res := strconv.AppendUint(dst[:0], u, 8)
-
-	// alternate flag for octal ensures it starts with '0'
-	alt := flags&FormatFlagAlternate != 0 && res[0] != '0'
-	forceSign := flags&FormatFlagForceSign != 0
-	spaceSign := flags&FormatFlagSpaceSign != 0
-
-	var prefix string
-	switch {
-	case num < 0 && alt:
-		prefix = "-0"
-	case num < 0:
-		prefix = "-"
-
-	case forceSign && alt:
-		prefix = "+0"
-	case forceSign:
-		prefix = "+"
-
-	case spaceSign && alt:
-		prefix = " 0"
-	case spaceSign:
-		prefix = " "
-
-	case alt:
-		prefix = "0"
+	if prec == 0 && num == 0 {
+		res = res[:0]
 	}
 
-	padLen := width - len(res) - len(prefix)
-	return writePadded(b, res, prefix, padLen, flags)
+	var prefix string
+	if num < 0 {
+		prefix = "-"
+	} else if flags&FormatFlagForceSign != 0 {
+		prefix = "+"
+	} else if flags&FormatFlagSpaceSign != 0 {
+		prefix = " "
+	}
+
+	precZeros := 0
+	if prec >= 0 {
+		flags &^= FormatFlagZeroPad
+		if prec > len(res) {
+			precZeros = prec - len(res)
+		}
+	}
+
+	if flags&FormatFlagAlternate != 0 && precZeros == 0 {
+		if len(res) == 0 || res[0] != '0' {
+			precZeros = 1
+		}
+	}
+
+	padLen := width - len(res) - len(prefix) - precZeros
+	return writePadded(b, res, prefix, padLen, precZeros, flags)
 }
 
 //go:noinline
-func writeFormatHex(b []byte, num int64, width int, flags uint8, uppercase bool) []byte {
+func writeFormatHex(b []byte, num int64, width, prec int, flags uint8, uppercase bool) []byte {
 
 	var dst [64]byte
 
@@ -607,16 +640,40 @@ func writeFormatHex(b []byte, num int64, width int, flags uint8, uppercase bool)
 		prefix = "0x"
 	}
 
-	padLen := width - len(res) - len(prefix)
-	return writePadded(b, res, prefix, padLen, flags)
+	precZeros := 0
+	if prec >= 0 {
+		flags &^= FormatFlagZeroPad
+		if prec > len(res) {
+			precZeros = prec - len(res)
+		}
+	}
+
+	padLen := width - len(res) - len(prefix) - precZeros
+	return writePadded(b, res, prefix, padLen, precZeros, flags)
 }
 
 //go:noinline
-func writeFormatFloat(b []byte, num float64, fmt byte, width, prec int, flags uint8, uppercase bool) []byte {
+func writeFormatFloat(b []byte, num float64, floatFmt byte, width, prec int, flags uint8, uppercase bool) []byte {
 
 	var dst [128]byte
 
-	res := strconv.AppendFloat(dst[:0], num, fmt, prec, 64)
+	var res []byte
+	alt := flags&FormatFlagAlternate != 0
+	if alt && (floatFmt == 'g' || floatFmt == 'G') && !math.IsNaN(num) && !math.IsInf(num, 0) {
+		// If %g` or `%G and using the # alt flag
+
+		// TODO: think abt this, this allocates due to fmt.Appendf. Its a very obscure combination so probably fine, the code to manually do this is not that fun...
+
+		var format string
+		if floatFmt == 'G' {
+			format = "%#.*G"
+		} else {
+			format = "%#.*g"
+		}
+		res = fmt.Appendf(dst[:0], format, prec, num)
+	} else {
+		res = strconv.AppendFloat(dst[:0], num, floatFmt, prec, 64)
+	}
 
 	if len(res) > 0 && (res[0] == '-' || res[0] == '+') {
 		res = res[1:]
@@ -626,13 +683,11 @@ func writeFormatFloat(b []byte, num float64, fmt byte, width, prec int, flags ui
 		toUppercase(res)
 	}
 
-	alt := flags&FormatFlagAlternate != 0
 	if alt && prec == 0 && !math.IsNaN(num) && !math.IsInf(num, 0) {
-
-		if fmt == 'f' {
+		switch floatFmt {
+		case 'f':
 			res = append(res, '.')
-
-		} else {
+		case 'e', 'E':
 			var c byte = 'e'
 			if uppercase {
 				c = 'E'
@@ -644,7 +699,6 @@ func writeFormatFloat(b []byte, num float64, fmt byte, width, prec int, flags ui
 				res[idx] = '.'
 			}
 		}
-
 	}
 
 	isNeg := math.Signbit(num)
@@ -662,7 +716,7 @@ func writeFormatFloat(b []byte, num float64, fmt byte, width, prec int, flags ui
 	}
 
 	padLen := width - len(res) - len(prefix)
-	return writePadded(b, res, prefix, padLen, flags)
+	return writePadded(b, res, prefix, padLen, 0, flags)
 }
 
 //go:noinline
@@ -673,7 +727,7 @@ func writeFormatChar(b []byte, c rune, width int, flags uint8) []byte {
 
 	padLen := width - 1
 	flags &^= FormatFlagZeroPad
-	return writePadded(b, dst[:n], "", padLen, flags)
+	return writePadded(b, dst[:n], "", padLen, 0, flags)
 }
 
 func toUppercase(x []byte) {

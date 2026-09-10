@@ -1,7 +1,6 @@
 package evaluator
 
 import (
-	"fmt"
 	"os"
 	"sync"
 	"unsafe"
@@ -68,7 +67,7 @@ func (t *AstImporter) ResolveSnippet(name, data string) (ast.Node, error) {
 
 	importedNode, err := jsonnet.SnippetToAST(name, data)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve snippet %s, err: %w", name, err)
+		return nil, err
 	}
 
 	t.cacheMu.Lock()
@@ -97,17 +96,14 @@ func (t *AstImporter) ResolveImport(filePath string) (ast.Node, error) {
 
 	fileData, err := os.ReadFile(filePath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, err
-		}
-		return nil, fmt.Errorf("failed importing file: %s, err: %w", filePath, err)
+		return nil, err
 	}
 
 	dataStr := unsafe.String(unsafe.SliceData(fileData), len(fileData))
 
 	importedNode, err = jsonnet.SnippetToAST(filePath, dataStr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve import %s, err: %w", filePath, err)
+		return nil, err
 	}
 
 	t.cacheMu.Lock()
