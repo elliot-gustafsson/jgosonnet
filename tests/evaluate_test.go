@@ -3,7 +3,6 @@ package tests
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"log"
 	"log/slog"
 	"os"
@@ -25,34 +24,36 @@ func TestEvaluator(t *testing.T) {
 
 	interpreter := jgosonnet.NewEvaluator()
 
-	jgosonnetStart := time.Now()
+	// jgosonnetStart := time.Now()
 	stuff, err := interpreter.EvaluateJson(file)
-	jgosonnetDur := time.Since(jgosonnetStart)
+	// jgosonnetDur := time.Since(jgosonnetStart)
 	if err != nil {
 		t.Fatal(err.Error())
 	}
 
-	println()
-	println("jgosonnet:", jgosonnetDur.String())
+	// println()
+	// println("jgosonnet:", jgosonnetDur.String())
 
-	goJsonnetStart := time.Now()
+	// goJsonnetStart := time.Now()
 	og, err := GetExpected(file)
-	goJsonnetDur := time.Since(goJsonnetStart)
+	// goJsonnetDur := time.Since(goJsonnetStart)
 	if err != nil {
 		t.Fatal(err.Error())
 	}
 
-	println("go-jsonnet:", goJsonnetDur.String())
-	println()
-	println(jgosonnetDur.String(), "/", goJsonnetDur.String(), "~", fmt.Sprintf("%.2f", GetChange(jgosonnetDur, goJsonnetDur)), "times faster")
-	println()
+	// println("go-jsonnet:", goJsonnetDur.String())
+	// println()
+	// println(jgosonnetDur.String(), "/", goJsonnetDur.String(), "~", fmt.Sprintf("%.2f", GetChange(jgosonnetDur, goJsonnetDur)), "times faster")
+	// println()
 
 	assert.Equal(t, og, stuff)
 
-	println("expected")
-	println(og)
-	println("actual")
-	println(stuff)
+	if og != stuff {
+		println("expected")
+		println(og)
+		println("actual")
+		println(stuff)
+	}
 
 }
 

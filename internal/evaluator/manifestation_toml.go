@@ -175,6 +175,12 @@ func writeTomlValue(b *strings.Builder, value Value, ctx Context, cindent, sinde
 		return nil
 	case ValueTypeObject:
 		obj := value.Object()
+		evalCtx := ctx
+		evalCtx.Self = value
+		err := runAssertions(obj, evalCtx)
+		if err != nil {
+			return err
+		}
 		plans := CompileObjectPlan(obj, ctx)
 
 		if len(plans) == 0 {

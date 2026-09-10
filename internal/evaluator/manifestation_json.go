@@ -42,6 +42,9 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, indentLevel int,
 		return fmt.Errorf("unhandled value type: %s", value.Type().String())
 	case ValueTypeNumber:
 		data := value.Number()
+		// if math.IsNaN(data) || math.IsInf(data, 0) {
+		// 	return MakeRuntimeError(errors.New("overflow"))
+		// }
 		var p [64]byte
 		if config.StrictFloat {
 			b.Write(strconv.AppendFloat(p[:0], data, 'f', -1, 64))
@@ -136,8 +139,22 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, indentLevel int,
 		return nil
 	case ValueTypeObject:
 		obj := value.Object()
+		evalCtx := ctx
+		evalCtx.Self = value
+		err := runAssertions(obj, evalCtx)
+		if err != nil {
+			return err
+		}
 		plans := CompileObjectPlan(obj, ctx)
-		if len(plans) == 0 {
+
+		empty := true
+		for _, p := range plans {
+			if !p.IsHidden() {
+				empty = false
+				break
+			}
+		}
+		if empty {
 			if config.SpaceComma && !config.Python {
 				b.WriteString("{ }")
 				return nil

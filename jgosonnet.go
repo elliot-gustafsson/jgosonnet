@@ -14,6 +14,21 @@ import (
 	"github.com/elliot-gustafsson/jgosonnet/internal/stdlib"
 )
 
+var jsonManifestConfig = &evaluator.JsonManifestConfig{
+	IndentStep: "   ",
+	Newline:    "\n",
+	KeyValSep:  ": ",
+	SpaceComma: true,
+}
+
+var yamlManifestConfig = evaluator.YamlManifestConfig{
+	IndentArrayInObjects: true,
+	NaturalSort:          true,
+	FormatIntegers:       true,
+	UseBlockScalars:      true,
+	Modern:               true,
+}
+
 type Evaluator struct {
 	jpaths   []string
 	traceOut io.Writer
@@ -21,7 +36,11 @@ type Evaluator struct {
 	astImporter *evaluator.AstImporter
 	extVars     map[string]string
 	extCodes    map[string]string
+	tlaVars     map[string]string
+	tlaCodes    map[string]string
 	nativeFuncs map[string]evaluator.Function
+
+	noNewline bool
 }
 
 type NativeFunction struct {
@@ -40,6 +59,8 @@ func NewEvaluator() *Evaluator {
 		astImporter: evaluator.NewAstImporter(),
 		extVars:     make(map[string]string),
 		extCodes:    make(map[string]string),
+		tlaVars:     make(map[string]string),
+		tlaCodes:    make(map[string]string),
 		nativeFuncs: make(map[string]evaluator.Function),
 	}
 }
@@ -60,9 +81,21 @@ func (t *Evaluator) ExtCode(key, val string) {
 	t.extCodes[key] = val
 }
 
+func (t *Evaluator) TLAVar(key, val string) {
+	t.tlaVars[key] = val
+}
+
+func (t *Evaluator) TLACode(key, val string) {
+	t.tlaCodes[key] = val
+}
+
 // func (t *Evaluator) NativeFunction(key string, f NativeFunction) {
 // 		t.nativeFuncs[key] = f
 // }
+
+func (t *Evaluator) NoNewline(v bool) {
+	t.noNewline = v
+}
 
 // Get output as a go struct, map[string]any || []any ...
 func (t *Evaluator) Evaluate(file string) (any, error) {
@@ -80,117 +113,64 @@ func (t *Evaluator) Evaluate(file string) (any, error) {
 	return raw, nil
 }
 
+// JSON
 func (t *Evaluator) EvaluateJson(file string) (string, error) {
-	value, ctx, cleanup, err := t.evaluate(file)
-	defer cleanup()
-	if err != nil {
-		return "", wrapEvaluationErr(err)
-	}
-
-	var b strings.Builder
-	b.Grow(16 * 1024)
-
-	c := &evaluator.JsonManifestConfig{
-		IndentStep: "   ",
-		Newline:    "\n",
-		KeyValSep:  ": ",
-		SpaceComma: true,
-	}
-
-	err = evaluator.ManifestJson(&b, value, ctx, c)
-	if err != nil {
-		return "", wrapManifestationErr(err)
-	}
-
-	b.WriteByte('\n')
-
-	return b.String(), nil
+	return t.manifestSingle(file, formatJSON)
 }
-
 func (t *Evaluator) EvaluateJsonMulti(file string) (map[string]string, error) {
-	root, ctx, cleanup, err := t.evaluateMulti(file)
-	defer cleanup()
-	if err != nil {
-		return nil, err
-	}
-
-	c := &evaluator.JsonManifestConfig{
-		IndentStep: "   ",
-		Newline:    "\n",
-		KeyValSep:  ": ",
-		SpaceComma: true,
-	}
-
-	res := make(map[string]string, len(root))
-	for _, v := range root {
-
-		var b strings.Builder
-		b.Grow(16 * 1024)
-
-		err = evaluator.ManifestJson(&b, v.Value, ctx, c)
-		if err != nil {
-			return nil, wrapManifestationErr(err)
-		}
-
-		b.WriteByte('\n')
-
-		// Clone string due to string arena being reset in defer
-		kClone := strings.Clone(ctx.State.Interner.Get(v.Key))
-
-		res[kClone] = b.String()
-	}
-
-	return res, nil
+	return t.manifestMulti(file, formatJSON)
 }
-
-// The caller MUST range over the returned iterator to execute the manifestation and release
-// underlying evaluation resources back to the pool.
 func (t *Evaluator) EvaluateJsonMultiIter(file string) (iter.Seq2[FileOutput, error], error) {
-	root, ctx, cleanup, err := t.evaluateMulti(file)
-	if err != nil {
-		cleanup()
-		return nil, err
-	}
-
-	c := &evaluator.JsonManifestConfig{
-		IndentStep: "   ",
-		Newline:    "\n",
-		KeyValSep:  ": ",
-		SpaceComma: true,
-	}
-
-	iterator := func(yield func(FileOutput, error) bool) {
-		defer cleanup() // deferred until the caller finishes iterating
-
-		for _, v := range root {
-			var b strings.Builder
-			b.Grow(16 * 1024)
-
-			err := evaluator.ManifestJson(&b, v.Value, ctx, c)
-			if err != nil {
-				yield(FileOutput{}, wrapManifestationErr(err))
-				return
-			}
-			b.WriteByte('\n')
-
-			// Clone string due to string arena being reset in defer
-			kClone := strings.Clone(ctx.State.Interner.Get(v.Key))
-
-			out := FileOutput{
-				Filename: kClone,
-				Content:  b.String(),
-			}
-
-			if !yield(out, nil) {
-				return // Caller broke early
-			}
-		}
-	}
-
-	return iterator, nil
+	return t.manifestMultiIter(file, formatJSON)
 }
 
+// YAML
 func (t *Evaluator) EvaluateYaml(file string) (string, error) {
+	return t.manifestSingle(file, formatYAML)
+}
+func (t *Evaluator) EvaluateYamlMulti(file string) (map[string]string, error) {
+	return t.manifestMulti(file, formatYAML)
+}
+func (t *Evaluator) EvaluateYamlMultiIter(file string) (iter.Seq2[FileOutput, error], error) {
+	return t.manifestMultiIter(file, formatYAML)
+}
+
+// String
+func (t *Evaluator) EvaluateString(file string) (string, error) {
+	return t.manifestSingle(file, formatString)
+}
+func (t *Evaluator) EvaluateStringMulti(file string) (map[string]string, error) {
+	return t.manifestMulti(file, formatString)
+}
+func (t *Evaluator) EvaluateStringMultiIter(file string) (iter.Seq2[FileOutput, error], error) {
+	return t.manifestMultiIter(file, formatString)
+}
+
+type manifestFormat uint8
+
+const (
+	formatJSON manifestFormat = iota
+	formatYAML
+	formatString
+)
+
+func formatValue(b *strings.Builder, val evaluator.Value, ctx evaluator.Context, fmtType manifestFormat) error {
+	switch fmtType {
+	case formatJSON:
+		return evaluator.ManifestJson(b, val, ctx, jsonManifestConfig)
+	case formatYAML:
+		return evaluator.ManifestYaml(b, val, ctx, yamlManifestConfig)
+	case formatString:
+		if !val.IsString() {
+			return evaluator.TypeErrorSpecific(evaluator.ValueTypeString, val.Type())
+		}
+		b.WriteString(val.String(ctx))
+		return nil
+	}
+	return nil
+}
+
+func (t *Evaluator) manifestSingle(file string, fmtType manifestFormat) (string, error) {
 	value, ctx, cleanup, err := t.evaluate(file)
 	defer cleanup()
 	if err != nil {
@@ -200,109 +180,64 @@ func (t *Evaluator) EvaluateYaml(file string) (string, error) {
 	var b strings.Builder
 	b.Grow(16 * 1024)
 
-	c := evaluator.YamlManifestConfig{
-		IndentArrayInObjects: true,
-		NaturalSort:          true,
-		FormatIntegers:       true,
-		UseBlockScalars:      true,
-		Modern:               true,
-	}
-
-	err = evaluator.ManifestYaml(&b, value, ctx, c)
-	if err != nil {
+	if err := formatValue(&b, value, ctx, fmtType); err != nil {
 		return "", wrapManifestationErr(err)
 	}
 
-	b.WriteByte('\n')
+	if !t.noNewline {
+		b.WriteByte('\n')
+	}
 
 	return b.String(), nil
 }
 
-func (t *Evaluator) EvaluateYamlMulti(file string) (map[string]string, error) {
-
-	root, ctx, cleanup, err := t.evaluateMulti(file)
-	defer cleanup()
-	if err != nil {
-		return nil, err
-	}
-
-	c := evaluator.YamlManifestConfig{
-		IndentArrayInObjects: true,
-		NaturalSort:          true,
-		FormatIntegers:       true,
-		UseBlockScalars:      true,
-		Modern:               true,
-	}
-
-	res := make(map[string]string, len(root))
-	for _, v := range root {
-
-		var b strings.Builder
-		b.Grow(16 * 1024)
-
-		err = evaluator.ManifestYaml(&b, v.Value, ctx, c)
-		if err != nil {
-			return nil, wrapManifestationErr(err)
-		}
-
-		b.WriteByte('\n')
-
-		// Clone string due to string arena being reset in defer
-		kClone := strings.Clone(ctx.State.Interner.Get(v.Key))
-
-		res[kClone] = b.String()
-	}
-
-	return res, nil
-}
-
-// The caller MUST range over the returned iterator to execute the manifestation and release
-// underlying evaluation resources back to the pool.
-func (t *Evaluator) EvaluateYamlMultiIter(file string) (iter.Seq2[FileOutput, error], error) {
-
+func (t *Evaluator) manifestMultiIter(file string, fmtType manifestFormat) (iter.Seq2[FileOutput, error], error) {
 	root, ctx, cleanup, err := t.evaluateMulti(file)
 	if err != nil {
 		cleanup()
 		return nil, err
 	}
 
-	c := evaluator.YamlManifestConfig{
-		IndentArrayInObjects: true,
-		NaturalSort:          true,
-		FormatIntegers:       true,
-		UseBlockScalars:      true,
-		Modern:               true,
-	}
-
 	iterator := func(yield func(FileOutput, error) bool) {
-		defer cleanup() // deferred until the caller finishes iterating
+		defer cleanup()
 
 		for _, v := range root {
 			var b strings.Builder
 			b.Grow(16 * 1024)
 
-			err := evaluator.ManifestYaml(&b, v.Value, ctx, c)
-			if err != nil {
+			if err := formatValue(&b, v.Value, ctx, fmtType); err != nil {
 				yield(FileOutput{}, wrapManifestationErr(err))
 				return
 			}
-			b.WriteByte('\n')
 
-			// Clone string due to string arena being reset in defer
-			kClone := strings.Clone(ctx.State.Interner.Get(v.Key))
-
-			out := FileOutput{
-				Filename: kClone,
-				Content:  b.String(),
+			if !t.noNewline {
+				b.WriteByte('\n')
 			}
 
-			if !yield(out, nil) {
+			kClone := strings.Clone(ctx.State.Interner.Get(v.Key))
+			if !yield(FileOutput{Filename: kClone, Content: b.String()}, nil) {
 				return
 			}
 		}
 	}
 
 	return iterator, nil
+}
+
+func (t *Evaluator) manifestMulti(file string, fmtType manifestFormat) (map[string]string, error) {
+	it, err := t.manifestMultiIter(file, fmtType)
+	if err != nil {
+		return nil, err
+	}
+
+	res := make(map[string]string)
+	for out, err := range it {
+		if err != nil {
+			return nil, err
+		}
+		res[out.Filename] = out.Content
+	}
+	return res, nil
 }
 
 type EvaluationEngine struct {
@@ -321,9 +256,9 @@ var enginePool = sync.Pool{
 
 func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, func(), error) {
 
-	node, err := t.astImporter.ResolveImport(file)
+	node, err := t.astImporter.ResolveImport(file, file)
 	if err != nil {
-		return evaluator.ValueNone, evaluator.Context{}, func() {}, err
+		return evaluator.ValueNone, evaluator.Context{}, func() {}, evaluator.MakeRuntimeError(fmt.Errorf("%w\n", err))
 	}
 
 	// f, err := os.Create("cpu.prof")
@@ -378,7 +313,34 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 	}
 
 	if value.IsFunction() {
-		res, err := value.FunctionExec(nil, ctx)
+		var tlaArgs []evaluator.NamedValue
+		tlaCount := len(t.tlaVars) + len(t.tlaCodes)
+
+		if tlaCount > 0 {
+			tlaArgs = make([]evaluator.NamedValue, 0, tlaCount)
+			for k, v := range t.tlaVars {
+				tlaArgs = append(tlaArgs, evaluator.NamedValue{
+					Key:   ctx.State.Interner.Intern(k),
+					Value: evaluator.MakeString(v, ctx),
+				})
+			}
+			for k, code := range t.tlaCodes {
+				codeNode, err := t.astImporter.ResolveSnippet("<tla:"+k+">", code)
+				if err != nil {
+					return evaluator.ValueNone, evaluator.Context{}, cleanup, err
+				}
+				val, err := evaluator.EvaluateNode(codeNode, scopeId, ctx)
+				if err != nil {
+					return evaluator.ValueNone, evaluator.Context{}, cleanup, err
+				}
+				tlaArgs = append(tlaArgs, evaluator.NamedValue{
+					Key:   ctx.State.Interner.Intern(k),
+					Value: val,
+				})
+			}
+		}
+
+		res, err := value.FunctionExec(tlaArgs, ctx)
 		if err != nil {
 			return evaluator.ValueNone, evaluator.Context{}, cleanup, err
 		}
@@ -408,6 +370,22 @@ func (t *Evaluator) evaluateMulti(file string) ([]evaluator.NamedValue, evaluato
 	}
 
 	return root, ctx, cleanup, nil
+}
+
+func manifestJSON(b *strings.Builder, val evaluator.Value, ctx evaluator.Context) error {
+	return evaluator.ManifestJson(b, val, ctx, jsonManifestConfig)
+}
+
+func manifestYAML(b *strings.Builder, val evaluator.Value, ctx evaluator.Context) error {
+	return evaluator.ManifestYaml(b, val, ctx, yamlManifestConfig)
+}
+
+func manifestString(b *strings.Builder, val evaluator.Value, ctx evaluator.Context) error {
+	if !val.IsString() {
+		return evaluator.TypeErrorSpecific(evaluator.ValueTypeString, val.Type())
+	}
+	b.WriteString(val.String(ctx))
+	return nil
 }
 
 func wrapEvaluationErr(err error) error {

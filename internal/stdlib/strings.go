@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 )
@@ -164,11 +165,15 @@ func std_codepoint(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 		return evaluator.ValueNone, err
 	}
 
-	if len(arg) != 1 {
-		return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("codepoint takes a string of length 1, got length %d", len(arg)))
+	r, size := utf8.DecodeRuneInString(arg)
+	if size != len(arg) || r == utf8.RuneError {
+		runeCount := utf8.RuneCountInString(arg)
+		return evaluator.ValueNone, evaluator.MakeRuntimeError(
+			fmt.Errorf("codepoint takes a string of length 1, got length %d", runeCount),
+		)
 	}
 
-	return evaluator.MakeNumber(float64(arg[0])), nil
+	return evaluator.MakeNumber(float64(r)), nil
 }
 
 func std_char(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -372,12 +377,18 @@ func std_splitLimit(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
+	if len(split) == 0 {
+		return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("std.splitLimit second parameter should have length 1 or greater, got 0"))
+	}
 
 	maxSplits, err := args[2].EvalInteger(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
+	if maxSplits < -1 {
+		return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("std.splitLimit third parameter should be -1 or non-negative, got %d", maxSplits))
+	}
 	var arr []string
 	if maxSplits < 0 {
 		arr = strings.Split(full, split)
@@ -404,12 +415,18 @@ func std_splitLimitR(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
+	if len(split) == 0 {
+		return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("std.splitLimitR second parameter should have length 1 or greater, got 0"))
+	}
 
 	maxSplits, err := args[2].EvalInteger(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
+	if maxSplits < -1 {
+		return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("std.splitLimitR third parameter should be -1 or non-negative, got %d", maxSplits))
+	}
 	if maxSplits < 0 {
 		arr := strings.Split(full, split)
 		res, arrVal := evaluator.MakeArraySized(len(arr), ctx)

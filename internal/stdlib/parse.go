@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 	"unsafe"
@@ -90,11 +91,17 @@ func std_parseYaml(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 
 		documents = append(documents, data)
 	}
+
 	if len(documents) == 0 {
+		if isYamlStream(yamlString) {
+			vals := arena.Alloc[evaluator.Value](ctx.State.Allocator, 1)
+			vals[0] = evaluator.MakeNull()
+			return evaluator.MakeArray(vals, ctx), nil
+		}
 		return evaluator.MakeNull(), nil
 	}
 
-	if len(documents) > 1 {
+	if len(documents) > 1 || isYamlStream(yamlString) {
 		return rawDataToValue(documents, ctx)
 	}
 	return rawDataToValue(documents[0], ctx)
@@ -203,14 +210,53 @@ func std_decodeUTF8(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 			return evaluator.ValueNone, err
 		}
 		if !v.IsNumber() {
-			return evaluator.ValueNone, fmt.Errorf("unexpected type in std.encodeUTF8 (arg 0) array: %s, expected number", v.Type().String())
+			return evaluator.ValueNone, evaluator.TypeErrorSpecific(evaluator.ValueTypeNumber, v.Type())
 		}
 		num := v.Number()
-		if num < 0 || num > 255 {
-			return evaluator.ValueNone, fmt.Errorf("Bytes must be integers in range [0, 255], got %.0f", v.Number())
+
+		if math.Floor(num) != num {
+			return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("Expected an integer, but got %g", num))
 		}
+
+		if num < 0 || num > 255 {
+			return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("Bytes must be integers in range [0, 255], got %.0f", num))
+		}
+
 		b.WriteByte(byte(num))
 	}
 
 	return evaluator.MakeString(b.String(), ctx), nil
+}
+
+func isYamlStream(s string) bool {
+	if len(s) >= 3 && s[0] == '-' && s[1] == '-' && s[2] == '-' {
+		if len(s) == 3 {
+			return true
+		}
+		c := s[3]
+		if c == ' ' || c == '\t' || c == '\r' || c == '\n' {
+			return true
+		}
+	}
+
+	for {
+		idx := strings.Index(s, "---")
+		if idx == -1 {
+			return false
+		}
+
+		// Must be at the start of a line (column 0)
+		if idx == 0 || s[idx-1] == '\n' {
+			end := idx + 3
+			if end == len(s) {
+				return true
+			}
+			c := s[end]
+			if c == ' ' || c == '\t' || c == '\r' || c == '\n' {
+				return true
+			}
+		}
+
+		s = s[idx+3:]
+	}
 }

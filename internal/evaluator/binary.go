@@ -98,6 +98,9 @@ func bopPlus(left, right Value, ctx Context) (Value, error) {
 
 	case ValueTypeNumber:
 		val := left.Number() + right.Number()
+		if math.IsInf(val, 0) {
+			return ValueNone, MakeRuntimeError(errors.New("Overflow"))
+		}
 		return MakeNumber(val), nil
 
 	case ValueTypeArray:
@@ -132,6 +135,9 @@ func handleNumberOp(left, right float64, op ast.BinaryOp) (val float64, err erro
 	case ast.BopMinus:
 		val = left - right
 	case ast.BopDiv:
+		if right == 0 {
+			return 0, MakeRuntimeError(errors.New("Division by zero."))
+		}
 		val = left / right
 	case ast.BopMult:
 		val = left * right
@@ -145,6 +151,12 @@ func handleNumberOp(left, right float64, op ast.BinaryOp) (val float64, err erro
 		val, err = builtinShiftL(left, right)
 	case ast.BopShiftR:
 		val, err = builtinShiftR(left, right)
+	}
+	if math.IsInf(val, 0) {
+		return 0, MakeRuntimeError(errors.New("Overflow"))
+	}
+	if math.IsNaN(val) {
+		return 0, MakeRuntimeError(errors.New("Not a number"))
 	}
 	return
 }

@@ -4,10 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"unsafe"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 	"github.com/elliot-gustafsson/jgosonnet/internal/utils"
+	"github.com/google/go-jsonnet/ast"
 )
 
 func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -20,12 +22,20 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 	n := len(inputArr)
 	allocator := ctx.State.Allocator
 
-	layers := arena.Alloc[*evaluator.Layer](allocator, n)
-	arena.MemclrSlice(layers)
+	layer := arena.Create[evaluator.Layer](allocator)
+	arena.Memclr(layer)
+	layer.Keys = arena.Alloc[uint32](allocator, n)
+	layer.Nodes = arena.Alloc[ast.Node](allocator, n)
+	arena.MemclrSlice(layer.Nodes)
+	layer.Meta = arena.Alloc[uint8](allocator, n)
+
+	scopes := arena.Alloc[uintptr](allocator, n)
+	layer.ParentScopePtr = uintptr(unsafe.Pointer(unsafe.SliceData(scopes))) | 1
 
 	var dt *utils.DescriptorTable
 	if n > evaluator.MaxLayerLinearKeys {
 		dt = utils.NewEmptyDescriptorTable(allocator, n)
+		layer.Index = dt
 	}
 
 	index := 0
@@ -42,40 +52,43 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 			return evaluator.ValueNone, evaluator.MakeRuntimeError(errors.New("Object comprehension can only have one layer"))
 		}
 
-		if len(l[0].Keys) == 0 {
+		innerLayer := l[0]
+		if len(innerLayer.Keys) == 0 {
 			continue
 		}
-		if len(l[0].Keys) != 1 {
+		if len(innerLayer.Keys) != 1 {
 			return evaluator.ValueNone, evaluator.MakeRuntimeError(errors.New("Object comprehension can only have one field"))
 		}
 
-		key := l[0].Keys[0]
-
+		key := innerLayer.Keys[0]
 		if dt != nil {
 			if dt.Append(key) == math.MaxUint32 {
 				return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("Duplicate field name: %q", ctx.State.Interner.Get(key)))
 			}
 		} else {
 			for j := 0; j < index; j++ {
-				if layers[j].Keys[0] == key {
+				if layer.Keys[j] == key {
 					return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("Duplicate field name: %q", ctx.State.Interner.Get(key)))
 				}
 			}
 		}
 
-		layers[index] = l[0]
+		layer.Keys[index] = key
+		layer.Nodes[index] = innerLayer.Nodes[0]
+		layer.Meta[index] = innerLayer.Meta[0]
+
+		scopes[index] = innerLayer.ParentScopePtr
 
 		index++
 	}
 
 	if index < n {
-		layers = layers[:index]
+		layer.Keys = layer.Keys[:index]
+		layer.Nodes = layer.Nodes[:index]
+		layer.Meta = layer.Meta[:index]
 	}
 
-	obj := arena.Create[evaluator.Object](allocator)
-	arena.Memclr(obj)
-	obj.Layers = layers
-
+	obj := evaluator.NewSingleLayerObject(allocator, layer)
 	return evaluator.MakeObjectValue(obj), nil
 }
 

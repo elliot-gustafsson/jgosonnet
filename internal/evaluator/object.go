@@ -81,6 +81,14 @@ func (l *Layer) unpackAsserts() []ast.Node {
 	return unsafe.Slice((*ast.Node)(ptr), length)
 }
 
+func (l *Layer) UnpackFieldScopes() []uintptr {
+	if l.ParentScopePtr&1 == 0 {
+		return nil
+	}
+	ptr := (*uintptr)(unsafe.Pointer(l.ParentScopePtr &^ 1))
+	return unsafe.Slice(ptr, len(l.Keys))
+}
+
 func NewSingleLayerObject(allocator *arena.Allocator, layer *Layer) *Object {
 	o := arena.Create[Object](allocator)
 	arena.Memclr(o)
@@ -96,7 +104,10 @@ const (
 	AssertStatusChecked   uint8 = 2
 )
 
-const FieldCacheInlineCount = 4
+const (
+	FieldCacheInlineCount = 4
+	FieldCacheUnevaled    = Value(1)
+)
 
 type FieldCache struct {
 	inlineKeys    [FieldCacheInlineCount]uint32
@@ -109,13 +120,19 @@ type FieldCache struct {
 func (c *FieldCache) Get(key uint32) (v Value, visible bool, ok bool) {
 	for i := range c.inlineCount {
 		if c.inlineKeys[i] == key {
-			// extract visibility from the bitmask
+			val := c.inlineVals[i]
+			if val == FieldCacheUnevaled {
+				return ValueNone, false, false
+			}
 			visible := (c.inlineVisible & (1 << i)) != 0
-			return c.inlineVals[i], visible, true
+			return val, visible, true
 		}
 	}
 	if c.fieldCache != nil {
 		if entry, meta, ok := c.fieldCache.GetEx(key); ok {
+			if entry == FieldCacheUnevaled {
+				return ValueNone, false, false
+			}
 			return entry, (meta == 1), true
 		}
 	}
@@ -154,6 +171,28 @@ func (c *FieldCache) Set(key uint32, val Value, visible bool, ctx Context) {
 		meta = 1
 	}
 	c.fieldCache.PutEx(allocator, key, val, meta)
+}
+
+func (c *FieldCache) Has(key uint32) (visible bool, exists bool, ok bool) {
+	for i := range c.inlineCount {
+		if c.inlineKeys[i] == key {
+			val := c.inlineVals[i]
+			if val == ValueNone {
+				return false, false, true
+			}
+			visible := (c.inlineVisible & (1 << i)) != 0
+			return visible, true, true
+		}
+	}
+	if c.fieldCache != nil {
+		if entry, meta, ok := c.fieldCache.GetEx(key); ok {
+			if entry == ValueNone {
+				return false, false, true
+			}
+			return (meta == 1), true, true
+		}
+	}
+	return false, false, false
 }
 
 type Object struct {
@@ -279,6 +318,66 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 	visible = currentVisibility != ast.ObjectFieldHidden
 
 	return res, visible, nil
+}
+
+func (t *Object) HasField(key uint32, includeHidden bool, ctx Context) bool {
+	if visible, exists, ok := t.Cache.Has(key); ok {
+		if !exists {
+			return false
+		}
+		return includeHidden || visible
+	}
+
+	var exists bool
+	var res_visibility ast.ObjectFieldHide
+
+	layers := t.GetLayers(ctx)
+	for layerOffset := len(layers) - 1; layerOffset >= 0; layerOffset-- {
+		layer := layers[layerOffset]
+		fieldIndex := layer.findField(key)
+		if fieldIndex == -1 {
+			continue
+		}
+
+		visibility, _, tombstone := EvalFieldMeta(layer.Meta[fieldIndex])
+		if tombstone {
+			layerOffset -= int(uint32(layer.Values[fieldIndex]))
+			continue
+		}
+
+		if visibility == ast.ObjectFieldInherit {
+			for j := layerOffset - 1; j >= 0; j-- {
+				l := layers[j]
+				fi := l.findField(key)
+				if fi == -1 {
+					continue
+				}
+				v, _, ts := EvalFieldMeta(l.Meta[fi])
+				if ts {
+					j -= int(uint32(l.Values[fi]))
+					continue
+				}
+				if v != ast.ObjectFieldInherit {
+					visibility = v
+					break
+				}
+			}
+		}
+
+		res_visibility = visibility
+		exists = true
+		break
+
+	}
+
+	if exists {
+		visible := res_visibility != ast.ObjectFieldHidden
+		t.Cache.Set(key, FieldCacheUnevaled, visible, ctx)
+		return includeHidden || visible
+	}
+
+	t.Cache.Set(key, ValueNone, false, ctx)
+	return false
 }
 
 func (t *Object) getScope(layerIndex int, layer *Layer, ctx Context) (uintptr, error) {
@@ -717,9 +816,16 @@ func getValue(obj *Object, layerId, fieldId int, ctx Context) (Value, error) {
 		evalCtx := ctx
 		evalCtx.SuperOffset = uint32(len(layers) - 1 - layerId)
 
-		scopeId, err := obj.getScope(layerId, l, evalCtx)
-		if err != nil {
-			return ValueNone, err
+		var scopeId uintptr
+		var err error
+
+		if s := l.UnpackFieldScopes(); s != nil {
+			scopeId = s[fieldId]
+		} else {
+			scopeId, err = obj.getScope(layerId, l, evalCtx)
+			if err != nil {
+				return ValueNone, err
+			}
 		}
 
 		val, err = EvaluateNode(n, scopeId, evalCtx)
@@ -760,7 +866,7 @@ func runAssertions(obj *Object, ctx Context) error {
 		}
 
 		for _, n := range asserts {
-			val, err := EvaluateNode(n, scopeId, ctx)
+			val, err := EvaluateNode(n, scopeId, evalCtx)
 			if err != nil {
 				return err
 			}

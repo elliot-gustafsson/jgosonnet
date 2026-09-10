@@ -52,8 +52,8 @@ func (i *Importer) ResolveSnippet(name, data string) (ast.Node, error) {
 	return i.astImporter.ResolveSnippet(name, data)
 }
 
-func (i *Importer) ResolveImport(filePath string) (ast.Node, error) {
-	return i.astImporter.ResolveImport(filePath)
+func (i *Importer) ResolveImport(filePath, diagnosticFilename string) (ast.Node, error) {
+	return i.astImporter.ResolveImport(filePath, diagnosticFilename)
 }
 
 func (t *AstImporter) ResolveSnippet(name, data string) (ast.Node, error) {
@@ -68,7 +68,7 @@ func (t *AstImporter) ResolveSnippet(name, data string) (ast.Node, error) {
 
 	importedNode, err := jsonnet.SnippetToAST(name, data)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve snippet %s, err: %w", name, err)
+		return nil, err
 	}
 
 	t.cacheMu.Lock()
@@ -85,7 +85,7 @@ func (t *AstImporter) ResolveSnippet(name, data string) (ast.Node, error) {
 	return importedNode, nil
 }
 
-func (t *AstImporter) ResolveImport(filePath string) (ast.Node, error) {
+func (t *AstImporter) ResolveImport(filePath, diagnosticFilename string) (ast.Node, error) {
 
 	t.cacheMu.RLock()
 	importedNode, exist := t.astCache[filePath]
@@ -105,9 +105,9 @@ func (t *AstImporter) ResolveImport(filePath string) (ast.Node, error) {
 
 	dataStr := unsafe.String(unsafe.SliceData(fileData), len(fileData))
 
-	importedNode, err = jsonnet.SnippetToAST(filePath, dataStr)
+	importedNode, err = jsonnet.SnippetToAST(diagnosticFilename, dataStr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve import %s, err: %w", filePath, err)
+		return nil, err
 	}
 
 	t.cacheMu.Lock()

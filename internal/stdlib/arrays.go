@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode/utf8"
 	"unsafe"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
@@ -41,6 +42,10 @@ func std_makeArray(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 	size, err := args[0].EvalInteger(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
+	}
+
+	if size < 0 {
+		return evaluator.MakeArray(nil, ctx), nil
 	}
 
 	funcVal, err := args[1].Eval(ctx)
@@ -288,10 +293,52 @@ func std_flatMap(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.
 		return evaluator.ValueNone, err
 	}
 
-	arr, err := args[1].EvalArray(ctx)
+	mapVal, err := args[1].Eval(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
+
+	if mapVal.IsString() {
+		mapString := mapVal.String(ctx)
+		if len(mapString) == 0 {
+			return mapVal, nil
+		}
+
+		initialCap := len(mapString)
+		ptr, buf := evaluator.AllocStringBuilder(ctx, initialCap)
+
+		var rBuf [utf8.UTFMax]byte
+		var mapFuncArgs [1]evaluator.NamedValue
+
+		for _, r := range mapString {
+			n := utf8.EncodeRune(rBuf[:], r)
+			mapFuncArgs[0].Value = evaluator.MakeStringFromBytes(rBuf[:n], ctx)
+
+			out, err := mapFunc.FunctionExec(mapFuncArgs[:], ctx)
+			if err != nil {
+				return evaluator.ValueNone, err
+			}
+
+			outStr, err := out.EvalString(ctx)
+			if err != nil {
+				return evaluator.ValueNone, err
+			}
+
+			buf = append(buf, outStr...)
+		}
+
+		if cap(buf) > initialCap {
+			return evaluator.MakeStringFromBytes(buf, ctx), nil
+		}
+
+		return evaluator.FinalizeStringBuilder(ptr, len(buf)), nil
+	}
+
+	if !mapVal.IsArray() {
+		return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("std.flatMap second param must be array / string, got %s", mapVal.Type().String()))
+	}
+
+	arr := mapVal.Array()
 
 	mapFuncArgs := arena.Alloc[evaluator.NamedValue](ctx.State.Allocator, 1)
 
@@ -369,7 +416,7 @@ func std_filterMap(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 
 func std_uniq(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
-	arr, err := args[0].EvalArray(ctx)
+	arr, err := evalSequence(args[0], ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -450,7 +497,7 @@ func std_uniq(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 
 func std_sort(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
-	arr, err := args[0].EvalArray(ctx)
+	arr, err := evalSequence(args[0], ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -677,16 +724,13 @@ func std_member(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 }
 
 func std_setMember(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 3 {
-		return evaluator.ValueNone, fmt.Errorf("unexpected number of args passed to std.setMember %d, expected 3", len(args))
-	}
 
 	member, err := args[0].Eval(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	arr, err := args[1].EvalArray(ctx)
+	arr, err := evalSequence(args[1], ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -786,18 +830,24 @@ func std_slice(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 		return evaluator.ValueNone, err
 	}
 
-	index, err := args[1].EvalNumber(ctx)
+	index, err := args[1].Eval(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	indexInt := int(index)
+
+	indexInt := 0
+	if index.IsNumber() {
+		indexInt = int(index.Number())
+	} else if !index.IsNull() {
+		return evaluator.ValueNone, evaluator.TypeErrorSpecific(evaluator.ValueTypeNumber, index.Type())
+	}
 
 	end, err := args[2].Eval(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 	if !end.IsNull() && !end.IsNumber() {
-		return evaluator.ValueNone, fmt.Errorf("unexpected type passed to std.slice (arg 2): %s, expected number", end.Type().String())
+		return evaluator.ValueNone, evaluator.TypeErrorSpecific(evaluator.ValueTypeNumber, end.Type())
 	}
 
 	step, err := args[3].Eval(ctx)
@@ -805,7 +855,7 @@ func std_slice(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 		return evaluator.ValueNone, err
 	}
 	if !step.IsNull() && !step.IsNumber() {
-		return evaluator.ValueNone, fmt.Errorf("unexpected type passed to std.slice (arg 3): %s, expected number", step.Type().String())
+		return evaluator.ValueNone, evaluator.TypeErrorSpecific(evaluator.ValueTypeNumber, step.Type())
 	}
 
 	if indexable.IsString() {
@@ -1175,24 +1225,15 @@ func std_repeat(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 }
 
 func std_setUnion(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 3 {
-		return evaluator.ValueNone, fmt.Errorf("unexpected number of args passed to std.setUnion %d, expected 3", len(args))
-	}
 
-	aVal, err := args[0].Eval(ctx)
+	aArr, err := evalSequence(args[0], ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	if !aVal.IsArray() {
-		return evaluator.ValueNone, fmt.Errorf("unexpected type passed to std.setUnion (arg 0): %s, expected array", aVal.Type().String())
-	}
 
-	bVal, err := args[1].Eval(ctx)
+	bArr, err := evalSequence(args[1], ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
-	}
-	if !bVal.IsArray() {
-		return evaluator.ValueNone, fmt.Errorf("unexpected type passed to std.setUnion (arg 1): %s, expected array", bVal.Type().String())
 	}
 
 	var keyF evaluator.Value
@@ -1204,9 +1245,6 @@ func std_setUnion(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator
 		}
 		funcArgs = arena.Alloc[evaluator.NamedValue](ctx.State.Allocator, 1)
 	}
-
-	aArr := aVal.Array()
-	bArr := bVal.Array()
 
 	i, j := 0, 0
 
@@ -1300,24 +1338,15 @@ func std_setUnion(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator
 }
 
 func std_setInter(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 3 {
-		return evaluator.ValueNone, fmt.Errorf("unexpected number of args passed to std.setInter %d, expected 3", len(args))
-	}
 
-	aVal, err := args[0].Eval(ctx)
+	aArr, err := evalSequence(args[0], ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	if !aVal.IsArray() {
-		return evaluator.ValueNone, fmt.Errorf("unexpected type passed to std.setInter (arg 0): %s, expected array", aVal.Type().String())
-	}
 
-	bVal, err := args[1].Eval(ctx)
+	bArr, err := evalSequence(args[1], ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
-	}
-	if !bVal.IsArray() {
-		return evaluator.ValueNone, fmt.Errorf("unexpected type passed to std.setInter (arg 1): %s, expected array", bVal.Type().String())
 	}
 
 	var keyF evaluator.Value
@@ -1329,9 +1358,6 @@ func std_setInter(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator
 		}
 		funcArgs = arena.Alloc[evaluator.NamedValue](ctx.State.Allocator, 1)
 	}
-
-	aArr := aVal.Array()
-	bArr := bVal.Array()
 
 	i, j := 0, 0
 
@@ -1399,16 +1425,13 @@ func std_setInter(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator
 }
 
 func std_setDiff(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	if len(args) != 3 {
-		return evaluator.ValueNone, fmt.Errorf("unexpected number of args passed to std.setDiff %d, expected 3", len(args))
-	}
 
-	aArr, err := args[0].EvalArray(ctx)
+	aArr, err := evalSequence(args[0], ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	bArr, err := args[1].EvalArray(ctx)
+	bArr, err := evalSequence(args[1], ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -1805,13 +1828,16 @@ func sliceArr[T any](arr []T, start, end, step int) ([]T, error) {
 
 	arrLen := len(arr)
 
-	if start > arrLen {
-		return []T{}, nil
+	if start < 0 {
+		start = max(arrLen+start, 0)
+	} else if start > arrLen {
+		start = arrLen
 	}
 
-	end = min(end, len(arr))
 	if end < 0 {
-		end = max(len(arr)+end, 0)
+		end = max(arrLen+end, 0)
+	} else if end > arrLen {
+		end = arrLen
 	}
 
 	capacity := max((end-start+step-1)/step, 0)
@@ -1821,4 +1847,45 @@ func sliceArr[T any](arr []T, start, end, step int) ([]T, error) {
 		res = append(res, arr[i])
 	}
 	return res, nil
+}
+
+// TODO: think abt this, for the string path it allocates an extra slice and strings
+func evalSequence(arg evaluator.NamedValue, ctx evaluator.Context) ([]evaluator.Value, error) {
+	val, err := arg.Eval(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if val.IsArray() {
+		return val.Array(), nil
+	}
+	if val.IsString() {
+		return stringToValueSlice(val.String(ctx), ctx), nil
+	}
+	return nil, evaluator.TypeErrorSpecific(evaluator.ValueTypeArray, val.Type())
+}
+
+//go:noinline
+func stringToValueSlice(s string, ctx evaluator.Context) []evaluator.Value {
+	n := utf8.RuneCountInString(s)
+	if n == 0 {
+		return nil
+	}
+
+	vals := arena.Alloc[evaluator.Value](ctx.State.Allocator, n)
+
+	if len(s) == n {
+		for i := range n {
+			vals[i] = evaluator.MakeString(s[i:i+1], ctx)
+		}
+		return vals
+	}
+
+	idx := 0
+	var buf [utf8.UTFMax]byte
+	for _, r := range s {
+		rlen := utf8.EncodeRune(buf[:], r)
+		vals[idx] = evaluator.MakeStringFromBytes(buf[:rlen], ctx)
+		idx++
+	}
+	return vals
 }
