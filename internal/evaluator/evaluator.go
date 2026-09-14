@@ -152,6 +152,8 @@ func evaluateNodeLazy(n ast.Node, scopePtr uintptr, ctx Context) (Value, error) 
 		return NewThunk(ThunkTypeImport, unsafe.Pointer(node), scopePtr, ctx), nil
 	case *ast.ImportStr:
 		return NewThunk(ThunkTypeImportStr, unsafe.Pointer(node), scopePtr, ctx), nil
+	case *ast.ImportBin:
+		return NewThunk(ThunkTypeImportBin, unsafe.Pointer(node), scopePtr, ctx), nil
 	case *ast.SuperIndex:
 		return NewThunk(ThunkTypeSuperIndex, unsafe.Pointer(node), scopePtr, ctx), nil
 	case *ast.InSuper:
@@ -206,6 +208,8 @@ func evaluateNode(n ast.Node, scopePtr uintptr, ctx Context) (Value, error) {
 		return handleImport(node, ctx)
 	case *ast.ImportStr:
 		return handleImportStr(node, ctx)
+	case *ast.ImportBin:
+		return handleImportBin(node, ctx)
 	case *ast.Self:
 		// if !ctx.Self.IsObject() {
 		// 	return ValueNone, MakeRuntimeError(fmt.Errorf("self not initialized"))
@@ -763,34 +767,57 @@ func handleImport(node *ast.Import, ctx Context) (Value, error) {
 }
 
 func handleImportStr(node *ast.ImportStr, ctx Context) (Value, error) {
-	// TODO: make string cache
-	// importer := ctx.Environment.Importer
-
-	// TODO: take full path here?
 	filePath := string(node.File.Value)
 
-	// currentFileDir := filepath.Dir(node.NodeBase.LocRange.FileName)
+	dirs := []string{""}
+	if !filepath.IsAbs(filePath) {
+		dirs = []string{filepath.Dir(node.NodeBase.LocRange.FileName)}
+		dirs = append(dirs, ctx.State.Environment.Importer.JPaths...)
+	}
 
-	// fp := filepath.Join(currentFileDir, filePath)
-	fp := filePath
-	// fmt.Println(currentFileDir)
-
-	// val := importer.Get(fp)
-	// if !val.IsNone() {
-	// 	return val, nil
-	// }
-
-	fileData, err := os.ReadFile(fp)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return ValueNone, err
+	var fileData []byte
+	var err error
+	for _, dir := range dirs {
+		fp := filepath.Join(dir, filePath)
+		fileData, err = os.ReadFile(fp)
+		if err == nil {
+			break
 		}
-		return ValueNone, fmt.Errorf("failed importing file: %s, err: %w", fp, err)
+	}
+	if err != nil {
+		return ValueNone, err
 	}
 
 	res := unsafe.String(unsafe.SliceData(fileData), len(fileData))
-
-	// importer.Set(fp, res)
-
 	return MakeString(res, ctx), nil
+}
+
+func handleImportBin(node *ast.ImportBin, ctx Context) (Value, error) {
+	filePath := string(node.File.Value)
+
+	dirs := []string{""}
+	if !filepath.IsAbs(filePath) {
+		dirs = []string{filepath.Dir(node.NodeBase.LocRange.FileName)}
+		dirs = append(dirs, ctx.State.Environment.Importer.JPaths...)
+	}
+
+	var fileData []byte
+	var err error
+	for _, dir := range dirs {
+		fp := filepath.Join(dir, filePath)
+		fileData, err = os.ReadFile(fp)
+		if err == nil {
+			break
+		}
+	}
+	if err != nil {
+		return ValueNone, err
+	}
+
+	vals := arena.Alloc[Value](ctx.State.Allocator, len(fileData))
+	for i, b := range fileData {
+		vals[i] = MakeNumber(float64(b))
+	}
+
+	return MakeArray(vals, ctx), nil
 }

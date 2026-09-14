@@ -32,6 +32,7 @@ const (
 	ThunkTypeUnary
 	ThunkTypeImport
 	ThunkTypeImportStr
+	ThunkTypeImportBin
 	ThunkTypeSuperIndex
 	ThunkTypeInSuper
 	ThunkTypeError
@@ -120,6 +121,9 @@ func (t *Thunk) Eval(baseCtx Context) (value Value, err error) {
 	case ThunkTypeImportStr:
 		node := (*ast.ImportStr)(nodePtr)
 		value, err = handleImportStr(node, ctx)
+	case ThunkTypeImportBin:
+		node := (*ast.ImportBin)(nodePtr)
+		value, err = handleImportBin(node, ctx)
 	case ThunkTypeSuperIndex:
 		node := (*ast.SuperIndex)(nodePtr)
 		value, err = handleSuperIndex(node, scopeId, ctx)
