@@ -647,7 +647,7 @@ func Test_go_jsonnet_assert_failed_custom(t *testing.T) {
 func Test_go_jsonnet_bad_function_call(t *testing.T) {
 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/bad_function_call.jsonnet")
 	// Expected file: resources/go-jsonnet/testdata/bad_function_call.golden
-	expected := `arg (0) with no default arg had no value passed
+	expected := `RUNTIME ERROR: Missing argument: x
 	testdata/bad_function_call.jsonnet:1:1-18	$
 	During evaluation`
 	extVars := map[string]string(nil)
@@ -664,7 +664,7 @@ func Test_go_jsonnet_bad_function_call(t *testing.T) {
 
 func Test_go_jsonnet_bad_function_call2(t *testing.T) {
 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/bad_function_call2.jsonnet")
-	expected := `unexpected amount of args passed to function
+	expected := `RUNTIME ERROR: function expected 1 positional argument(s), but got 2
 	testdata/bad_function_call2.jsonnet:1:1-22	$
 	During evaluation`
 	extVars := map[string]string(nil)
@@ -681,7 +681,7 @@ func Test_go_jsonnet_bad_function_call2(t *testing.T) {
 
 func Test_go_jsonnet_bad_function_call_and_error(t *testing.T) {
 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/bad_function_call_and_error.jsonnet")
-	expected := `unexpected amount of args passed to function
+	expected := `RUNTIME ERROR: function expected 1 positional argument(s), but got 2
 	testdata/bad_function_call_and_error.jsonnet:1:1-38	$
 	During evaluation`
 	extVars := map[string]string(nil)
@@ -2013,15 +2013,20 @@ func Test_go_jsonnet_builtinManifestJsonEx(t *testing.T) {
 	})
 }
 
-// TODO: Causes an infinite loop, fix this.
-// func Test_go_jsonnet_builtinManifestJsonEx_cyclic(t *testing.T) {
-// 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/builtinManifestJsonEx_cyclic.jsonnet")
-// 	// Expected file: resources/go-jsonnet/testdata/builtinManifestJsonEx_cyclic.golden
-// 	expected := `RUNTIME ERROR: max manifest depth exceeded, possible infinite recursion`
-// 	extVars := map[string]string(nil)
-// 	extCodes := map[string]string(nil)
-// 	testNegative(t, "testdata/builtinManifestJsonEx_cyclic.jsonnet", snippet, expected, extVars, extCodes)
-// }
+func Test_go_jsonnet_builtinManifestJsonEx_cyclic(t *testing.T) {
+	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/builtinManifestJsonEx_cyclic.jsonnet")
+	// Expected file: resources/go-jsonnet/testdata/builtinManifestJsonEx_cyclic.golden
+	expected := `RUNTIME ERROR: max manifest depth exceeded, possible infinite recursion
+	testdata/builtinManifestJsonEx_cyclic.jsonnet:1:1-32	$
+	During evaluation`
+	runTest(t, TestConfig{
+		WorkDir:     "resources/go-jsonnet",
+		File:        "testdata/builtinManifestJsonEx_cyclic.jsonnet",
+		Snippet:     snippet,
+		ExpectedErr: expected,
+		MaxStack:    500,
+	})
+}
 
 func Test_go_jsonnet_builtinMaxArray(t *testing.T) {
 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/builtinMaxArray.jsonnet")
@@ -3284,15 +3289,20 @@ func Test_go_jsonnet_builtin_manifestTomlEx_array(t *testing.T) {
 	})
 }
 
-// TODO: Causes an infinite loop, fix this.
-// func Test_go_jsonnet_builtin_manifestTomlEx_cyclic(t *testing.T) {
-// 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/builtin_manifestTomlEx_cyclic.jsonnet")
-// 	// Expected file: resources/go-jsonnet/testdata/builtin_manifestTomlEx_cyclic.golden
-// 	expected := `RUNTIME ERROR: max manifest depth exceeded, possible infinite recursion`
-// 	extVars := map[string]string(nil)
-// 	extCodes := map[string]string(nil)
-// 	testNegative(t, "testdata/builtin_manifestTomlEx_cyclic.jsonnet", snippet, expected, extVars, extCodes)
-// }
+func Test_go_jsonnet_builtin_manifestTomlEx_cyclic(t *testing.T) {
+	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/builtin_manifestTomlEx_cyclic.jsonnet")
+	// Expected file: resources/go-jsonnet/testdata/builtin_manifestTomlEx_cyclic.golden
+	expected := `RUNTIME ERROR: max manifest depth exceeded, possible infinite recursion
+	testdata/builtin_manifestTomlEx_cyclic.jsonnet:1:1-37	$
+	During evaluation`
+	runTest(t, TestConfig{
+		WorkDir:     "resources/go-jsonnet",
+		File:        "testdata/builtin_manifestTomlEx_cyclic.jsonnet",
+		Snippet:     snippet,
+		ExpectedErr: expected,
+		MaxStack:    500,
+	})
+}
 
 func Test_go_jsonnet_builtin_manifestTomlEx_null(t *testing.T) {
 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/builtin_manifestTomlEx_null.jsonnet")
@@ -3326,15 +3336,20 @@ func Test_go_jsonnet_builtin_manifestYamlDoc(t *testing.T) {
 	})
 }
 
-// TODO: Causes an infinite loop, fix this.
-// func Test_go_jsonnet_builtin_manifestYamlDoc_cyclic(t *testing.T) {
-// 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/builtin_manifestYamlDoc_cyclic.jsonnet")
-// 	// Expected file: resources/go-jsonnet/testdata/builtin_manifestYamlDoc_cyclic.golden
-// 	expected := `RUNTIME ERROR: max manifest depth exceeded, possible infinite recursion`
-// 	extVars := map[string]string(nil)
-// 	extCodes := map[string]string(nil)
-// 	testNegative(t, "testdata/builtin_manifestYamlDoc_cyclic.jsonnet", snippet, expected, extVars, extCodes)
-// }
+func Test_go_jsonnet_builtin_manifestYamlDoc_cyclic(t *testing.T) {
+	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/builtin_manifestYamlDoc_cyclic.jsonnet")
+	// Expected file: resources/go-jsonnet/testdata/builtin_manifestYamlDoc_cyclic.golden
+	expected := `RUNTIME ERROR: max manifest depth exceeded, possible infinite recursion
+	testdata/builtin_manifestYamlDoc_cyclic.jsonnet:1:1-28	$
+	During evaluation`
+	runTest(t, TestConfig{
+		WorkDir:     "resources/go-jsonnet",
+		File:        "testdata/builtin_manifestYamlDoc_cyclic.jsonnet",
+		Snippet:     snippet,
+		ExpectedErr: expected,
+		MaxStack:    500,
+	})
+}
 
 func Test_go_jsonnet_builtin_member_array(t *testing.T) {
 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/builtin_member_array.jsonnet")
@@ -4584,7 +4599,7 @@ func Test_go_jsonnet_function_plus_string(t *testing.T) {
 func Test_go_jsonnet_function_too_many_params(t *testing.T) {
 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/function_too_many_params.jsonnet")
 	// Expected file: resources/go-jsonnet/testdata/function_too_many_params.golden
-	expected := "arg (0) with no default arg had no value passed	During evaluation"
+	expected := `RUNTIME ERROR: Missing argument: x	During evaluation`
 	extVars := map[string]string(nil)
 	extCodes := map[string]string(nil)
 	runTest(t, TestConfig{
@@ -6848,40 +6863,32 @@ func Test_go_jsonnet_optional_args10(t *testing.T) {
 
 func Test_go_jsonnet_optional_args11(t *testing.T) {
 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/optional_args11.jsonnet")
-	expected := `arg (1) with no default arg had no value passed
+	expected := `RUNTIME ERROR: Argument x already provided
 	testdata/optional_args11.jsonnet:1:1-30	$
 	During evaluation`
-	extVars := map[string]string(nil)
-	extCodes := map[string]string(nil)
 	runTest(t, TestConfig{
 		WorkDir:     "resources/go-jsonnet",
 		File:        "testdata/optional_args11.jsonnet",
 		Snippet:     snippet,
 		ExpectedErr: expected,
-		ExtVars:     extVars,
-		ExtCodes:    extCodes,
 	})
 }
 
 func Test_go_jsonnet_optional_args12(t *testing.T) {
 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/optional_args12.jsonnet")
 	expected := mustReadFile(t, "resources/go-jsonnet/testdata/optional_args12.golden")
-	extVars := map[string]string(nil)
-	extCodes := map[string]string(nil)
 	runTest(t, TestConfig{
 		WorkDir:  "resources/go-jsonnet",
 		File:     "testdata/optional_args12.jsonnet",
 		Snippet:  snippet,
 		Expected: expected,
-		ExtVars:  extVars,
-		ExtCodes: extCodes,
 	})
 }
 
 func Test_go_jsonnet_optional_args13(t *testing.T) {
 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/optional_args13.jsonnet")
 	// Expected file: resources/go-jsonnet/testdata/optional_args13.golden
-	expected := `arg (1) with no default arg had no value passed
+	expected := `RUNTIME ERROR: Missing argument: y
 	testdata/optional_args13.jsonnet:1:1-26	$
 	During evaluation`
 	extVars := map[string]string(nil)
@@ -7121,19 +7128,23 @@ func Test_go_jsonnet_optional_args7(t *testing.T) {
 	})
 }
 
-// TODO: Look att this negative test, fix expected output.
-// func Test_go_jsonnet_optional_args8(t *testing.T) {
-// 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/optional_args8.jsonnet")
-// 	// Expected file: resources/go-jsonnet/testdata/optional_args8.golden
-// 	expected := `RUNTIME ERROR: function has no parameter y`
-// 	extVars := map[string]string(nil)
-// 	extCodes := map[string]string(nil)
-// 	testNegative(t, "testdata/optional_args8.jsonnet", snippet, expected, extVars, extCodes)
-// }
+func Test_go_jsonnet_optional_args8(t *testing.T) {
+	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/optional_args8.jsonnet")
+	// Expected file: resources/go-jsonnet/testdata/optional_args8.golden
+	expected := `RUNTIME ERROR: function has no parameter y
+	testdata/optional_args8.jsonnet:2:1-10	$
+	During evaluation`
+	runTest(t, TestConfig{
+		WorkDir:     "resources/go-jsonnet",
+		File:        "testdata/optional_args8.jsonnet",
+		Snippet:     snippet,
+		ExpectedErr: expected,
+	})
+}
 
 func Test_go_jsonnet_optional_args9(t *testing.T) {
 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/optional_args9.jsonnet")
-	expected := `unexpected amount of args passed to function
+	expected := `RUNTIME ERROR: Argument x already provided
 	testdata/optional_args9.jsonnet:1:1-26	$
 	During evaluation`
 	extVars := map[string]string(nil)
@@ -8507,15 +8518,19 @@ func Test_go_jsonnet_std_filter3(t *testing.T) {
 	})
 }
 
-// TODO: Look att this negative test, fix expected output.
-// func Test_go_jsonnet_std_filter4(t *testing.T) {
-// 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/std.filter4.jsonnet")
-// 	// Expected file: resources/go-jsonnet/testdata/std.filter4.golden
-// 	expected := `RUNTIME ERROR: Unexpected type number, expected function`
-// 	extVars := map[string]string(nil)
-// 	extCodes := map[string]string(nil)
-// 	testNegative(t, "testdata/std.filter4.jsonnet", snippet, expected, extVars, extCodes)
-// }
+func Test_go_jsonnet_std_filter4(t *testing.T) {
+	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/std.filter4.jsonnet")
+	// Expected file: resources/go-jsonnet/testdata/std.filter4.golden
+	expected := `RUNTIME ERROR: Unexpected type number, expected function
+	testdata/std.filter4.jsonnet:1:1-19	$
+	During evaluation`
+	runTest(t, TestConfig{
+		WorkDir:     "resources/go-jsonnet",
+		File:        "testdata/std.filter4.jsonnet",
+		Snippet:     snippet,
+		ExpectedErr: expected,
+	})
+}
 
 func Test_go_jsonnet_std_filter5(t *testing.T) {
 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/std.filter5.jsonnet")
@@ -9124,15 +9139,18 @@ func Test_go_jsonnet_std_makeArray_recursive(t *testing.T) {
 	})
 }
 
-// TODO: Look att this negative test, fix expected output.
-// func Test_go_jsonnet_std_makeArray_recursive_evalutation_order_matters(t *testing.T) {
-// 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/std.makeArray_recursive_evalutation_order_matters.jsonnet")
-// 	// Expected file: resources/go-jsonnet/testdata/std.makeArray_recursive_evalutation_order_matters.golden
-// 	expected := `RUNTIME ERROR: max stack frames exceeded.`
-// 	extVars := map[string]string(nil)
-// 	extCodes := map[string]string(nil)
-// 	testNegative(t, "testdata/std.makeArray_recursive_evalutation_order_matters.jsonnet", snippet, expected, extVars, extCodes)
-// }
+func Test_go_jsonnet_std_makeArray_recursive_evalutation_order_matters(t *testing.T) {
+	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/std.makeArray_recursive_evalutation_order_matters.jsonnet")
+	// Expected file: resources/go-jsonnet/testdata/std.makeArray_recursive_evalutation_order_matters.golden
+	// expected := `RUNTIME ERROR: max stack frames exceeded.`
+	expected := "500\n"
+	runTest(t, TestConfig{
+		WorkDir:  "resources/go-jsonnet",
+		File:     "testdata/std.makeArray_recursive_evalutation_order_matters.jsonnet",
+		Snippet:  snippet,
+		Expected: expected,
+	})
+}
 
 func Test_go_jsonnet_std_manifestYamlDoc_error(t *testing.T) {
 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/std.manifestYamlDoc_error.jsonnet")
@@ -9726,15 +9744,19 @@ func Test_go_jsonnet_std_primitiveEquals12(t *testing.T) {
 	})
 }
 
-// TODO: Look att this negative test, fix expected output.
-// func Test_go_jsonnet_std_primitiveEquals13(t *testing.T) {
-// 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/std.primitiveEquals13.jsonnet")
-// 	// Expected file: resources/go-jsonnet/testdata/std.primitiveEquals13.golden
-// 	expected := `RUNTIME ERROR: primitiveEquals operates on primitive types, got array`
-// 	extVars := map[string]string(nil)
-// 	extCodes := map[string]string(nil)
-// 	testNegative(t, "testdata/std.primitiveEquals13.jsonnet", snippet, expected, extVars, extCodes)
-// }
+func Test_go_jsonnet_std_primitiveEquals13(t *testing.T) {
+	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/std.primitiveEquals13.jsonnet")
+	// Expected file: resources/go-jsonnet/testdata/std.primitiveEquals13.golden
+	expected := `RUNTIME ERROR: primitiveEquals operates on primitive types, got array
+	testdata/std.primitiveEquals13.jsonnet:1:1-28	$
+	During evaluation`
+	runTest(t, TestConfig{
+		WorkDir:     "resources/go-jsonnet",
+		File:        "testdata/std.primitiveEquals13.jsonnet",
+		Snippet:     snippet,
+		ExpectedErr: expected,
+	})
+}
 
 func Test_go_jsonnet_std_primitiveEquals14(t *testing.T) {
 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/std.primitiveEquals14.jsonnet")
@@ -9916,19 +9938,23 @@ func Test_go_jsonnet_std_primitiveEquals5(t *testing.T) {
 	})
 }
 
-// TODO: Look att this negative test, fix expected output.
-// func Test_go_jsonnet_std_primitiveEquals6(t *testing.T) {
-// 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/std.primitiveEquals6.jsonnet")
-// 	// Expected file: resources/go-jsonnet/testdata/std.primitiveEquals6.golden
-// 	expected := `RUNTIME ERROR: primitiveEquals operates on primitive types, got object`
-// 	extVars := map[string]string(nil)
-// 	extCodes := map[string]string(nil)
-// 	testNegative(t, "testdata/std.primitiveEquals6.jsonnet", snippet, expected, extVars, extCodes)
-// }
+func Test_go_jsonnet_std_primitiveEquals6(t *testing.T) {
+	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/std.primitiveEquals6.jsonnet")
+	// Expected file: resources/go-jsonnet/testdata/std.primitiveEquals6.golden
+	expected := `RUNTIME ERROR: primitiveEquals operates on primitive types, got object
+	testdata/std.primitiveEquals6.jsonnet:1:1-28	$
+	During evaluation`
+	runTest(t, TestConfig{
+		WorkDir:     "resources/go-jsonnet",
+		File:        "testdata/std.primitiveEquals6.jsonnet",
+		Snippet:     snippet,
+		ExpectedErr: expected,
+	})
+}
 
 func Test_go_jsonnet_std_primitiveEquals7(t *testing.T) {
 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/std.primitiveEquals7.jsonnet")
-	expected := `comparing types function is not supported
+	expected := `RUNTIME ERROR: primitiveEquals operates on primitive types, got function
 	testdata/std.primitiveEquals7.jsonnet:1:1-50	$
 	During evaluation`
 	extVars := map[string]string(nil)
@@ -10311,15 +10337,19 @@ func Test_go_jsonnet_strReplace2(t *testing.T) {
 	})
 }
 
-// TODO: Look att this negative test, fix expected output.
-// func Test_go_jsonnet_strReplace3(t *testing.T) {
-// 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/strReplace3.jsonnet")
-// 	// Expected file: resources/go-jsonnet/testdata/strReplace3.golden
-// 	expected := `RUNTIME ERROR: 'from' string must not be zero length.`
-// 	extVars := map[string]string(nil)
-// 	extCodes := map[string]string(nil)
-// 	testNegative(t, "testdata/strReplace3.jsonnet", snippet, expected, extVars, extCodes)
-// }
+func Test_go_jsonnet_strReplace3(t *testing.T) {
+	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/strReplace3.jsonnet")
+	// Expected file: resources/go-jsonnet/testdata/strReplace3.golden
+	expected := `RUNTIME ERROR: 'from' string must not be zero length.
+	testdata/strReplace3.jsonnet:1:1-35	$
+	During evaluation`
+	runTest(t, TestConfig{
+		WorkDir:     "resources/go-jsonnet",
+		File:        "testdata/strReplace3.jsonnet",
+		Snippet:     snippet,
+		ExpectedErr: expected,
+	})
+}
 
 func Test_go_jsonnet_string(t *testing.T) {
 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/string.jsonnet")
@@ -10903,7 +10933,7 @@ func Test_go_jsonnet_tailstrict_operator3(t *testing.T) {
 
 func Test_go_jsonnet_too_many_arguments(t *testing.T) {
 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/too_many_arguments.jsonnet")
-	expected := `unexpected amount of args passed to function
+	expected := `RUNTIME ERROR: function expected 3 positional argument(s), but got 4
 	testdata/too_many_arguments.jsonnet:1:1-35	$
 	During evaluation`
 	extVars := map[string]string(nil)

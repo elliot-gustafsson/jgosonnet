@@ -5,10 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"log/slog"
-	"os"
 	"path/filepath"
-	"runtime"
-	"runtime/pprof"
 	"testing"
 	"time"
 
@@ -119,80 +116,4 @@ func GetChange(old, new time.Duration) float64 {
 	baseline := float64(old)
 
 	return (diff / baseline)
-}
-
-func BenchmarkEvaluatorLoop(b *testing.B) {
-	b.ReportAllocs()
-
-	runtime.GOMAXPROCS(1)
-
-	// originalGC := debug.SetGCPercent(-1)
-	// defer debug.SetGCPercent(originalGC)
-
-	slog.SetLogLoggerLevel(slog.LevelDebug)
-
-	// cwd, err := os.Getwd()
-	// if err != nil {
-	// 	b.Fatal(err.Error())
-	// }
-
-	// infraDir := filepath.Join(filepath.Dir(filepath.Dir(cwd)), "infra", "jsonnet", "proact")
-
-	infraDir := "/home/elliot.gustafsson@fnox.it/Projects/infra/jsonnet/proact"
-
-	err := os.Chdir(infraDir)
-	if err != nil {
-		b.Fatal(err.Error())
-	}
-
-	interpreter := jgosonnet.NewEvaluator()
-	interpreter.JPaths([]string{"vendor"})
-
-	// file := filepath.Join(infraDir, "sto3-prod001.jsonnet")
-	// file := "../benchmarks/resources/realistic_benchmark2.jsonnet"
-	file := "sto3-prod001.jsonnet"
-
-	_, err = interpreter.Evaluate(file)
-	if err != nil {
-		b.Fatal(err.Error())
-	}
-
-	cpuFile, err := os.Create("cpu.prof")
-	if err != nil {
-		b.Fatal(err.Error())
-	}
-	defer cpuFile.Close()
-	err = pprof.StartCPUProfile(cpuFile)
-	if err != nil {
-		b.Fatal(err.Error())
-	}
-	defer pprof.StopCPUProfile()
-
-	memFile, err := os.Create("mem.prof")
-	if err != nil {
-		b.Fatalf("could not create memory profile: %v", err)
-	}
-	defer memFile.Close()
-
-	// jgosonnetStart := time.Now()
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		_, err := interpreter.EvaluateYaml(file)
-		if err != nil {
-			b.Fatal(err.Error())
-		}
-	}
-
-	// jgosonnetDur := time.Since(jgosonnetStart)
-
-	runtime.GC()
-	err = pprof.WriteHeapProfile(memFile)
-	if err != nil {
-		b.Fatalf("could not write memory profile: %v", err)
-	}
-
-	// println()
-	// println("jgosonnet:", jgosonnetDur.String())
-
 }

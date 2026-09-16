@@ -401,15 +401,22 @@ func Test_jsonnet_error_array_large_index(t *testing.T) {
 	})
 }
 
-// TODO: Causes an infinite loop, fix this.
-// func Test_jsonnet_error_array_recursive_manifest(t *testing.T) {
-// 	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.array_recursive_manifest.jsonnet")
-// 	// Expected file: resources/jsonnet-cpp/test_suite/error.array_recursive_manifest.jsonnet.golden
-// 	expected := `RUNTIME ERROR: max stack frames exceeded.`
-// 	extVars := map[string]string{"var1": "test"}
-// 	extCodes := map[string]string{"var2": `{"x": 1, "y": 2}`}
-// 	testNegative(t, "error.array_recursive_manifest.jsonnet", snippet, expected, extVars, extCodes)
-// }
+func Test_jsonnet_error_array_recursive_manifest(t *testing.T) {
+	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.array_recursive_manifest.jsonnet")
+	// Expected file: resources/jsonnet-cpp/test_suite/error.array_recursive_manifest.jsonnet.golden
+	expected := `RUNTIME ERROR: max manifest depth exceeded, possible infinite recursion	During manifestation`
+	extVars := map[string]string{"var1": "test"}
+	extCodes := map[string]string{"var2": `{"x": 1, "y": 2}`}
+	runTest(t, TestConfig{
+		WorkDir:     "resources/jsonnet-cpp/test_suite",
+		File:        "error.array_recursive_manifest.jsonnet",
+		Snippet:     snippet,
+		ExpectedErr: expected,
+		ExtVars:     extVars,
+		ExtCodes:    extCodes,
+		MaxStack:    500,
+	})
+}
 
 func Test_jsonnet_error_assert_fail1(t *testing.T) {
 	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.assert.fail1.jsonnet")
@@ -688,24 +695,17 @@ func Test_jsonnet_error_format_too_few_values(t *testing.T) {
 	})
 }
 
-// TODO: Look att this negative test, fix expected output.
-// func Test_jsonnet_error_function_duplicate_arg(t *testing.T) {
-// 	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.function_duplicate_arg.jsonnet")
-// 	// Expected file: resources/jsonnet-cpp/test_suite/error.function_duplicate_arg.jsonnet.golden
-// 	expected := `RUNTIME ERROR: binding parameter a second time: x`
-// 	extVars := map[string]string{"var1": "test"}
-// 	extCodes := map[string]string{"var2": `{"x": 1, "y": 2}`}
-// 	testNegative(t, "error.function_duplicate_arg.jsonnet", snippet, expected, extVars, extCodes)
-// }
-
-func Test_jsonnet_error_function_duplicate_param(t *testing.T) {
-	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.function_duplicate_param.jsonnet")
-	expected := `arg (0) with no default arg had no value passed	During evaluation`
+func Test_jsonnet_error_function_duplicate_arg(t *testing.T) {
+	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.function_duplicate_arg.jsonnet")
+	// Expected file: resources/jsonnet-cpp/test_suite/error.function_duplicate_arg.jsonnet.golden
+	expected := `RUNTIME ERROR: Argument x already provided
+	error.function_duplicate_arg.jsonnet:17:1-29	$
+	During evaluation`
 	extVars := map[string]string{"var1": "test"}
 	extCodes := map[string]string{"var2": `{"x": 1, "y": 2}`}
 	runTest(t, TestConfig{
 		WorkDir:     "resources/jsonnet-cpp/test_suite",
-		File:        "error.function_duplicate_param.jsonnet",
+		File:        "error.function_duplicate_arg.jsonnet",
 		Snippet:     snippet,
 		ExpectedErr: expected,
 		ExtVars:     extVars,
@@ -713,20 +713,45 @@ func Test_jsonnet_error_function_duplicate_param(t *testing.T) {
 	})
 }
 
-// TODO: Look att this negative test, fix expected output.
-// func Test_jsonnet_error_function_infinite_default(t *testing.T) {
-// 	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.function_infinite_default.jsonnet")
-// 	// Expected file: resources/jsonnet-cpp/test_suite/error.function_infinite_default.jsonnet.golden
-// 	expected := `RUNTIME ERROR: max stack frames exceeded.`
+// Note: This is valid in go-jsonnet, so this behaviour is skipped
+// func Test_jsonnet_error_function_duplicate_param(t *testing.T) {
+// 	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.function_duplicate_param.jsonnet")
+// 	expected := `arg (0) with no default arg had no value passed	During evaluation`
 // 	extVars := map[string]string{"var1": "test"}
 // 	extCodes := map[string]string{"var2": `{"x": 1, "y": 2}`}
-// 	testNegative(t, "error.function_infinite_default.jsonnet", snippet, expected, extVars, extCodes)
+// 	runTest(t, TestConfig{
+// 		WorkDir:     "resources/jsonnet-cpp/test_suite",
+// 		File:        "error.function_duplicate_param.jsonnet",
+// 		Snippet:     snippet,
+// 		ExpectedErr: expected,
+// 		ExtVars:     extVars,
+// 		ExtCodes:    extCodes,
+// 	})
 // }
+
+func Test_jsonnet_error_function_infinite_default(t *testing.T) {
+	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.function_infinite_default.jsonnet")
+	// Expected file: resources/jsonnet-cpp/test_suite/error.function_infinite_default.jsonnet.golden
+	expected := `RUNTIME ERROR: infinite loop detected
+	error.function_infinite_default.jsonnet:17:20-21	function <anonymous>
+	During evaluation`
+	extVars := map[string]string{"var1": "test"}
+	extCodes := map[string]string{"var2": `{"x": 1, "y": 2}`}
+
+	runTest(t, TestConfig{
+		WorkDir:     "resources/jsonnet-cpp/test_suite",
+		File:        "error.function_infinite_default.jsonnet",
+		Snippet:     snippet,
+		ExpectedErr: expected,
+		ExtVars:     extVars,
+		ExtCodes:    extCodes,
+	})
+}
 
 func Test_jsonnet_error_function_no_default_arg(t *testing.T) {
 	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.function_no_default_arg.jsonnet")
 	// Expected file: resources/jsonnet-cpp/test_suite/error.function_no_default_arg.jsonnet.golden
-	expected := "arg (1) with no default arg had no value passed	During evaluation"
+	expected := `RUNTIME ERROR: Missing argument: b	During evaluation`
 	extVars := map[string]string{"var1": "test"}
 	extCodes := map[string]string{"var2": `{"x": 1, "y": 2}`}
 	runTest(t, TestConfig{
@@ -742,7 +767,7 @@ func Test_jsonnet_error_function_no_default_arg(t *testing.T) {
 func Test_jsonnet_error_function_too_many_args(t *testing.T) {
 	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.function_too_many_args.jsonnet")
 	// Expected file: resources/jsonnet-cpp/test_suite/error.function_too_many_args.jsonnet.golden
-	expected := `unexpected amount of args passed to function
+	expected := `RUNTIME ERROR: function expected 2 positional argument(s), but got 3
 	error.function_too_many_args.jsonnet:19:1-13	$
 	During evaluation`
 	extVars := map[string]string{"var1": "test"}
@@ -918,15 +943,23 @@ func Test_jsonnet_error_integer_left_shift(t *testing.T) {
 	})
 }
 
-// TODO: Look att this negative test, fix expected output.
-// func Test_jsonnet_error_integer_left_shift_runtime(t *testing.T) {
-// 	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.integer_left_shift_runtime.jsonnet")
-// 	// Expected file: resources/jsonnet-cpp/test_suite/error.integer_left_shift_runtime.jsonnet.golden
-// 	expected := `RUNTIME ERROR: numeric value outside safe integer range for bitwise operation.`
-// 	extVars := map[string]string{"var1": "test"}
-// 	extCodes := map[string]string{"var2": `{"x": 1, "y": 2}`}
-// 	testNegative(t, "error.integer_left_shift_runtime.jsonnet", snippet, expected, extVars, extCodes)
-// }
+// Note: This works in go-jsonnet, so that behaviour also works here
+func Test_jsonnet_error_integer_left_shift_runtime(t *testing.T) {
+	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.integer_left_shift_runtime.jsonnet")
+	// Expected file: resources/jsonnet-cpp/test_suite/error.integer_left_shift_runtime.jsonnet.golden
+	// expected := `RUNTIME ERROR: numeric value outside safe integer range for bitwise operation.`
+	expected := "-9223372036854775808\n"
+	extVars := map[string]string{"var1": "test"}
+	extCodes := map[string]string{"var2": `{"x": 1, "y": 2}`}
+	runTest(t, TestConfig{
+		WorkDir:  "resources/jsonnet-cpp/test_suite",
+		File:     "error.integer_left_shift_runtime.jsonnet",
+		Snippet:  snippet,
+		Expected: expected,
+		ExtVars:  extVars,
+		ExtCodes: extCodes,
+	})
+}
 
 func Test_jsonnet_error_invariant_avoid_output_change(t *testing.T) {
 	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.invariant.avoid_output_change.jsonnet")
@@ -1120,25 +1153,39 @@ func Test_jsonnet_error_obj_assert_fail2(t *testing.T) {
 	})
 }
 
-// TODO: Look att this negative test, fix expected output.
-// func Test_jsonnet_error_obj_recursive(t *testing.T) {
-// 	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.obj_recursive.jsonnet")
-// 	// Expected file: resources/jsonnet-cpp/test_suite/error.obj_recursive.jsonnet.golden
-// 	expected := `RUNTIME ERROR: max stack frames exceeded.`
-// 	extVars := map[string]string{"var1": "test"}
-// 	extCodes := map[string]string{"var2": `{"x": 1, "y": 2}`}
-// 	testNegative(t, "error.obj_recursive.jsonnet", snippet, expected, extVars, extCodes)
-// }
+func Test_jsonnet_error_obj_recursive(t *testing.T) {
+	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.obj_recursive.jsonnet")
+	// Expected file: resources/jsonnet-cpp/test_suite/error.obj_recursive.jsonnet.golden
+	expected := `RUNTIME ERROR: max manifest depth exceeded, possible infinite recursion	During manifestation`
+	extVars := map[string]string{"var1": "test"}
+	extCodes := map[string]string{"var2": `{"x": 1, "y": 2}`}
+	runTest(t, TestConfig{
+		WorkDir:     "resources/jsonnet-cpp/test_suite",
+		File:        "error.obj_recursive.jsonnet",
+		Snippet:     snippet,
+		ExpectedErr: expected,
+		ExtVars:     extVars,
+		ExtCodes:    extCodes,
+		MaxStack:    500,
+	})
+}
 
-// TODO: Causes an infinite loop, fix this.
-// func Test_jsonnet_error_obj_recursive_manifest(t *testing.T) {
-// 	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.obj_recursive_manifest.jsonnet")
-// 	// Expected file: resources/jsonnet-cpp/test_suite/error.obj_recursive_manifest.jsonnet.golden
-// 	expected := `RUNTIME ERROR: max stack frames exceeded.`
-// 	extVars := map[string]string{"var1": "test"}
-// 	extCodes := map[string]string{"var2": `{"x": 1, "y": 2}`}
-// 	testNegative(t, "error.obj_recursive_manifest.jsonnet", snippet, expected, extVars, extCodes)
-// }
+func Test_jsonnet_error_obj_recursive_manifest(t *testing.T) {
+	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.obj_recursive_manifest.jsonnet")
+	// Expected file: resources/jsonnet-cpp/test_suite/error.obj_recursive_manifest.jsonnet.golden
+	expected := `RUNTIME ERROR: max manifest depth exceeded, possible infinite recursion	During manifestation`
+	extVars := map[string]string{"var1": "test"}
+	extCodes := map[string]string{"var2": `{"x": 1, "y": 2}`}
+	runTest(t, TestConfig{
+		WorkDir:     "resources/jsonnet-cpp/test_suite",
+		File:        "error.obj_recursive_manifest.jsonnet",
+		Snippet:     snippet,
+		ExpectedErr: expected,
+		ExtVars:     extVars,
+		ExtCodes:    extCodes,
+		MaxStack:    500,
+	})
+}
 
 func Test_jsonnet_error_overflow(t *testing.T) {
 	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.overflow.jsonnet")
@@ -1209,15 +1256,22 @@ func Test_jsonnet_error_parse_array_comma(t *testing.T) {
 	})
 }
 
-// TODO: Look att this negative test, fix expected output.
-// func Test_jsonnet_error_parse_deep_array_nesting(t *testing.T) {
-// 	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.parse.deep_array_nesting.jsonnet")
-// 	// Expected file: resources/jsonnet-cpp/test_suite/error.parse.deep_array_nesting.jsonnet.golden
-// 	expected := `RUNTIME ERROR: Exceeded maximum parse depth limit.`
-// 	extVars := map[string]string{"var1": "test"}
-// 	extCodes := map[string]string{"var2": `{"x": 1, "y": 2}`}
-// 	testNegative(t, "error.parse.deep_array_nesting.jsonnet", snippet, expected, extVars, extCodes)
-// }
+func Test_jsonnet_error_parse_deep_array_nesting(t *testing.T) {
+	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.parse.deep_array_nesting.jsonnet")
+	// Expected file: resources/jsonnet-cpp/test_suite/error.parse.deep_array_nesting.jsonnet.golden
+	expected := `RUNTIME ERROR: max manifest depth exceeded, possible infinite recursion	During manifestation`
+	extVars := map[string]string{"var1": "test"}
+	extCodes := map[string]string{"var2": `{"x": 1, "y": 2}`}
+	runTest(t, TestConfig{
+		WorkDir:     "resources/jsonnet-cpp/test_suite",
+		File:        "error.parse.deep_array_nesting.jsonnet",
+		Snippet:     snippet,
+		ExpectedErr: expected,
+		ExtVars:     extVars,
+		ExtCodes:    extCodes,
+		MaxStack:    500,
+	})
+}
 
 func Test_jsonnet_error_parse_function_arg_positional_after_named(t *testing.T) {
 	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.parse.function_arg_positional_after_named.jsonnet")
@@ -1600,35 +1654,62 @@ func Test_jsonnet_error_parse_json(t *testing.T) {
 	})
 }
 
-// TODO: Look att this negative test, fix expected output.
-// func Test_jsonnet_error_recursive_function_nonterm(t *testing.T) {
-// 	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.recursive_function_nonterm.jsonnet")
-// 	// Expected file: resources/jsonnet-cpp/test_suite/error.recursive_function_nonterm.jsonnet.golden
-// 	expected := `RUNTIME ERROR: max stack frames exceeded.`
-// 	extVars := map[string]string{"var1": "test"}
-// 	extCodes := map[string]string{"var2": `{"x": 1, "y": 2}`}
-// 	testNegative(t, "error.recursive_function_nonterm.jsonnet", snippet, expected, extVars, extCodes)
-// }
+func Test_jsonnet_error_recursive_function_nonterm(t *testing.T) {
+	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.recursive_function_nonterm.jsonnet")
+	// Expected file: resources/jsonnet-cpp/test_suite/error.recursive_function_nonterm.jsonnet.golden
+	expected := `RUNTIME ERROR: max stack frames exceeded.
+	error.recursive_function_nonterm.jsonnet:18:3-7	function <f>
+	error.recursive_function_nonterm.jsonnet:20:1-6	$
+	During evaluation`
+	extVars := map[string]string{"var1": "test"}
+	extCodes := map[string]string{"var2": `{"x": 1, "y": 2}`}
 
-// TODO: Look att this negative test, fix expected output.
-// func Test_jsonnet_error_recursive_import(t *testing.T) {
-// 	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.recursive_import.jsonnet")
-// 	// Expected file: resources/jsonnet-cpp/test_suite/error.recursive_import.jsonnet.golden
-// 	expected := `RUNTIME ERROR: max stack frames exceeded.`
-// 	extVars := map[string]string{"var1": "test"}
-// 	extCodes := map[string]string{"var2": `{"x": 1, "y": 2}`}
-// 	testNegative(t, "error.recursive_import.jsonnet", snippet, expected, extVars, extCodes)
-// }
+	runTest(t, TestConfig{
+		WorkDir:     "resources/jsonnet-cpp/test_suite",
+		File:        "error.recursive_function_nonterm.jsonnet",
+		Snippet:     snippet,
+		ExpectedErr: expected,
+		ExtVars:     extVars,
+		ExtCodes:    extCodes,
+	})
+}
 
-// TODO: Look att this negative test, fix expected output.
-// func Test_jsonnet_error_recursive_object_non_term(t *testing.T) {
-// 	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.recursive_object_non_term.jsonnet")
-// 	// Expected file: resources/jsonnet-cpp/test_suite/error.recursive_object_non_term.jsonnet.golden
-// 	expected := `RUNTIME ERROR: max stack frames exceeded.`
-// 	extVars := map[string]string{"var1": "test"}
-// 	extCodes := map[string]string{"var2": `{"x": 1, "y": 2}`}
-// 	testNegative(t, "error.recursive_object_non_term.jsonnet", snippet, expected, extVars, extCodes)
-// }
+func Test_jsonnet_error_recursive_import(t *testing.T) {
+	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.recursive_import.jsonnet")
+	// Expected file: resources/jsonnet-cpp/test_suite/error.recursive_import.jsonnet.golden
+	expected := `RUNTIME ERROR: infinite loop detected
+	error.recursive_import.jsonnet:17:15-54	$
+	During evaluation`
+	extVars := map[string]string{"var1": "test"}
+	extCodes := map[string]string{"var2": `{"x": 1, "y": 2}`}
+	runTest(t, TestConfig{
+		WorkDir:     "resources/jsonnet-cpp/test_suite",
+		File:        "error.recursive_import.jsonnet",
+		Snippet:     snippet,
+		ExpectedErr: expected,
+		ExtVars:     extVars,
+		ExtCodes:    extCodes,
+	})
+}
+
+func Test_jsonnet_error_recursive_object_non_term(t *testing.T) {
+	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.recursive_object_non_term.jsonnet")
+	// Expected file: resources/jsonnet-cpp/test_suite/error.recursive_object_non_term.jsonnet.golden
+	expected := `RUNTIME ERROR: max stack frames exceeded.
+	error.recursive_object_non_term.jsonnet:20:9-15	object <Fib>
+	error.recursive_object_non_term.jsonnet:23:1-18	$
+	During evaluation`
+	extVars := map[string]string{"var1": "test"}
+	extCodes := map[string]string{"var2": `{"x": 1, "y": 2}`}
+	runTest(t, TestConfig{
+		WorkDir:     "resources/jsonnet-cpp/test_suite",
+		File:        "error.recursive_object_non_term.jsonnet",
+		Snippet:     snippet,
+		ExpectedErr: expected,
+		ExtVars:     extVars,
+		ExtCodes:    extCodes,
+	})
+}
 
 func Test_jsonnet_error_sanity(t *testing.T) {
 	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.sanity.jsonnet")
@@ -1824,7 +1905,7 @@ func Test_jsonnet_error_std_parseYaml1(t *testing.T) {
 func Test_jsonnet_error_top_level_func(t *testing.T) {
 	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.top_level_func.jsonnet")
 	// Expected file: resources/jsonnet-cpp/test_suite/error.top_level_func.jsonnet.golden
-	expected := "arg (0) with no default arg had no value passed	During evaluation"
+	expected := "RUNTIME ERROR: Missing argument: name	During evaluation"
 	extVars := map[string]string{"var1": "test"}
 	extCodes := map[string]string{"var2": `{"x": 1, "y": 2}`}
 	runTest(t, TestConfig{

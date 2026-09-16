@@ -262,6 +262,10 @@ func std_filter(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 		return evaluator.ValueNone, err
 	}
 
+	if !mapperFunc.IsFunction() {
+		return evaluator.ValueNone, evaluator.TypeErrorSpecific(evaluator.ValueTypeFunction, mapperFunc.Type())
+	}
+
 	mapperFuncInput := arena.Alloc[evaluator.NamedValue](ctx.State.Allocator, 1)
 
 	res := []evaluator.Value{}

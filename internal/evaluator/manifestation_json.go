@@ -29,6 +29,10 @@ func ManifestJson(b *strings.Builder, value Value, ctx Context, config *JsonMani
 }
 
 func manifestJson(value Value, ctx Context, b *strings.Builder, indentLevel int, config *JsonManifestConfig) error {
+	if ctx.Depth >= ctx.State.MaxStack {
+		return MakeRuntimeError(fmt.Errorf("max manifest depth exceeded, possible infinite recursion"))
+	}
+	ctx.Depth++
 
 	hasNewline := config.Newline != ""
 

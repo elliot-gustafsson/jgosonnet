@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"math"
 	"os"
 	"strings"
 	"sync"
@@ -32,6 +33,7 @@ var yamlManifestConfig = evaluator.YamlManifestConfig{
 type Evaluator struct {
 	jpaths   []string
 	traceOut io.Writer
+	maxStack uint32
 
 	astImporter *evaluator.AstImporter
 	extVars     map[string]string
@@ -56,6 +58,7 @@ type FileOutput struct {
 func NewEvaluator() *Evaluator {
 	return &Evaluator{
 		traceOut:    os.Stderr,
+		maxStack:    10000,
 		astImporter: evaluator.NewAstImporter(),
 		extVars:     make(map[string]string),
 		extCodes:    make(map[string]string),
@@ -71,6 +74,13 @@ func (t *Evaluator) JPaths(paths []string) {
 
 func (t *Evaluator) TraceOut(w io.Writer) {
 	t.traceOut = w
+}
+
+func (t *Evaluator) MaxStack(limit uint32) {
+	if limit == 0 {
+		limit = math.MaxUint32
+	}
+	t.maxStack = limit
 }
 
 func (t *Evaluator) ExtVar(key, val string) {
@@ -279,6 +289,7 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 
 	ctx := evaluator.Context{
 		State: &evaluator.ContextState{
+			MaxStack:  t.maxStack,
 			Interner:  engine.Interner,
 			Allocator: engine.Allocator,
 		},
@@ -347,6 +358,10 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 		return res, ctx, cleanup, nil
 	}
 
+	if len(t.tlaVars) > 0 || len(t.tlaCodes) > 0 {
+		return evaluator.ValueNone, evaluator.Context{}, cleanup, evaluator.MakeRuntimeError(fmt.Errorf("top-level value was a %s, was expecting a function", value.Type().String()))
+	}
+
 	return value, ctx, cleanup, nil
 }
 
@@ -370,22 +385,6 @@ func (t *Evaluator) evaluateMulti(file string) ([]evaluator.NamedValue, evaluato
 	}
 
 	return root, ctx, cleanup, nil
-}
-
-func manifestJSON(b *strings.Builder, val evaluator.Value, ctx evaluator.Context) error {
-	return evaluator.ManifestJson(b, val, ctx, jsonManifestConfig)
-}
-
-func manifestYAML(b *strings.Builder, val evaluator.Value, ctx evaluator.Context) error {
-	return evaluator.ManifestYaml(b, val, ctx, yamlManifestConfig)
-}
-
-func manifestString(b *strings.Builder, val evaluator.Value, ctx evaluator.Context) error {
-	if !val.IsString() {
-		return evaluator.TypeErrorSpecific(evaluator.ValueTypeString, val.Type())
-	}
-	b.WriteString(val.String(ctx))
-	return nil
 }
 
 func wrapEvaluationErr(err error) error {

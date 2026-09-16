@@ -1,6 +1,7 @@
 package evaluator
 
 import (
+	"errors"
 	"fmt"
 	"unsafe"
 
@@ -73,6 +74,9 @@ func (t *Thunk) Eval(baseCtx Context) (value Value, err error) {
 	if t.EvalState == -1 {
 		return t.Value, nil
 	}
+	if t.EvalState == -2 {
+		return ValueNone, MakeRuntimeError(errors.New("infinite loop detected"))
+	}
 
 	nodeType, nodePtr := t.NodePtr.unbox()
 	scopeId := t.ScopePtr
@@ -80,6 +84,7 @@ func (t *Thunk) Eval(baseCtx Context) (value Value, err error) {
 	ctx := baseCtx
 	ctx.Self = t.Value
 	ctx.SuperOffset = uint32(t.EvalState)
+	t.EvalState = -2
 
 	switch nodeType {
 	default:
