@@ -726,6 +726,10 @@ func (t *FieldPlan) GetValue(obj *Object, ctx Context) (Value, error) {
 }
 
 func manifestObject(obj *Object, ctx Context) (map[string]any, error) {
+	if ctx.State.MaxStack > 0 && ctx.Depth >= ctx.State.MaxStack {
+		return nil, MakeRuntimeError(fmt.Errorf("max manifest depth exceeded, possible infinite recursion"))
+	}
+	ctx.Depth++
 
 	err := runAssertions(obj, ctx)
 	if err != nil {
@@ -815,6 +819,11 @@ func getValue(obj *Object, layerId, fieldId int, ctx Context) (Value, error) {
 
 		evalCtx := ctx
 		evalCtx.SuperOffset = uint32(len(layers) - 1 - layerId)
+
+		if evalCtx.State.MaxStack > 0 && evalCtx.Depth >= evalCtx.State.MaxStack {
+			return ValueNone, MakeRuntimeError(fmt.Errorf("max stack frames exceeded."))
+		}
+		evalCtx.Depth++
 
 		var scopeId uintptr
 		var err error

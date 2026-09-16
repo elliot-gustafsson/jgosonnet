@@ -70,6 +70,7 @@ type TestConfig struct {
 	IsMulti      bool
 	NoNewline    bool
 	StringOutput bool
+	MaxStack     uint32
 }
 
 func runTest(t *testing.T, cfg TestConfig) {
@@ -111,8 +112,10 @@ func runTest(t *testing.T, cfg TestConfig) {
 		}()
 
 		ev := jgosonnet.NewEvaluator()
-		// ev.JPaths([]string{absWorkdir, filepath.Join(absWorkdir, "testdata")})
 
+		if cfg.MaxStack > 0 {
+			ev.MaxStack(cfg.MaxStack)
+		}
 		if cfg.NoNewline {
 			ev.NoNewline(true)
 		}

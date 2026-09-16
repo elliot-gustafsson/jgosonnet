@@ -23,6 +23,11 @@ func ManifestYaml(b *strings.Builder, value Value, ctx Context, config YamlManif
 }
 
 func manifestYaml(value Value, ctx Context, buf *strings.Builder, indentLevel int, config YamlManifestConfig) error {
+	if ctx.State.MaxStack > 0 && ctx.Depth >= ctx.State.MaxStack {
+		return MakeRuntimeError(fmt.Errorf("max manifest depth exceeded, possible infinite recursion"))
+	}
+	ctx.Depth++
+
 	value, err := value.Eval(ctx)
 	if err != nil {
 		return err

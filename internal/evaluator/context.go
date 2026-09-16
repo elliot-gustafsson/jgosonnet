@@ -12,6 +12,7 @@ type ContextState struct {
 	Interner    *interner.Interner
 	Allocator   *arena.Allocator
 	Environment *Environment
+	MaxStack    uint32
 }
 
 type Context struct {
@@ -20,6 +21,8 @@ type Context struct {
 	Self Value // self
 
 	SuperOffset uint32
+
+	Depth uint32
 }
 
 type Scope struct {

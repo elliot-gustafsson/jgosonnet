@@ -21,6 +21,10 @@ func ManifestToml(b *strings.Builder, value Value, ctx Context, sindent string) 
 }
 
 func renderTomlTable(b *strings.Builder, obj *Object, ctx Context, sindent string, path []string, cindent string, initNewline bool) error {
+	if ctx.State.MaxStack > 0 && ctx.Depth >= ctx.State.MaxStack {
+		return MakeRuntimeError(fmt.Errorf("max manifest depth exceeded, possible infinite recursion"))
+	}
+	ctx.Depth++
 
 	fieldPlans := CompileObjectPlan(obj, ctx)
 
@@ -107,6 +111,11 @@ func renderTomlTable(b *strings.Builder, obj *Object, ctx Context, sindent strin
 }
 
 func writeTomlValue(b *strings.Builder, value Value, ctx Context, cindent, sindent string, inline bool) error {
+	if ctx.State.MaxStack > 0 && ctx.Depth >= ctx.State.MaxStack {
+		return MakeRuntimeError(fmt.Errorf("max manifest depth exceeded, possible infinite recursion"))
+	}
+	ctx.Depth++
+
 	value, err := value.Eval(ctx)
 	if err != nil {
 		return err

@@ -30,7 +30,7 @@ var functions = []struct {
 	{"toString", evaluator.NativeFunction{Func: std_toString, Params: []string{"a"}, OptStart: 1}},
 	{"length", evaluator.NativeFunction{Func: std_length, Params: []string{"x"}, OptStart: 1}},
 	{"mod", evaluator.NativeFunction{Func: std_mod, Params: []string{"a", "b"}, OptStart: 2}},
-	{"primitiveEquals", evaluator.NativeFunction{Func: std_primitiveEquals, Params: []string{"a", "b"}, OptStart: 2}},
+	{"primitiveEquals", evaluator.NativeFunction{Func: std_primitiveEquals, Params: []string{"x", "y"}, OptStart: 2}},
 
 	// --- Types ---
 	{"type", evaluator.NativeFunction{Func: std_type, Params: []string{"x"}, OptStart: 1}},
@@ -449,6 +449,13 @@ func std_primitiveEquals(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 
 	if a.Type() != b.Type() {
 		return evaluator.MakeBool(false), nil
+	}
+
+	if !a.IsLiteral() {
+		return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("primitiveEquals operates on primitive types, got %s", a.Type().String()))
+	}
+	if !b.IsLiteral() {
+		return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("primitiveEquals operates on primitive types, got %s", b.Type().String()))
 	}
 
 	res, err := a.Equal(b, ctx)
