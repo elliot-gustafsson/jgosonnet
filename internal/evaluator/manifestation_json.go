@@ -136,8 +136,22 @@ func manifestJson(value Value, ctx Context, b *strings.Builder, indentLevel int,
 		return nil
 	case ValueTypeObject:
 		obj := value.Object()
+		evalCtx := ctx
+		evalCtx.Self = value
+		err := runAssertions(obj, evalCtx)
+		if err != nil {
+			return err
+		}
 		plans := CompileObjectPlan(obj, ctx)
-		if len(plans) == 0 {
+
+		empty := true
+		for _, p := range plans {
+			if !p.IsHidden() {
+				empty = false
+				break
+			}
+		}
+		if empty {
 			if config.SpaceComma && !config.Python {
 				b.WriteString("{ }")
 				return nil

@@ -3,10 +3,13 @@ package evaluator
 import (
 	"errors"
 	"fmt"
+	"io"
+	"math/bits"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 	"unsafe"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
@@ -90,6 +93,7 @@ func CreateFileScope(filename string, baseStd Value, ctx Context) uintptr {
 	layer.Values[0] = MakeString(filename, ctx)
 
 	layer.Meta = arena.Alloc[uint8](allocator, 1)
+	layer.Meta[0] = 0
 
 	fileObj := NewSingleLayerObject(allocator, layer)
 
@@ -397,6 +401,15 @@ func handleApply(node *ast.Apply, scopePtr uintptr, ctx Context) (Value, error) 
 
 	res, err := val.FunctionExecEx(args, ctx, node.TailStrict)
 	if err != nil {
+		// Check for the trace signal
+		if traceSig, ok := err.(*TraceSignal); ok {
+			err := traceSig.Print(ctx.State.Environment.TraceOut, node)
+			if err != nil {
+				return ValueNone, err
+			}
+			// Resume normal execution with the return value
+			return traceSig.Rest, nil
+		}
 		return ValueNone, err
 	}
 	return res, nil
@@ -474,25 +487,30 @@ func handleUnary(node *ast.Unary, scopePtr uintptr, ctx Context) (Value, error) 
 
 	switch node.Op {
 	default:
-		return ValueNone, fmt.Errorf("unhandler unary type: %s", node.Op.String())
+		return ValueNone, fmt.Errorf("unhandled unary type: %s", node.Op.String())
 	case ast.UopNot:
 		if !unary.IsBool() {
-			return ValueNone, fmt.Errorf("unexpected unary type %s for op %s, expected boolean", unary.Type().String(), node.Op.String())
+			return ValueNone, TypeErrorSpecific(ValueTypeBool, unary.Type())
 		}
 		return MakeBool(!unary.Bool()), nil
 	case ast.UopMinus:
 		if !unary.IsNumber() {
-			return ValueNone, fmt.Errorf("unexpected unary type %s for op %s, expected number", unary.Type().String(), node.Op.String())
+			return ValueNone, TypeErrorSpecific(ValueTypeNumber, unary.Type())
 		}
 		res := -unary.Number()
 		return MakeNumber(res), nil
 	case ast.UopBitwiseNot:
 		if !unary.IsNumber() {
-			return ValueNone, fmt.Errorf("unexpected unary type %s for op %s, expected number", unary.Type().String(), node.Op.String())
+			return ValueNone, TypeErrorSpecific(ValueTypeNumber, unary.Type())
 		}
 		val32 := int64(unary.Number())
 		notVal32 := ^val32
 		return MakeNumber(float64(notVal32)), nil
+	case ast.UopPlus:
+		if !unary.IsNumber() {
+			return ValueNone, TypeErrorSpecific(ValueTypeNumber, unary.Type())
+		}
+		return unary, nil
 	}
 }
 
@@ -572,11 +590,13 @@ func handleIndex(node *ast.Index, scopePtr uintptr, ctx Context) (Value, error) 
 			return ValueNone, MakeRuntimeError(fmt.Errorf("unexpected index type for indexing string, expected number, got %s", index.Type().String()))
 		}
 		i := int(index.Number())
-		if len(target.String(ctx)) <= i {
-			return ValueNone, MakeRuntimeError(fmt.Errorf("index (%d) out of bounds, string length %d", i, len(target.Array())))
-		}
 		s := target.String(ctx)
-		return MakeString(string(s[i]), ctx), nil
+
+		runeBytes, err := indexStringRune(s, i)
+		if err != nil {
+			return ValueNone, err
+		}
+		return MakeString(runeBytes, ctx), nil
 	case ValueTypeObject:
 		if !index.IsString() {
 			return ValueNone, MakeRuntimeError(fmt.Errorf("unexpected index type for indexing object, expected string, got %s", index.Type().String()))
@@ -619,6 +639,69 @@ func handleIndex(node *ast.Index, scopePtr uintptr, ctx Context) (Value, error) 
 		return target.Array()[i], nil
 	}
 
+}
+
+const (
+	broadcastByte           = 0x0101010101010101
+	swarNonAsciiMask uint64 = utf8.RuneSelf * broadcastByte
+)
+
+func indexStringRune(s string, targetRuneIndex int) (string, error) {
+	if targetRuneIndex < 0 || len(s) == 0 {
+		return "", MakeRuntimeError(fmt.Errorf("Index %d out of bounds, not within [0, %d)", targetRuneIndex, utf8.RuneCountInString(s)))
+	}
+	n := len(s)
+	byteOffset := 0
+	currRuneIndex := 0
+	basePtr := unsafe.Pointer(unsafe.StringData(s))
+
+	for byteOffset+8 <= n {
+		w := *(*uint64)(unsafe.Add(basePtr, byteOffset))
+
+		// check if w includes any runes
+		if (w & swarNonAsciiMask) == 0 {
+			// all ascii bytes
+			if currRuneIndex+8 <= targetRuneIndex {
+				// 8 or more bytes left, continue to search
+				currRuneIndex += 8
+				byteOffset += 8
+				continue
+			}
+			offset := targetRuneIndex - currRuneIndex
+			return s[byteOffset+offset : byteOffset+offset+1], nil
+		}
+
+		// isolate continuation bytes, tests bit 7 == 1 and bit 6 == 0
+		cont := (w & swarNonAsciiMask) & ^((w << 1) & swarNonAsciiMask)
+		numRunes := 8 - bits.OnesCount64(cont)
+
+		if currRuneIndex+numRunes <= targetRuneIndex {
+			// check if the byte right across the boundary a continuation byte
+			if byteOffset+8 < n && (s[byteOffset+8]&0xC0) == 0x80 {
+				break
+			}
+			currRuneIndex += numRunes
+			byteOffset += 8
+			continue
+		}
+		break
+	}
+
+	// remainder loop for rest of string, always len < 8
+	for relOffset, r := range s[byteOffset:] {
+		if currRuneIndex == targetRuneIndex {
+			start := byteOffset + relOffset
+			if r == utf8.RuneError {
+				if _, size := utf8.DecodeRuneInString(s[start:]); size == 1 {
+					return "", MakeRuntimeError(errors.New("invalid UTF-8 sequence in string"))
+				}
+			}
+			return s[start : start+utf8.RuneLen(r)], nil
+		}
+		currRuneIndex++
+	}
+
+	return "", MakeRuntimeError(fmt.Errorf("Index %d out of bounds, not within [0, %d)", targetRuneIndex, currRuneIndex))
 }
 
 func handleSuperIndex(node *ast.SuperIndex, scopePtr uintptr, ctx Context) (Value, error) {
@@ -701,61 +784,69 @@ func handleError(node *ast.Error, scopePtr uintptr, ctx Context) (Value, error) 
 
 func handleImport(node *ast.Import, ctx Context) (Value, error) {
 
-	// TODO: optimize import loop below
-
-	file := node.File.Value
-
-	var importedNode ast.Node
-	var finalPath string
-
 	importer := ctx.State.Environment.Importer
 
-	dirs := []string{""}
-	if !filepath.IsAbs(file) {
-		dirs = []string{filepath.Dir(node.NodeBase.LocRange.FileName)}
-		dirs = append(dirs, importer.JPaths...)
+	dir := filepath.Dir(node.Loc().FileName)
+	importedPath := node.File.Value
+	if importedPath == "" {
+		return ValueNone, MakeRuntimeError(errors.New("couldn't open import \"\": the empty string is not a valid filename"))
 	}
 
-	var rangeErr error
-	for _, dir := range dirs {
-		fp, err := filepath.Abs(filepath.Join(dir, file))
-		if err != nil {
+	var absPath string
+	if filepath.IsAbs(importedPath) {
+		absPath = importedPath
+	} else {
+		absPath = filepath.Join(dir, importedPath)
+	}
+
+	v := importer.Get(absPath)
+	if !v.IsNone() {
+		return v, nil
+	}
+
+	finalPath := absPath
+
+	importedNode, err := importer.ResolveImport(absPath)
+	if err != nil {
+		if !os.IsNotExist(err) {
 			return ValueNone, MakeRuntimeError(err)
 		}
 
-		v := importer.Get(fp)
-		if !v.IsNone() {
-			return v, nil
+		if !filepath.IsAbs(importedPath) {
+			for i := len(importer.JPaths) - 1; i >= 0; i-- {
+				jpf := filepath.Join(importer.JPaths[i], importedPath)
+
+				v := importer.Get(jpf)
+				if !v.IsNone() {
+					return v, nil
+				}
+
+				importedNode, err = importer.ResolveImport(jpf)
+				if err != nil {
+					if os.IsNotExist(err) {
+						continue
+					}
+					return ValueNone, MakeRuntimeError(err)
+				}
+
+				if importedNode != nil {
+					finalPath = jpf
+					break
+				}
+			}
 		}
-
-		// TODO: check and mark fp loading to catch import loops
-
-		in, innerErr := importer.ResolveImport(fp)
-		if os.IsNotExist(innerErr) {
-			rangeErr = errors.Join(rangeErr, innerErr)
-			continue
-		}
-
-		if innerErr != nil {
-			return ValueNone, innerErr
-		}
-
-		importedNode = in
-		finalPath = fp
-		break
-
 	}
 
 	if importedNode == nil {
-		return ValueNone, errors.Join(errors.New("error resolving import"), rangeErr)
+		return ValueNone, MakeRuntimeError(fmt.Errorf("couldn't open import %#v: no match locally or in the Jsonnet library paths", importedPath))
 	}
 
-	importScope := CreateFileScope(file, importer.BaseStd, ctx)
+	importScope := CreateFileScope(finalPath, importer.BaseStd, ctx)
 
 	importCtx := ctx
 	importCtx.Self = ValueNone
 
-	v, err := evaluateNodeLazy(importedNode, importScope, importCtx)
+	v, err = evaluateNodeLazy(importedNode, importScope, importCtx)
 	if err != nil {
 		return ValueNone, err
 	}
@@ -767,57 +858,117 @@ func handleImport(node *ast.Import, ctx Context) (Value, error) {
 }
 
 func handleImportStr(node *ast.ImportStr, ctx Context) (Value, error) {
-	filePath := string(node.File.Value)
 
-	dirs := []string{""}
-	if !filepath.IsAbs(filePath) {
-		dirs = []string{filepath.Dir(node.NodeBase.LocRange.FileName)}
-		dirs = append(dirs, ctx.State.Environment.Importer.JPaths...)
-	}
-
-	var fileData []byte
-	var err error
-	for _, dir := range dirs {
-		fp := filepath.Join(dir, filePath)
-		fileData, err = os.ReadFile(fp)
-		if err == nil {
-			break
-		}
-	}
+	f, size, err := openImportFile(ctx.State.Environment.Importer, node.Loc().FileName, node.File.Value)
 	if err != nil {
 		return ValueNone, err
 	}
+	if size == 0 {
+		return MakeString("", ctx), nil
+	}
+	defer f.Close()
 
-	res := unsafe.String(unsafe.SliceData(fileData), len(fileData))
-	return MakeString(res, ctx), nil
+	ptr, buf := AllocStringBuilder(ctx, size)
+	buf = buf[:size]
+
+	n, err := io.ReadFull(f, buf)
+	if err != nil && err != io.EOF {
+		return ValueNone, MakeRuntimeError(err)
+	}
+
+	return FinalizeStringBuilder(ptr, n), nil
 }
 
 func handleImportBin(node *ast.ImportBin, ctx Context) (Value, error) {
-	filePath := string(node.File.Value)
 
-	dirs := []string{""}
-	if !filepath.IsAbs(filePath) {
-		dirs = []string{filepath.Dir(node.NodeBase.LocRange.FileName)}
-		dirs = append(dirs, ctx.State.Environment.Importer.JPaths...)
-	}
-
-	var fileData []byte
-	var err error
-	for _, dir := range dirs {
-		fp := filepath.Join(dir, filePath)
-		fileData, err = os.ReadFile(fp)
-		if err == nil {
-			break
-		}
-	}
+	f, size, err := openImportFile(ctx.State.Environment.Importer, node.Loc().FileName, node.File.Value)
 	if err != nil {
 		return ValueNone, err
 	}
+	if size == 0 {
+		return MakeArray(nil, ctx), nil
+	}
+	defer f.Close()
 
-	vals := arena.Alloc[Value](ctx.State.Allocator, len(fileData))
-	for i, b := range fileData {
-		vals[i] = MakeNumber(float64(b))
+	arr, arrVal := MakeArraySized(size, ctx)
+
+	var chunk [32 * 1024]byte
+	offset := 0
+	for offset < size {
+		n, err := f.Read(chunk[:])
+		for i := range n {
+			arr[offset+i] = MakeNumber(float64(chunk[i]))
+		}
+		offset += n
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return ValueNone, MakeRuntimeError(err)
+		}
 	}
 
-	return MakeArray(vals, ctx), nil
+	return arrVal, nil
+}
+
+func openImportFile(importer *Importer, importedFrom, importedPath string) (*os.File, int, error) {
+	if importedPath == "" {
+		return nil, 0, MakeRuntimeError(errors.New("couldn't open import \"\": the empty string is not a valid filename"))
+	}
+	dir := filepath.Dir(importedFrom)
+
+	var absPath string
+	if filepath.IsAbs(importedPath) {
+		absPath = importedPath
+	} else {
+		absPath = filepath.Join(dir, importedPath)
+	}
+
+	finalPath := absPath
+
+	fileInfo, err := os.Stat(absPath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, 0, MakeRuntimeError(err)
+		}
+
+		if !filepath.IsAbs(importedPath) {
+			for i := len(importer.JPaths) - 1; i >= 0; i-- {
+				jpf := filepath.Join(importer.JPaths[i], importedPath)
+
+				fileInfo, err = os.Stat(jpf)
+				if err != nil {
+					if os.IsNotExist(err) {
+						continue
+					}
+					return nil, 0, MakeRuntimeError(err)
+				}
+
+				if fileInfo != nil {
+					finalPath = jpf
+					break
+				}
+			}
+		}
+	}
+
+	if fileInfo == nil {
+		return nil, 0, MakeRuntimeError(fmt.Errorf("couldn't open import %#v: no match locally or in the Jsonnet library paths", importedPath))
+	}
+
+	if fileInfo.IsDir() {
+		return nil, 0, MakeRuntimeError(fmt.Errorf("read %s: is a directory", finalPath))
+	}
+
+	size := int(fileInfo.Size())
+	if size == 0 {
+		return nil, 0, nil
+	}
+
+	f, err := os.Open(finalPath)
+	if err != nil {
+		return nil, 0, MakeRuntimeError(err)
+	}
+
+	return f, size, nil
 }

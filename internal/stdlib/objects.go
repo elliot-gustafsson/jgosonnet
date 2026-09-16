@@ -154,24 +154,14 @@ var std_objectKeysValuesAll = liftObjectToValueErr(func(v evaluator.Value, ctx e
 
 var std_objectHas = liftObjectStringToValueErr(func(v evaluator.Value, s string, ctx evaluator.Context) (evaluator.Value, error) {
 	keyId := ctx.State.Interner.Intern(s)
-	subCtx := ctx
-	subCtx.Self = v
-	value, _, err := v.Object().GetField(keyId, subCtx)
-	if err != nil {
-		return evaluator.ValueNone, err
-	}
-	return evaluator.MakeBool(!value.IsNone()), nil
+	hasField := v.Object().HasField(keyId, false, ctx)
+	return evaluator.MakeBool(hasField), nil
 })
 
 var std_objectHasAll = liftObjectStringToValueErr(func(v evaluator.Value, s string, ctx evaluator.Context) (evaluator.Value, error) {
 	keyId := ctx.State.Interner.Intern(s)
-	subCtx := ctx
-	subCtx.Self = v
-	value, _, err := v.Object().GetField(keyId, subCtx)
-	if err != nil {
-		return evaluator.ValueNone, err
-	}
-	return evaluator.MakeBool(!value.IsNone()), nil
+	hasField := v.Object().HasField(keyId, true, ctx)
+	return evaluator.MakeBool(hasField), nil
 })
 
 func std_objectHasEx(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -195,18 +185,8 @@ func std_objectHasEx(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 
 	keyId := ctx.State.Interner.Intern(fname)
 
-	subCtx := ctx
-	subCtx.Self = objVal
-
-	value, visible, err := objVal.Object().GetField(keyId, subCtx)
-	if err != nil {
-		return evaluator.ValueNone, err
-	}
-	if value.IsNone() || (!visible && !hidden) {
-		return evaluator.MakeBool(false), nil
-	}
-
-	return evaluator.MakeBool(true), nil
+	hasField := objVal.Object().HasField(keyId, hidden, ctx)
+	return evaluator.MakeBool(hasField), nil
 }
 
 func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {

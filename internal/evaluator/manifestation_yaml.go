@@ -184,6 +184,12 @@ func manifestYaml(value Value, ctx Context, buf *strings.Builder, indentLevel in
 		return nil
 	case ValueTypeObject:
 		obj := value.Object()
+		evalCtx := ctx
+		evalCtx.Self = value
+		err := runAssertions(obj, evalCtx)
+		if err != nil {
+			return err
+		}
 		plans := CompileObjectPlanEx(obj, ctx, config.NaturalSort)
 		if len(plans) == 0 {
 			buf.WriteString("{}")

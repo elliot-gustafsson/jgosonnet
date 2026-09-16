@@ -98,6 +98,9 @@ func bopPlus(left, right Value, ctx Context) (Value, error) {
 
 	case ValueTypeNumber:
 		val := left.Number() + right.Number()
+		if math.IsInf(val, 0) {
+			return ValueNone, OverflowErr
+		}
 		return MakeNumber(val), nil
 
 	case ValueTypeArray:
@@ -132,6 +135,9 @@ func handleNumberOp(left, right float64, op ast.BinaryOp) (val float64, err erro
 	case ast.BopMinus:
 		val = left - right
 	case ast.BopDiv:
+		if right == 0 {
+			return 0, DivisionByZeroErr
+		}
 		val = left / right
 	case ast.BopMult:
 		val = left * right
@@ -146,6 +152,12 @@ func handleNumberOp(left, right float64, op ast.BinaryOp) (val float64, err erro
 	case ast.BopShiftR:
 		val, err = builtinShiftR(left, right)
 	}
+	if math.IsInf(val, 0) {
+		return 0, OverflowErr
+	}
+	if math.IsNaN(val) {
+		return 0, NanErr
+	}
 	return
 }
 
@@ -153,6 +165,10 @@ const (
 	maxSafeIntValue float64 = (1 << 53) - 1
 	minSafeIntValue float64 = -maxSafeIntValue
 )
+
+var DivisionByZeroErr = MakeRuntimeError(errors.New("Division by zero."))
+var OverflowErr = MakeRuntimeError(errors.New("Overflow"))
+var NanErr = MakeRuntimeError(errors.New("Not a number"))
 
 func liftBitwise(f func(int64, int64) int64, positiveRightArg bool) func(float64, float64) (float64, error) {
 	return func(left, right float64) (float64, error) {
@@ -170,10 +186,10 @@ func liftBitwise(f func(int64, int64) int64, positiveRightArg bool) func(float64
 		}
 		res := float64(f(int64(left), int64(right)))
 		if math.IsNaN(res) {
-			return 0, MakeRuntimeError(errors.New("Not a number"))
+			return 0, NanErr
 		}
 		if math.IsInf(res, 0) {
-			return 0, MakeRuntimeError(errors.New("Overflow"))
+			return 0, OverflowErr
 		}
 		return res, nil
 	}

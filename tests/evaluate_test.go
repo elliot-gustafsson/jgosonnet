@@ -3,7 +3,6 @@ package tests
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"log"
 	"log/slog"
 	"os"
@@ -25,34 +24,36 @@ func TestEvaluator(t *testing.T) {
 
 	interpreter := jgosonnet.NewEvaluator()
 
-	jgosonnetStart := time.Now()
+	// jgosonnetStart := time.Now()
 	stuff, err := interpreter.EvaluateJson(file)
-	jgosonnetDur := time.Since(jgosonnetStart)
+	// jgosonnetDur := time.Since(jgosonnetStart)
 	if err != nil {
 		t.Fatal(err.Error())
 	}
 
-	println()
-	println("jgosonnet:", jgosonnetDur.String())
+	// println()
+	// println("jgosonnet:", jgosonnetDur.String())
 
-	goJsonnetStart := time.Now()
+	// goJsonnetStart := time.Now()
 	og, err := GetExpected(file)
-	goJsonnetDur := time.Since(goJsonnetStart)
+	// goJsonnetDur := time.Since(goJsonnetStart)
 	if err != nil {
 		t.Fatal(err.Error())
 	}
 
-	println("go-jsonnet:", goJsonnetDur.String())
-	println()
-	println(jgosonnetDur.String(), "/", goJsonnetDur.String(), "~", fmt.Sprintf("%.2f", GetChange(jgosonnetDur, goJsonnetDur)), "times faster")
-	println()
+	// println("go-jsonnet:", goJsonnetDur.String())
+	// println()
+	// println(jgosonnetDur.String(), "/", goJsonnetDur.String(), "~", fmt.Sprintf("%.2f", GetChange(jgosonnetDur, goJsonnetDur)), "times faster")
+	// println()
 
 	assert.Equal(t, og, stuff)
 
-	println("expected")
-	println(og)
-	println("actual")
-	println(stuff)
+	if og != stuff {
+		println("expected")
+		println(og)
+		println("actual")
+		println(stuff)
+	}
 
 }
 
@@ -130,18 +131,26 @@ func BenchmarkEvaluatorLoop(b *testing.B) {
 
 	slog.SetLogLoggerLevel(slog.LevelDebug)
 
-	cwd, err := os.Getwd()
+	// cwd, err := os.Getwd()
+	// if err != nil {
+	// 	b.Fatal(err.Error())
+	// }
+
+	// infraDir := filepath.Join(filepath.Dir(filepath.Dir(cwd)), "infra", "jsonnet", "proact")
+
+	infraDir := "/home/elliot.gustafsson@fnox.it/Projects/infra/jsonnet/proact"
+
+	err := os.Chdir(infraDir)
 	if err != nil {
 		b.Fatal(err.Error())
 	}
 
-	infraDir := filepath.Join(filepath.Dir(filepath.Dir(cwd)), "infra", "jsonnet", "proact")
-
 	interpreter := jgosonnet.NewEvaluator()
-	interpreter.JPaths([]string{filepath.Join(infraDir, "vendor")})
+	interpreter.JPaths([]string{"vendor"})
 
-	file := filepath.Join(infraDir, "sto3-prod001.jsonnet")
+	// file := filepath.Join(infraDir, "sto3-prod001.jsonnet")
 	// file := "../benchmarks/resources/realistic_benchmark2.jsonnet"
+	file := "sto3-prod001.jsonnet"
 
 	_, err = interpreter.Evaluate(file)
 	if err != nil {
