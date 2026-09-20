@@ -9,6 +9,7 @@ import (
 )
 
 type ContextState struct {
+	MaxStack    uint32
 	Interner    *interner.Interner
 	Allocator   *arena.Allocator
 	Environment *Environment
@@ -20,6 +21,8 @@ type Context struct {
 	Self Value // self
 
 	SuperOffset uint32
+
+	Depth uint32
 }
 
 type Scope struct {

@@ -8,6 +8,7 @@ import (
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -174,7 +175,7 @@ func std_codepoint(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 	}
 
 	r, size := utf8.DecodeRuneInString(arg)
-	if size != len(arg) || r == utf8.RuneError {
+	if len(arg) == 0 || size != len(arg) || (r == utf8.RuneError && size == 1) {
 		runeCount := utf8.RuneCountInString(arg)
 		return evaluator.ValueNone, evaluator.MakeRuntimeError(
 			fmt.Errorf("codepoint takes a string of length 1, got length %d", runeCount),
@@ -341,6 +342,9 @@ func std_strReplace(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	from, err := args[1].EvalString(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
+	}
+	if len(from) == 0 {
+		return evaluator.ValueNone, evaluator.MakeRuntimeError(errors.New("'from' string must not be zero length."))
 	}
 
 	to, err := args[2].EvalString(ctx)

@@ -59,59 +59,108 @@ func execFunction(funcVal Value, args []NamedValue, ctx Context, tailstrict bool
 //go:noinline
 func execUserFunction(funcVal Value, args []NamedValue, callCtx Context, tailstrict bool) (Value, error) {
 	f := funcVal.Function()
-
 	paramCount := len(f.Node.Parameters)
+	paramKeyIds := f.ParamKeyIds
 	node := f.Node
 	scopePtr := f.ScopePtr
-	paramKeyIds := f.ParamKeyIds
 
 	ctx := callCtx
+	if !tailstrict {
+		if callCtx.Depth >= callCtx.State.MaxStack {
+			return errMaxStackExceeded()
+		}
+		ctx.Depth++
+	}
 	ctx.Self = f.Self
 	ctx.SuperOffset = f.SuperOffset
 
-	if len(args) > paramCount {
-		return ValueNone, fmt.Errorf("unexpected amount of args passed to function")
-	}
+	argsLen := len(args)
 
 	if paramCount == 0 {
-		return EvaluateNode(node.Body, scopePtr, ctx)
+		if argsLen == 0 {
+			return EvaluateNode(node.Body, scopePtr, ctx)
+		}
+		if args[0].Key == 0 {
+			return errTooManyPositional(0, countPositional(args))
+		}
+		return errNoSuchParam(args[0].Key, ctx)
 	}
 
 	s, childScopeId := ctx.NewScope(scopePtr, paramCount)
 
-	// TODO: Throw err on argument x already provided
-
-	posIndex := 0
-	for i := range paramCount {
-		keyId := paramKeyIds[i]
-
-		var bindVal NamedValue
-
-		if posIndex < len(args) && args[posIndex].Key == 0 {
-			bindVal = args[posIndex]
-			bindVal.Key = keyId
-			posIndex++
-		} else {
-			for _, a := range args {
-				if a.Key == keyId {
-					bindVal = a
+	// bind positional args
+	posIdx := 0
+	for posIdx < argsLen && args[posIdx].Key == 0 {
+		if posIdx >= paramCount {
+			numPos := argsLen
+			for i := posIdx; i < argsLen; i++ {
+				if args[i].Key != 0 {
+					numPos = i
 					break
 				}
 			}
+			return errTooManyPositional(paramCount, numPos)
 		}
+		a := args[posIdx]
+		if tailstrict {
+			var err error
+			a.Value, err = a.Eval(ctx)
+			if err != nil {
+				return ValueNone, err
+			}
+		}
+		a.Key = paramKeyIds[posIdx]
+		s.Bindings[posIdx] = a
+		posIdx++
+	}
 
-		if !bindVal.IsNone() {
-			s.Bindings[i] = bindVal
+	if posIdx == argsLen && posIdx == paramCount {
+		return EvaluateNode(node.Body, childScopeId, ctx)
+	}
+
+	// bind named args
+	if posIdx < argsLen {
+	NamedArgsOuterLoop:
+		for i := posIdx; i < argsLen; i++ {
+			na := args[i]
+			if na.Key == 0 {
+				return errPosArgAfterNamed()
+			}
+
+			if tailstrict {
+				var err error
+				na.Value, err = na.Eval(ctx)
+				if err != nil {
+					return ValueNone, err
+				}
+			}
+
+			for j := range paramCount {
+				if paramKeyIds[j] == na.Key {
+					if !s.Bindings[j].IsNone() {
+						return errArgAlreadyProvided(na.Key, ctx)
+					}
+					s.Bindings[j] = na
+					continue NamedArgsOuterLoop
+				}
+			}
+
+			return errNoSuchParam(na.Key, ctx)
+		}
+	}
+
+	// fill default args
+	for i := posIdx; i < paramCount; i++ {
+		if !s.Bindings[i].IsNone() {
 			continue
 		}
 
-		// No arg was passed, fallback to default arg
-		defArgNode := node.Parameters[i].DefaultArg
-		if defArgNode == nil {
-			return ValueNone, fmt.Errorf("arg (%d) with no default arg had no value passed", i)
+		n := node.Parameters[i].DefaultArg
+		if n == nil {
+			return errMissingArg(paramKeyIds[i], ctx)
 		}
 
-		da, err := evaluateNodeLazy(defArgNode, childScopeId, ctx)
+		da, err := evaluateNodeLazy(n, childScopeId, ctx)
 		if err != nil {
 			return ValueNone, err
 		}
@@ -123,7 +172,7 @@ func execUserFunction(funcVal Value, args []NamedValue, callCtx Context, tailstr
 			}
 		}
 
-		s.Bindings[i] = NamedValue{keyId, da}
+		s.Bindings[i] = NamedValue{paramKeyIds[i], da}
 	}
 
 	return EvaluateNode(node.Body, childScopeId, ctx)
@@ -141,79 +190,139 @@ func (t *NativeFunction) Length() int {
 func execNativeFunction(funcVal Value, args []NamedValue, ctx Context, tailstrict bool) (Value, error) {
 	f := funcVal.NativeFunction()
 	paramCount := len(f.Params)
-	fn := f.Func
 	params := f.Params
+	argsLen := len(args)
 	optStart := int(f.OptStart)
+	fn := f.Func
 
-	if len(args) > paramCount {
-		return ValueNone, MakeRuntimeError(fmt.Errorf("function expected %d positional argument(s), but got %d", paramCount, len(args)))
+	if paramCount == 0 {
+		if argsLen == 0 {
+			return fn(args, ctx)
+		}
+		if args[0].Key == 0 {
+			return errTooManyPositional(0, countPositional(args))
+		}
+		return errNoSuchParam(args[0].Key, ctx)
 	}
 
-	var onNamedArgs bool
-
-	// Use stack arr and overrite args to avoid allocating a slice for all stdlib funcs
-	var stackArgs [4]NamedValue // Max args for any stdlib function is 4
-	var orderedArgs []NamedValue
-
-	if paramCount <= len(stackArgs) {
-		orderedArgs = stackArgs[:paramCount]
-	} else {
-		// just in case a user defines a custom native extension with 5+ args
-		orderedArgs = arena.Alloc[NamedValue](ctx.State.Allocator, paramCount)
-		clear(orderedArgs)
-	}
-
+	// bind positional args
 	posIdx := 0
-
-	for _, na := range args {
-
+	for posIdx < argsLen && args[posIdx].Key == 0 {
+		if posIdx >= paramCount {
+			return errTooManyPositional(paramCount, countPositional(args))
+		}
 		if tailstrict {
-			v, err := na.Eval(ctx)
+			v, err := args[posIdx].Eval(ctx)
 			if err != nil {
 				return ValueNone, err
 			}
-			na.Value = v
+			args[posIdx].Value = v
 		}
+		posIdx++
+	}
 
-		if na.Key == 0 {
-			// Positional Argument
-			if onNamedArgs {
-				return ValueNone, fmt.Errorf("Positional argument after a named argument is not allowed")
+	if posIdx == argsLen && posIdx == paramCount {
+		return fn(args, ctx)
+	}
+
+	// alloc temp slice only when named arguments are used or defaults needed
+	orderedArgs := arena.Alloc[NamedValue](ctx.State.Allocator, paramCount)
+	clear(orderedArgs)
+
+	// copy verified positional arguments directly
+	copy(orderedArgs[:posIdx], args[:posIdx])
+
+	requiredMissing := optStart - posIdx
+
+	// bind named arguments
+	if posIdx < argsLen {
+	NamedArgsOuterLoop:
+		for i := posIdx; i < argsLen; i++ {
+			na := args[i]
+			if na.Key == 0 {
+				return errPosArgAfterNamed()
 			}
-			// na.Key = argIds[posIdx]
-			orderedArgs[posIdx] = na
-			posIdx++
-			continue
-		}
 
-		// Named Argument
-		passedName := ctx.State.Interner.Get(na.Key)
-
-		onNamedArgs = true
-		found := false
-		for j, paramName := range params {
-			if passedName == paramName {
-				if !orderedArgs[j].IsNone() {
-					argName := ctx.State.Interner.Get(na.Key)
-					return ValueNone, MakeRuntimeError(fmt.Errorf("Argument %s already provided", argName))
+			if tailstrict {
+				v, err := na.Eval(ctx)
+				if err != nil {
+					return ValueNone, err
 				}
-				orderedArgs[j] = na
-				found = true
-				break
+				na.Value = v
+			}
+
+			passedName := ctx.State.Interner.Get(na.Key)
+			for j, paramName := range params {
+				if passedName == paramName {
+					if !orderedArgs[j].IsNone() {
+						return errArgAlreadyProvided(na.Key, ctx)
+					}
+					orderedArgs[j] = na
+					if j < optStart {
+						requiredMissing--
+					}
+					continue NamedArgsOuterLoop
+				}
+			}
+
+			return errNoSuchParam(na.Key, ctx)
+		}
+	}
+
+	if requiredMissing > 0 {
+		for i := posIdx; i < optStart; i++ {
+			if orderedArgs[i].Value.IsNone() {
+				return errMissingArgName(params[i])
 			}
 		}
-		if !found {
-			return ValueNone, MakeRuntimeError(fmt.Errorf("function has no parameter %s", passedName))
-		}
 	}
 
-	for i := 0; i < optStart; i++ {
-		if orderedArgs[i].Value.IsNone() {
-			return ValueNone, MakeRuntimeError(fmt.Errorf("Missing argument: %s", params[i]))
+	return fn(orderedArgs, ctx)
+}
+
+//go:noinline
+func errMaxStackExceeded() (Value, error) {
+	return ValueNone, MakeRuntimeError(fmt.Errorf("max stack frames exceeded."))
+}
+
+//go:noinline
+func errPosArgAfterNamed() (Value, error) {
+	return ValueNone, fmt.Errorf("Positional argument after a named argument is not allowed")
+}
+
+//go:noinline
+func errTooManyPositional(expected, got int) (Value, error) {
+	return ValueNone, MakeRuntimeError(fmt.Errorf("function expected %d positional argument(s), but got %d", expected, got))
+}
+
+//go:noinline
+func errArgAlreadyProvided(key uint32, ctx Context) (Value, error) {
+	name := ctx.State.Interner.Get(key)
+	return ValueNone, MakeRuntimeError(fmt.Errorf("Argument %s already provided", name))
+}
+
+//go:noinline
+func errNoSuchParam(key uint32, ctx Context) (Value, error) {
+	name := ctx.State.Interner.Get(key)
+	return ValueNone, MakeRuntimeError(fmt.Errorf("function has no parameter %s", name))
+}
+
+//go:noinline
+func errMissingArgName(name string) (Value, error) {
+	return ValueNone, MakeRuntimeError(fmt.Errorf("Missing argument: %s", name))
+}
+
+//go:noinline
+func errMissingArg(key uint32, ctx Context) (Value, error) {
+	name := ctx.State.Interner.Get(key)
+	return errMissingArgName(name)
+}
+
+func countPositional(args []NamedValue) int {
+	for i, a := range args {
+		if a.Key != 0 {
+			return i
 		}
 	}
-
-	args = orderedArgs
-
-	return fn(args, ctx)
+	return len(args)
 }

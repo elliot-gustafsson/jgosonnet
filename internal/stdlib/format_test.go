@@ -358,6 +358,7 @@ func TestFormat(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := evaluator.Context{
 				State: &evaluator.ContextState{
+					MaxStack:  10000,
 					Interner:  interner.NewInterner(),
 					Allocator: arena.NewAllocator(),
 				},
@@ -439,6 +440,7 @@ func TestFormatStrings(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := evaluator.Context{
 				State: &evaluator.ContextState{
+					MaxStack:  10000,
 					Interner:  interner.NewInterner(),
 					Allocator: arena.NewAllocator(),
 				},
@@ -569,6 +571,7 @@ func TestFormatIntegers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := evaluator.Context{
 				State: &evaluator.ContextState{
+					MaxStack:  10000,
 					Interner:  interner.NewInterner(),
 					Allocator: arena.NewAllocator(),
 				},
@@ -705,6 +708,7 @@ func TestFormatOctal(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := evaluator.Context{
 				State: &evaluator.ContextState{
+					MaxStack:  10000,
 					Interner:  interner.NewInterner(),
 					Allocator: arena.NewAllocator(),
 				},
@@ -954,6 +958,7 @@ func TestFormatHex(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := evaluator.Context{
 				State: &evaluator.ContextState{
+					MaxStack:  10000,
 					Interner:  interner.NewInterner(),
 					Allocator: arena.NewAllocator(),
 				},
@@ -1000,6 +1005,7 @@ func TestFormatFloat(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := evaluator.Context{
 				State: &evaluator.ContextState{
+					MaxStack:  10000,
 					Interner:  interner.NewInterner(),
 					Allocator: arena.NewAllocator(),
 				},
@@ -1020,35 +1026,6 @@ func TestFormatFloat(t *testing.T) {
 		})
 	}
 }
-
-// func TestJsonnetFormat(t *testing.T) {
-
-// 	// var dst [64]byte
-// 	// println(string(strconv.AppendFloat(dst[:0], 6666666666666666.6666666666666666, 'E', -1, 64)))
-
-// 	vm := jsonnet.MakeVM()
-
-// 	format := "|%.f|"
-// 	arg := "10"
-
-// 	snippet := fmt.Sprintf("'%s' %% %s", format, arg)
-
-// 	node, err := jsonnet.SnippetToAST("test.jsonnet", snippet)
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-
-// 	res, err := vm.Evaluate(node)
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-
-// 	println()
-// 	println(res)
-// 	println()
-
-// 	// assert.Equal(t, "\"0x0\"\n", res)
-// }
 
 // Helper to convert Go types to jsonnet evaluator.Value types
 func toValue(v any, ctx evaluator.Context) evaluator.Value {
