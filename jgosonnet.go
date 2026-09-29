@@ -35,6 +35,7 @@ type Evaluator struct {
 	traceOut io.Writer
 	maxStack uint32
 
+	interner    *interner.Interner
 	astImporter *evaluator.AstImporter
 	extVars     map[string]string
 	extCodes    map[string]string
@@ -59,6 +60,7 @@ func NewEvaluator() *Evaluator {
 	return &Evaluator{
 		traceOut:    os.Stderr,
 		maxStack:    10000,
+		interner:    interner.NewInterner(),
 		astImporter: evaluator.NewAstImporter(),
 		extVars:     make(map[string]string),
 		extCodes:    make(map[string]string),
@@ -252,14 +254,14 @@ func (t *Evaluator) manifestMulti(file string, fmtType manifestFormat) (map[stri
 
 type EvaluationEngine struct {
 	Allocator *arena.Allocator
-	Interner  *interner.Interner
+	// Interner  *interner.Interner
 }
 
 var enginePool = sync.Pool{
 	New: func() any {
 		return &EvaluationEngine{
 			Allocator: arena.NewAllocator(),
-			Interner:  interner.NewInterner(),
+			// Interner:  interner.NewInterner(),
 		}
 	},
 }
@@ -280,7 +282,7 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 	engine := enginePool.Get().(*EvaluationEngine)
 	cleanup := func() {
 		engine.Allocator.Reset()
-		engine.Interner.Reset()
+		// engine.Interner.Reset()
 		enginePool.Put(engine)
 
 		// pprof.StopCPUProfile()
@@ -290,7 +292,7 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 	ctx := evaluator.Context{
 		State: &evaluator.ContextState{
 			MaxStack:  t.maxStack,
-			Interner:  engine.Interner,
+			Interner:  t.interner,
 			Allocator: engine.Allocator,
 		},
 	}

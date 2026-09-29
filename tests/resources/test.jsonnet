@@ -6,5 +6,10 @@
 // local asdf(x, y=2, z=3) = [x, y, z];
 // asdf(1, y=9, y=2)
 
-local asdf(x, x) = x;
-asdf(1, 2)
+// local asdf(x, x) = x;
+// asdf(1, 2)
+local asdf = [1, 2, 3];
+[
+  x
+  for x in asdf
+]

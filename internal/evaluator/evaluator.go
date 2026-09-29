@@ -7,25 +7,27 @@ import (
 	"math/bits"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 	"unsafe"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
+	fast "github.com/elliot-gustafsson/jgosonnet/internal/ast"
 	"github.com/elliot-gustafsson/jgosonnet/internal/utils"
 	"github.com/google/go-jsonnet/ast"
 )
 
-func EvaluateNode(n ast.Node, scopePtr uintptr, ctx Context) (Value, error) {
-	val, err := evaluateNode(n, scopePtr, ctx)
+func EvaluateNode(bp unsafe.Pointer, offset uint32, scopePtr uintptr, ctx Context) (Value, error) {
+	val, err := evaluateNode(bp, offset, scopePtr, ctx)
 	if err != nil {
-		return ValueNone, WrapError(err, n)
+		// return ValueNone, WrapError(err, n)
+		return ValueNone, err
 	}
 	if val.IsThunk() {
 		val, err = val.Eval(ctx)
 		if err != nil {
-			return ValueNone, WrapError(err, n)
+			// return ValueNone, WrapError(err, n)
+			return ValueNone, err
 		}
 	}
 	return val, nil
@@ -108,125 +110,343 @@ func CreateFileScope(filename string, baseStd Value, ctx Context) uintptr {
 	return scopePtr
 }
 
-func evaluateNodeLazy(n ast.Node, scopePtr uintptr, ctx Context) (Value, error) {
-	switch node := n.(type) {
+func evaluateNodeLazy(bp unsafe.Pointer, offset uint32, scopePtr uintptr, ctx Context) (Value, error) {
+	tag := fast.ReadTag(bp, offset)
+
+	switch tag {
 	default:
-		return ValueNone, fmt.Errorf("unhandled node type: %T (lazy eval)", node)
-	case *ast.LiteralString:
-		id := ctx.State.Interner.Intern(node.Value)
+		return ValueNone, fmt.Errorf("unhandled node type: %d (lazy eval)", tag)
+
+	case fast.TagString:
+		id := fast.ReadU32(bp, offset+1)
 		return MakeStringConst(id), nil
-		// return MakeString(node.Value, ctx), nil
-	case *ast.LiteralNull:
+	case fast.TagNull:
 		return MakeNull(), nil
-	case *ast.LiteralBoolean:
-		return MakeBool(node.Value), nil
-	case *ast.LiteralNumber:
-		num, err := strconv.ParseFloat(node.OriginalString, 64)
-		if err != nil {
-			return ValueNone, fmt.Errorf("failed to parse float val (%s), err: %w", node.OriginalString, err)
-		}
+	case fast.TagFalse:
+		return ValueFalse, nil
+	case fast.TagTrue:
+		return ValueTrue, nil
+	case fast.TagNumber:
+		// TODO: Embed value directly?
+		num := fast.ReadF64(bp, offset+1)
 		return MakeNumber(num), nil
-	case *ast.Self:
-		// if !ctx.Self.IsObject() {
-		// 	return ValueNone, MakeRuntimeError(fmt.Errorf("self not initialized"))
-		// }
+	case fast.TagSelf:
 		return ctx.Self, nil
 
-	case *ast.DesugaredObject:
-		return NewThunk(ThunkTypeObject, unsafe.Pointer(node), scopePtr, ctx), nil
-	case *ast.Array:
-		return NewThunk(ThunkTypeArray, unsafe.Pointer(node), scopePtr, ctx), nil
-	case *ast.Local:
-		return NewThunk(ThunkTypeLocal, unsafe.Pointer(node), scopePtr, ctx), nil
-	case *ast.Apply:
-		return NewThunk(ThunkTypeApply, unsafe.Pointer(node), scopePtr, ctx), nil
-	case *ast.Index:
-		return NewThunk(ThunkTypeIndex, unsafe.Pointer(node), scopePtr, ctx), nil
-	case *ast.Var:
-		return NewThunk(ThunkTypeVar, unsafe.Pointer(node), scopePtr, ctx), nil
-	case *ast.Function:
-		return NewThunk(ThunkTypeFunction, unsafe.Pointer(node), scopePtr, ctx), nil
-	case *ast.Conditional:
-		return NewThunk(ThunkTypeConditional, unsafe.Pointer(node), scopePtr, ctx), nil
-	case *ast.Binary:
-		return NewThunk(ThunkTypeBinary, unsafe.Pointer(node), scopePtr, ctx), nil
-	case *ast.Unary:
-		return NewThunk(ThunkTypeUnary, unsafe.Pointer(node), scopePtr, ctx), nil
-	case *ast.Import:
-		return NewThunk(ThunkTypeImport, unsafe.Pointer(node), scopePtr, ctx), nil
-	case *ast.ImportStr:
-		return NewThunk(ThunkTypeImportStr, unsafe.Pointer(node), scopePtr, ctx), nil
-	case *ast.ImportBin:
-		return NewThunk(ThunkTypeImportBin, unsafe.Pointer(node), scopePtr, ctx), nil
-	case *ast.SuperIndex:
-		return NewThunk(ThunkTypeSuperIndex, unsafe.Pointer(node), scopePtr, ctx), nil
-	case *ast.InSuper:
-		return NewThunk(ThunkTypeInSuper, unsafe.Pointer(node), scopePtr, ctx), nil
-	case *ast.Error:
-		return NewThunk(ThunkTypeError, unsafe.Pointer(node), scopePtr, ctx), nil
+		// case *ast.DesugaredObject:
+		// 	return NewThunk(ThunkTypeObject, unsafe.Pointer(node), scopePtr, ctx), nil
+		// case *ast.Array:
+		// 	return NewThunk(ThunkTypeArray, unsafe.Pointer(node), scopePtr, ctx), nil
+		// case *ast.Local:
+		// 	return NewThunk(ThunkTypeLocal, unsafe.Pointer(node), scopePtr, ctx), nil
+		// case *ast.Apply:
+		// 	return NewThunk(ThunkTypeApply, unsafe.Pointer(node), scopePtr, ctx), nil
+		// case *ast.Index:
+		// 	return NewThunk(ThunkTypeIndex, unsafe.Pointer(node), scopePtr, ctx), nil
+		// case *ast.Var:
+		// 	return NewThunk(ThunkTypeVar, unsafe.Pointer(node), scopePtr, ctx), nil
+		// case *ast.Function:
+		// 	return NewThunk(ThunkTypeFunction, unsafe.Pointer(node), scopePtr, ctx), nil
+		// case *ast.Conditional:
+		// 	return NewThunk(ThunkTypeConditional, unsafe.Pointer(node), scopePtr, ctx), nil
+		// case *ast.Binary:
+		// 	return NewThunk(ThunkTypeBinary, unsafe.Pointer(node), scopePtr, ctx), nil
+		// case *ast.Unary:
+		// 	return NewThunk(ThunkTypeUnary, unsafe.Pointer(node), scopePtr, ctx), nil
+		// case *ast.Import:
+		// 	return NewThunk(ThunkTypeImport, unsafe.Pointer(node), scopePtr, ctx), nil
+		// case *ast.ImportStr:
+		// 	return NewThunk(ThunkTypeImportStr, unsafe.Pointer(node), scopePtr, ctx), nil
+		// case *ast.ImportBin:
+		// 	return NewThunk(ThunkTypeImportBin, unsafe.Pointer(node), scopePtr, ctx), nil
+		// case *ast.SuperIndex:
+		// 	return NewThunk(ThunkTypeSuperIndex, unsafe.Pointer(node), scopePtr, ctx), nil
+		// case *ast.InSuper:
+		// 	return NewThunk(ThunkTypeInSuper, unsafe.Pointer(node), scopePtr, ctx), nil
+		// case *ast.Error:
+		// 	return NewThunk(ThunkTypeError, unsafe.Pointer(node), scopePtr, ctx), nil
 
-	case *GoCallbackNode:
-		return NewThunk(ThunkTypeGoCallback, unsafe.Pointer(node), scopePtr, ctx), nil
+		// case *GoCallbackNode:
+		// 	return NewThunk(ThunkTypeGoCallback, unsafe.Pointer(node), scopePtr, ctx), nil
 	}
 }
 
-func evaluateNode(n ast.Node, scopePtr uintptr, ctx Context) (Value, error) {
-	switch node := n.(type) {
+func evaluateNode(bp unsafe.Pointer, offset uint32, scopePtr uintptr, ctx Context) (Value, error) {
+
+	tag := fast.ReadTag(bp, offset)
+
+	switch tag {
 	default:
-		return ValueNone, fmt.Errorf("unhandled node type: %T", node)
-	case *ast.LiteralString:
-		id := ctx.State.Interner.Intern(node.Value)
+		return ValueNone, fmt.Errorf("unhandled node type: %d", tag)
+	case fast.TagString:
+		id := fast.ReadU32(bp, offset+1)
 		return MakeStringConst(id), nil
-		// return MakeString(node.Value, ctx), nil
-	case *ast.LiteralNull:
+	case fast.TagNull:
 		return MakeNull(), nil
-	case *ast.LiteralBoolean:
-		return MakeBool(node.Value), nil
-	case *ast.LiteralNumber:
-		num, err := strconv.ParseFloat(node.OriginalString, 64)
-		if err != nil {
-			return ValueNone, fmt.Errorf("(%T) failed to parse float val (%s), err: %w", node, node.OriginalString, err)
-		}
+	case fast.TagFalse:
+		return ValueFalse, nil
+	case fast.TagTrue:
+		return ValueTrue, nil
+	case fast.TagNumber:
+		// TODO: Embed value directly?
+		num := fast.ReadF64(bp, offset+1)
 		return MakeNumber(num), nil
-	case *ast.DesugaredObject:
-		return handleDesugaredObject(node, scopePtr, ctx)
-	case *ast.Array:
-		return handleArray(node, scopePtr, ctx)
-	case *ast.Local:
+	// case fast.TagObject:
+	// 	return handleDesugaredObject(node, scopePtr, ctx)
+	case fast.TagArray:
+		return handleArray(bp, offset+1, scopePtr, ctx)
+	case fast.TagLocal:
 		return handleLocal(node, scopePtr, ctx)
-	case *ast.Apply:
+	case fast.TagApply:
 		return handleApply(node, scopePtr, ctx)
-	case *ast.Index:
+	case fast.TagIndex:
 		return handleIndex(node, scopePtr, ctx)
-	case *ast.Var:
+	case fast.TagVar:
 		return handleVar(node, scopePtr, ctx)
-	case *ast.Function:
+	case fast.TagFunction:
 		return handleFunction(node, scopePtr, ctx)
-	case *ast.Conditional:
+	case fast.TagConditional:
 		return handleConditional(node, scopePtr, ctx)
-	case *ast.Binary:
-		return handleBinary(node, scopePtr, ctx)
-	case *ast.Unary:
-		return handleUnary(node, scopePtr, ctx)
-	case *ast.Import:
+
+	case fast.TagImport:
 		return handleImport(node, ctx)
-	case *ast.ImportStr:
+	case fast.TagImportStr:
 		return handleImportStr(node, ctx)
-	case *ast.ImportBin:
+	case fast.TagImportBin:
 		return handleImportBin(node, ctx)
-	case *ast.Self:
-		// if !ctx.Self.IsObject() {
-		// 	return ValueNone, MakeRuntimeError(fmt.Errorf("self not initialized"))
-		// }
+	case fast.TagSelf:
 		return ctx.Self, nil
-	case *ast.SuperIndex:
+	case fast.TagSuperIndex:
 		return handleSuperIndex(node, scopePtr, ctx)
-	case *ast.InSuper:
+	case fast.TagInSuper:
 		return handleInSuper(node, scopePtr, ctx)
-	case *ast.Error:
+	case fast.TagError:
 		return handleError(node, scopePtr, ctx)
-	case *GoCallbackNode:
-		return node.FuncVal.FunctionExec(node.Args, ctx)
+	// case *GoCallbackNode:
+	// 	return node.FuncVal.FunctionExec(node.Args, ctx)
+
+	case fast.TagBinaryAdd:
+		left, right, err := extractBinaryArgs(bp, offset+1, scopePtr, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		return bopPlus(left, right, ctx)
+	case fast.TagBinarySub:
+		left, right, err := extractBinaryArgsNums(bp, offset+1, scopePtr, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		return makeCheckedNumber(left - right)
+	case fast.TagBinaryMul:
+		left, right, err := extractBinaryArgsNums(bp, offset+1, scopePtr, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		return makeCheckedNumber(left * right)
+	case fast.TagBinaryDiv:
+		left, right, err := extractBinaryArgsNums(bp, offset+1, scopePtr, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		return makeCheckedNumber(left / right)
+	case fast.TagBinaryMod:
+		// left, right, err := extractBinaryArgsNums(bp, offset+1, scopePtr, ctx)
+		// if err != nil {
+		// 	return ValueNone, err
+		// }
+		// return MakeNumber(left / right), nil
+		return ValueNone, fmt.Errorf("handle TagBinaryMod")
+	case fast.TagBinaryBitAnd:
+		left, right, err := extractBinaryArgsNums(bp, offset+1, scopePtr, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		val, err := builtinBitwiseAnd(left, right)
+		if err != nil {
+			return ValueNone, err
+		}
+		return makeCheckedNumber(val)
+	case fast.TagBinaryBitOr:
+		left, right, err := extractBinaryArgsNums(bp, offset+1, scopePtr, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		val, err := builtinBitwiseOr(left, right)
+		if err != nil {
+			return ValueNone, err
+		}
+		return makeCheckedNumber(val)
+	case fast.TagBinaryBitXor:
+		left, right, err := extractBinaryArgsNums(bp, offset+1, scopePtr, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		val, err := builtinBitwiseXor(left, right)
+		if err != nil {
+			return ValueNone, err
+		}
+		return makeCheckedNumber(val)
+	case fast.TagBinaryShiftL:
+		left, right, err := extractBinaryArgsNums(bp, offset+1, scopePtr, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		val, err := builtinShiftL(left, right)
+		if err != nil {
+			return ValueNone, err
+		}
+		return makeCheckedNumber(val)
+	case fast.TagBinaryShiftR:
+		left, right, err := extractBinaryArgsNums(bp, offset+1, scopePtr, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		val, err := builtinShiftR(left, right)
+		if err != nil {
+			return ValueNone, err
+		}
+		return makeCheckedNumber(val)
+
+	case fast.TagBinaryEq:
+		left, right, err := extractBinaryArgs(bp, offset+1, scopePtr, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		eq, err := left.Equal(right, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		return MakeBool(eq), nil
+	case fast.TagBinaryNeq:
+		left, right, err := extractBinaryArgs(bp, offset+1, scopePtr, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		eq, err := left.Equal(right, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		return MakeBool(!eq), nil
+	case fast.TagBinaryLt:
+		left, right, err := extractBinaryArgs(bp, offset+1, scopePtr, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		x, err := left.Compare(right, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		return MakeBool(x < 0), nil
+	case fast.TagBinaryLte:
+		left, right, err := extractBinaryArgs(bp, offset+1, scopePtr, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		x, err := left.Compare(right, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		return MakeBool(x <= 0), nil
+	case fast.TagBinaryGt:
+		left, right, err := extractBinaryArgs(bp, offset+1, scopePtr, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		x, err := left.Compare(right, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		return MakeBool(x > 0), nil
+	case fast.TagBinaryGte:
+		left, right, err := extractBinaryArgs(bp, offset+1, scopePtr, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		x, err := left.Compare(right, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		return MakeBool(x >= 0), nil
+	case fast.TagBinaryIn:
+		return ValueNone, fmt.Errorf("handle TagBinaryIn")
+	case fast.TagBinaryAnd:
+		left, err := EvaluateNode(bp, offset+1, scopePtr, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		if !left.IsBool() {
+			return ValueNone, TypeErrorSpecific(ValueTypeBool, left.Type())
+		}
+		if !left.Bool() {
+			return ValueFalse, nil
+		}
+		right, err := EvaluateNode(bp, offset+2, scopePtr, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		if !right.IsBool() {
+			return ValueNone, TypeErrorSpecific(ValueTypeBool, right.Type())
+		}
+		return right, nil
+	case fast.TagBinaryOr:
+		left, err := EvaluateNode(bp, offset+1, scopePtr, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		if !left.IsBool() {
+			return ValueNone, TypeErrorSpecific(ValueTypeBool, left.Type())
+		}
+		if left.Bool() {
+			return ValueTrue, nil
+		}
+		right, err := EvaluateNode(bp, offset+2, scopePtr, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		if !right.IsBool() {
+			return ValueNone, TypeErrorSpecific(ValueTypeBool, right.Type())
+		}
+		return right, nil
+
+	case fast.TagUnaryNot:
+		unary, err := EvaluateNode(bp, offset+1, scopePtr, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		if !unary.IsBool() {
+			return ValueNone, TypeErrorSpecific(ValueTypeBool, unary.Type())
+		}
+		return MakeBool(!unary.Bool()), nil
+	case fast.TagUnaryMinus:
+		unary, err := EvaluateNode(bp, offset+1, scopePtr, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		if !unary.IsNumber() {
+			return ValueNone, TypeErrorSpecific(ValueTypeNumber, unary.Type())
+		}
+		return MakeNumber(-unary.Number()), nil
+	case fast.TagUnaryPlus:
+		unary, err := EvaluateNode(bp, offset+1, scopePtr, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		if !unary.IsNumber() {
+			return ValueNone, TypeErrorSpecific(ValueTypeNumber, unary.Type())
+		}
+		return MakeNumber(unary.Number()), nil
+	case fast.TagUnaryBitwiseNot:
+		unary, err := EvaluateNode(bp, offset+1, scopePtr, ctx)
+		if err != nil {
+			return ValueNone, err
+		}
+		if !unary.IsNumber() {
+			return ValueNone, TypeErrorSpecific(ValueTypeNumber, unary.Type())
+		}
+		val32 := int64(unary.Number())
+		notVal32 := ^val32
+		return MakeNumber(float64(notVal32)), nil
+
 	}
 }
 
@@ -242,10 +462,12 @@ func (n *GoCallbackNode) SetFreeVariables(ast.Identifiers) {}
 func (n *GoCallbackNode) SetContext(ast.Context)           {}
 func (n *GoCallbackNode) OpenFodder() *ast.Fodder          { return nil }
 
-func handleArray(node *ast.Array, scopePtr uintptr, ctx Context) (Value, error) {
-	arr, val := MakeArraySized(len(node.Elements), ctx)
-	for i := range node.Elements {
-		ev, err := evaluateNodeLazy(node.Elements[i].Expr, scopePtr, ctx)
+func handleArray(bp unsafe.Pointer, offset uint32, scopePtr uintptr, ctx Context) (Value, error) {
+	count := fast.ReadU32(bp, offset)
+	arr, val := MakeArraySized(int(count), ctx)
+	for i := range count {
+		elOffset := fast.ReadU32(bp, offset+1+i)
+		ev, err := evaluateNodeLazy(bp, elOffset, scopePtr, ctx)
 		if err != nil {
 			return ValueNone, err
 		}
