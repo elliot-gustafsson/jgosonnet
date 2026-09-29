@@ -79,6 +79,10 @@ const (
 
 	ValueNone Value = 0
 
+	ValueNull  Value = Value(ValueTypeNull) << typeShift
+	ValueFalse Value = Value(ValueTypeBool) << typeShift
+	ValueTrue  Value = Value(ValueTypeBool)<<typeShift | 1
+
 	// ValueFlagStringConst uint64 = 1 << 40
 )
 

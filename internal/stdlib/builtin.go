@@ -106,7 +106,6 @@ func builtin_flatMapArray(args []evaluator.NamedValue, ctx evaluator.Context) (e
 
 	mapperFuncInput := arena.Alloc[evaluator.NamedValue](ctx.State.Allocator, 1)
 
-	// TODO: benchmark if stack or arena arrays are better
 	subArrayValues := make([]evaluator.Value, len(inputArr))
 	totalLen := 0
 	for i, v := range inputArr {

@@ -34,3 +34,8 @@ benchmark-prof-cpu:
 
 benchmark-prof-mem:
 	go tool pprof -http=:8080 benchmarks/out/mem.prof
+
+git-submodule-sync:
+	git submodule update --init --force
+	git -C tests/resources/go-jsonnet checkout --force v0.22.0
+	git -C tests/resources/jsonnet-cpp checkout --force v0.22.0
