@@ -4,9 +4,50 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"unsafe"
 
 	"github.com/google/go-jsonnet/ast"
 )
+
+func extractBinaryArgs(bp unsafe.Pointer, offset uint32, scopePtr uintptr, ctx Context) (left, right Value, err error) {
+	left, err = EvaluateNode(bp, offset, scopePtr, ctx)
+	if err != nil {
+		return
+	}
+	right, err = EvaluateNode(bp, offset+1, scopePtr, ctx)
+	if err != nil {
+		return
+	}
+	return
+}
+
+func extractBinaryArgsNums(bp unsafe.Pointer, offset uint32, scopePtr uintptr, ctx Context) (left, right float64, err error) {
+	leftV, rightV, err := extractBinaryArgs(bp, offset, scopePtr, ctx)
+	if err != nil {
+		return
+	}
+	if !leftV.IsNumber() {
+		err = TypeErrorSpecific(ValueTypeNumber, leftV.Type())
+		return
+	}
+	if !rightV.IsNumber() {
+		err = TypeErrorSpecific(ValueTypeNumber, rightV.Type())
+		return
+	}
+	left = leftV.Number()
+	right = rightV.Number()
+	return
+}
+
+func makeCheckedNumber(val float64) (Value, error) {
+	if math.IsInf(val, 0) {
+		return 0, OverflowErr
+	}
+	if math.IsNaN(val) {
+		return 0, NanErr
+	}
+	return MakeNumber(val), nil
+}
 
 func handleBinaryOp(op ast.BinaryOp, left, right Value, ctx Context) (Value, error) {
 
