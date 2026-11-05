@@ -8,46 +8,6 @@ import (
 	"github.com/elliot-gustafsson/jgosonnet/internal/utils"
 )
 
-func liftObjectToValueErr(f func(evaluator.Value, evaluator.Context) (evaluator.Value, error)) evaluator.Func {
-	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-
-		a, err := args[0].Eval(ctx)
-		if err != nil {
-			return evaluator.ValueNone, err
-		}
-		if !a.IsObject() {
-			return evaluator.ValueNone, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, a.Type())
-		}
-		res, err := f(a, ctx)
-		if err != nil {
-			return evaluator.ValueNone, err
-		}
-		return res, nil
-	}
-}
-
-func liftObjectStringToValueErr(f func(evaluator.Value, string, evaluator.Context) (evaluator.Value, error)) evaluator.Func {
-	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-
-		a, err := args[0].Eval(ctx)
-		if err != nil {
-			return evaluator.ValueNone, err
-		}
-		if !a.IsObject() {
-			return evaluator.ValueNone, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, a.Type())
-		}
-		b, err := args[1].EvalString(ctx)
-		if err != nil {
-			return evaluator.ValueNone, err
-		}
-		res, err := f(a, b, ctx)
-		if err != nil {
-			return evaluator.ValueNone, err
-		}
-		return res, nil
-	}
-}
-
 func std_get(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	// std.get(o, f, default=null, inc_hidden=true)
 
@@ -97,15 +57,23 @@ func std_get(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 	return val, nil
 }
 
-var std_objectFields = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
-	res := evaluator.GetObjectFields(v.Object(), ctx, false)
+func std_objectFields(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	obj, err := args[0].EvalObject(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	res := evaluator.GetObjectFields(obj, ctx, false)
 	return evaluator.MakeArray(res, ctx), nil
-})
+}
 
-var std_objectFieldsAll = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
-	res := evaluator.GetObjectFields(v.Object(), ctx, true)
+func std_objectFieldsAll(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	obj, err := args[0].EvalObject(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	res := evaluator.GetObjectFields(obj, ctx, true)
 	return evaluator.MakeArray(res, ctx), nil
-})
+}
 
 func std_objectFieldsEx(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	obj, err := args[0].EvalObject(ctx)
@@ -120,49 +88,81 @@ func std_objectFieldsEx(args []evaluator.NamedValue, ctx evaluator.Context) (eva
 	return evaluator.MakeArray(res, ctx), nil
 }
 
-var std_objectValues = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
-	res, err := evaluator.GetObjectValues(v.Object(), ctx, false)
+func std_objectValues(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	obj, err := args[0].EvalObject(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	res, err := evaluator.GetObjectValues(obj, ctx, false)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 	return evaluator.MakeArray(res, ctx), nil
-})
+}
 
-var std_objectValuesAll = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
-	res, err := evaluator.GetObjectValues(v.Object(), ctx, true)
+func std_objectValuesAll(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	obj, err := args[0].EvalObject(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	res, err := evaluator.GetObjectValues(obj, ctx, true)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 	return evaluator.MakeArray(res, ctx), nil
-})
+}
 
-var std_objectKeysValues = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
-	res, err := evaluator.GetObjectKeysValues(v.Object(), ctx, false)
+func std_objectKeysValues(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	obj, err := args[0].EvalObject(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	res, err := evaluator.GetObjectKeysValues(obj, ctx, false)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 	return evaluator.MakeArray(res, ctx), nil
-})
+}
 
-var std_objectKeysValuesAll = liftObjectToValueErr(func(v evaluator.Value, ctx evaluator.Context) (evaluator.Value, error) {
-	res, err := evaluator.GetObjectKeysValues(v.Object(), ctx, true)
+func std_objectKeysValuesAll(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	obj, err := args[0].EvalObject(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	res, err := evaluator.GetObjectKeysValues(obj, ctx, true)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 	return evaluator.MakeArray(res, ctx), nil
-})
+}
 
-var std_objectHas = liftObjectStringToValueErr(func(v evaluator.Value, s string, ctx evaluator.Context) (evaluator.Value, error) {
+func std_objectHas(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	obj, err := args[0].EvalObject(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	s, err := args[1].EvalString(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
 	keyId := ctx.State.Interner.Intern(s)
-	hasField := v.Object().HasField(keyId, false, ctx)
+	hasField := obj.HasField(keyId, false, ctx)
 	return evaluator.MakeBool(hasField), nil
-})
+}
 
-var std_objectHasAll = liftObjectStringToValueErr(func(v evaluator.Value, s string, ctx evaluator.Context) (evaluator.Value, error) {
+func std_objectHasAll(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	obj, err := args[0].EvalObject(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	s, err := args[1].EvalString(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
 	keyId := ctx.State.Interner.Intern(s)
-	hasField := v.Object().HasField(keyId, true, ctx)
+	hasField := obj.HasField(keyId, true, ctx)
 	return evaluator.MakeBool(hasField), nil
-})
+}
 
 func std_objectHasEx(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	objVal, err := args[0].Eval(ctx)

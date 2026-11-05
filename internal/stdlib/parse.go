@@ -16,40 +16,41 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func liftStringToValueErr(f func(string) (evaluator.Value, error)) evaluator.Func {
-	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-
-		a, err := args[0].EvalString(ctx)
-		if err != nil {
-			return evaluator.ValueNone, err
-		}
-		return f(a)
+func std_parseInt(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	s, err := args[0].EvalString(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
 	}
-}
-
-var std_parseInt = liftStringToValueErr(func(s string) (evaluator.Value, error) {
 	num, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
 		return evaluator.ValueNone, fmt.Errorf("error: %s is not a base 10 integer", s)
 	}
 	return evaluator.MakeNumber(float64(num)), nil
-})
+}
 
-var std_parseOctal = liftStringToValueErr(func(s string) (evaluator.Value, error) {
+func std_parseOctal(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	s, err := args[0].EvalString(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
 	num, err := strconv.ParseInt(s, 8, 64)
 	if err != nil {
 		return evaluator.ValueNone, fmt.Errorf("error: %s is not a base 8 integer", s)
 	}
 	return evaluator.MakeNumber(float64(num)), nil
-})
+}
 
-var std_parseHex = liftStringToValueErr(func(s string) (evaluator.Value, error) {
+func std_parseHex(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	s, err := args[0].EvalString(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
 	num, err := strconv.ParseInt(s, 16, 64)
 	if err != nil {
 		return evaluator.ValueNone, fmt.Errorf("error: %s is not a base 16 integer", s)
 	}
 	return evaluator.MakeNumber(float64(num)), nil
-})
+}
 
 func std_parseJson(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 

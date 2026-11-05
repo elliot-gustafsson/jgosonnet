@@ -20,7 +20,7 @@ type Interner struct {
 func NewInterner() *Interner {
 	interner := &Interner{
 		table:   make([]entry, defaultInternerSize),
-		strings: make([]string, 1, defaultInternerSize/2), // burn 0 index
+		strings: make([]string, 1, (defaultInternerSize*3)/4), // burn 0 index
 		mask:    defaultInternerMask,
 	}
 	interner.strings[0] = ""
@@ -42,8 +42,8 @@ func (i *Interner) Intern(s string) uint32 {
 
 			i.count++
 
-			// resize if table becomes more than 50% full
-			if i.count > i.mask/2 {
+			// resize if table becomes more than 75% full
+			if i.count > (i.mask*3)>>2 {
 				i.resize()
 			}
 			return newId

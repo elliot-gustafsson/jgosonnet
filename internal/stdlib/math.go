@@ -6,122 +6,287 @@ import (
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 )
 
-func liftNumeric(f func(float64) float64) evaluator.Func {
-	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-		a, err := args[0].EvalNumber(ctx)
-		if err != nil {
-			return evaluator.ValueNone, err
-		}
-		res := f(a)
-		if math.IsNaN(res) {
-			return evaluator.ValueNone, evaluator.NanErr
-		}
-		if math.IsInf(res, 0) {
-			return evaluator.ValueNone, evaluator.OverflowErr
-		}
-		return evaluator.MakeNumber(res), nil
+func makeCheckedNumber(res float64) (evaluator.Value, error) {
+	if math.IsNaN(res) {
+		return evaluator.ValueNone, evaluator.NanErr
 	}
+	if res > math.MaxFloat64 || res < -math.MaxFloat64 {
+		return evaluator.ValueNone, evaluator.OverflowErr
+	}
+	return evaluator.MakeNumber(res), nil
 }
 
-func liftNumeric2(f func(float64, float64) float64) evaluator.Func {
-	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-		a, err := args[0].EvalNumber(ctx)
-		if err != nil {
-			return evaluator.ValueNone, err
-		}
-		b, err := args[1].EvalNumber(ctx)
-		if err != nil {
-			return evaluator.ValueNone, err
-		}
-		res := f(a, b)
-		if math.IsNaN(res) {
-			return evaluator.ValueNone, evaluator.NanErr
-		}
-		if math.IsInf(res, 0) {
-			return evaluator.ValueNone, evaluator.OverflowErr
-		}
-		return evaluator.MakeNumber(res), nil
+func std_floor(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
 	}
+	return makeCheckedNumber(math.Floor(a))
 }
 
-func liftNumericToBoolean(f func(float64) bool) evaluator.Func {
-	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-		a, err := args[0].EvalNumber(ctx)
-		if err != nil {
-			return evaluator.ValueNone, err
-		}
-		res := f(a)
-		return evaluator.MakeBool(res), nil
+func std_pow(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
 	}
+	b, err := args[1].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return makeCheckedNumber(math.Pow(a, b))
 }
 
-var std_floor = liftNumeric(math.Floor)
-var std_pow = liftNumeric2(math.Pow)
-var std_sqrt = liftNumeric(math.Sqrt)
-var std_hypot = liftNumeric2(math.Hypot)
-var std_ceil = liftNumeric(math.Ceil)
-var std_sin = liftNumeric(math.Sin)
-var std_cos = liftNumeric(math.Cos)
-var std_tan = liftNumeric(math.Tan)
-var std_asin = liftNumeric(math.Asin)
-var std_acos = liftNumeric(math.Acos)
-var std_atan = liftNumeric(math.Atan)
-var std_atan2 = liftNumeric2(math.Atan2)
-var std_log = liftNumeric(math.Log)
-var std_log2 = liftNumeric(math.Log2)
-var std_log10 = liftNumeric(math.Log10)
-var std_exp = liftNumeric(func(f float64) float64 {
+func std_sqrt(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return makeCheckedNumber(math.Sqrt(a))
+}
+
+func std_hypot(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	b, err := args[1].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return makeCheckedNumber(math.Hypot(a, b))
+}
+
+func std_ceil(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return makeCheckedNumber(math.Ceil(a))
+}
+
+func std_sin(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return makeCheckedNumber(math.Sin(a))
+}
+
+func std_cos(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return makeCheckedNumber(math.Cos(a))
+}
+
+func std_tan(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return makeCheckedNumber(math.Tan(a))
+}
+
+func std_asin(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return makeCheckedNumber(math.Asin(a))
+}
+
+func std_acos(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return makeCheckedNumber(math.Acos(a))
+}
+
+func std_atan(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return makeCheckedNumber(math.Atan(a))
+}
+
+func std_atan2(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	b, err := args[1].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return makeCheckedNumber(math.Atan2(a, b))
+}
+
+func std_log(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return makeCheckedNumber(math.Log(a))
+}
+
+func std_log2(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return makeCheckedNumber(math.Log2(a))
+}
+
+func std_log10(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return makeCheckedNumber(math.Log10(a))
+}
+
+func std_exp(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	f, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
 	res := math.Exp(f)
 	if res == 0 && f > 0 {
-		return math.Inf(1)
+		return evaluator.ValueNone, evaluator.OverflowErr
 	}
-	return res
-})
-var std_mantissa = liftNumeric(func(f float64) float64 {
-	mantissa, _ := math.Frexp(f)
-	return mantissa
-})
-var std_exponent = liftNumeric(func(f float64) float64 {
-	_, exponent := math.Frexp(f)
-	return float64(exponent)
-})
-var std_round = liftNumeric(math.Round)
-var std_isEven = liftNumericToBoolean(func(f float64) bool {
-	i, _ := math.Modf(f) // Get the integral part of the float
-	return math.Mod(i, 2) == 0
-})
-var std_isOdd = liftNumericToBoolean(func(f float64) bool {
-	i, _ := math.Modf(f) // Get the integral part of the float
-	return math.Mod(i, 2) != 0
-})
-var std_isInteger = liftNumericToBoolean(func(f float64) bool {
-	_, frac := math.Modf(f) // Get the fraction part of the float
-	return frac == 0
-})
-var std_isDecimal = liftNumericToBoolean(func(f float64) bool {
-	_, frac := math.Modf(f) // Get the fraction part of the float
-	return frac != 0
-})
-var std_max = liftNumeric2(math.Max)
-var std_min = liftNumeric2(math.Min)
-var std_abs = liftNumeric(math.Abs)
-var std_sign = liftNumeric(func(f float64) float64 {
-	if f == 0 {
-		return 0
-	}
-	if f > 0 {
-		return 1
-	}
-	return -1
-})
-var std_deg2rad = liftNumeric(func(f float64) float64 {
-	return f * (math.Pi / 180.0)
-})
-var std_rad2deg = liftNumeric(func(f float64) float64 {
-	return f * (180.0 / math.Pi)
-})
+	return makeCheckedNumber(res)
+}
 
-var std_modulo = func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+func std_mantissa(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	f, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	mantissa, _ := math.Frexp(f)
+	return makeCheckedNumber(mantissa)
+}
+
+func std_exponent(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	f, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	_, exponent := math.Frexp(f)
+	return makeCheckedNumber(float64(exponent))
+}
+
+func std_round(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return makeCheckedNumber(math.Round(a))
+}
+
+func std_isEven(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	f, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	i, _ := math.Modf(f) // Get the integral part of the float
+	return evaluator.MakeBool(math.Mod(i, 2) == 0), nil
+}
+
+func std_isOdd(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	f, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	i, _ := math.Modf(f) // Get the integral part of the float
+	return evaluator.MakeBool(math.Mod(i, 2) != 0), nil
+}
+
+func std_isInteger(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	f, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	_, frac := math.Modf(f) // Get the fraction part of the float
+	return evaluator.MakeBool(frac == 0), nil
+}
+
+func std_isDecimal(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	f, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	_, frac := math.Modf(f) // Get the fraction part of the float
+	return evaluator.MakeBool(frac != 0), nil
+}
+
+func std_max(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	b, err := args[1].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return makeCheckedNumber(math.Max(a, b))
+}
+
+func std_min(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	b, err := args[1].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return makeCheckedNumber(math.Min(a, b))
+}
+
+func std_abs(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return makeCheckedNumber(math.Abs(a))
+}
+
+func std_sign(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	f, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	var res float64
+	if f == 0 {
+		res = 0
+	} else if f > 0 {
+		res = 1
+	} else {
+		res = -1
+	}
+	return makeCheckedNumber(res)
+}
+
+func std_deg2rad(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	f, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return makeCheckedNumber(f * (math.Pi / 180.0))
+}
+
+func std_rad2deg(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	f, err := args[0].EvalNumber(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return makeCheckedNumber(f * (180.0 / math.Pi))
+}
+
+func std_modulo(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	a, err := args[0].EvalNumber(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err

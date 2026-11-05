@@ -256,9 +256,20 @@ func writeIndent(b *strings.Builder, indentLevel int, step string) {
 	}
 }
 
-// Borrowed from go-jsonnet, optimized to avoid fmt reflection
+const maxSafeInt = float64((1 << 53) - 1)
+
+// Borrowed from go-jsonnet, optimized for speed and to avoid fmt reflection
 func unparseNumber(dst []byte, v float64) []byte {
 	if v == math.Floor(v) {
+		if v == 0 {
+			if math.Signbit(v) {
+				return append(dst, "-0"...)
+			}
+			return append(dst, '0')
+		}
+		if math.Abs(v) <= maxSafeInt {
+			return strconv.AppendInt(dst, int64(v), 10)
+		}
 		// return fmt.Sprintf("%.0f", v)
 		return strconv.AppendFloat(dst, v, 'f', 0, 64)
 	}

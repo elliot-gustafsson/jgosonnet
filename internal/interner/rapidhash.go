@@ -63,6 +63,13 @@ func HashString(s string) uint64 {
 		return rapidMix(seed^a, rapidSecret2^b)
 	}
 
+	if l <= 32 {
+		seed = rapidMix(read64(p, 0)^rapidSecret2, read64(p, 8)^seed^rapidSecret1)
+		a := read64(p, l-16)
+		b := read64(p, l-8)
+		return rapidMix(seed^a, rapidSecret2^b)
+	}
+
 	i := 0
 	if l > 96 {
 		// reads 96 bytes at a time and splits into 6 chunks continously and mixes n with n+3 to 3 results, then xor those.

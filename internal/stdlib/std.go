@@ -217,6 +217,7 @@ func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
 
 		layer.Keys[index] = keyId
 		layer.Values[index] = evaluator.MakeNativeFunctionValue(&nativeFunctions[i], ctx)
+		layer.Meta[index] = 0
 
 		layer.Index.Append(keyId)
 
@@ -228,6 +229,7 @@ func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
 
 		layer.Keys[index] = keyId
 		layer.Values[index] = t.val
+		layer.Meta[index] = 0
 
 		layer.Index.Append(keyId)
 
@@ -238,17 +240,6 @@ func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
 	val := evaluator.MakeObjectValue(obj)
 
 	return val, nil
-}
-
-func liftValueToBool(f func(evaluator.NamedValue) bool) evaluator.Func {
-	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-		a, err := args[0].Eval(ctx)
-		if err != nil {
-			return evaluator.ValueNone, err
-		}
-		res := f(evaluator.NamedValue{Value: a})
-		return evaluator.MakeBool(res), nil
-	}
 }
 
 func std_extVar(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -358,13 +349,61 @@ func std_assertEqual(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 	return evaluator.MakeBool(false), evaluator.MakeRuntimeError(fmt.Errorf("Assertion failed. %s != %s", aStrB.String(), bStrB.String()))
 }
 
-var std_isString = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsString() })
-var std_isNumber = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsNumber() })
-var std_isBoolean = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsBool() })
-var std_isObject = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsObject() })
-var std_isArray = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsArray() })
-var std_isFunction = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsFunction() })
-var std_isNull = liftValueToBool(func(v evaluator.NamedValue) bool { return v.IsNull() })
+func std_isString(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return evaluator.MakeBool(a.IsString()), nil
+}
+
+func std_isNumber(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return evaluator.MakeBool(a.IsNumber()), nil
+}
+
+func std_isBoolean(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return evaluator.MakeBool(a.IsBool()), nil
+}
+
+func std_isObject(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return evaluator.MakeBool(a.IsObject()), nil
+}
+
+func std_isArray(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return evaluator.MakeBool(a.IsArray()), nil
+}
+
+func std_isFunction(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return evaluator.MakeBool(a.IsFunction()), nil
+}
+
+func std_isNull(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return evaluator.MakeBool(a.IsNull()), nil
+}
 
 func std_toString(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	s, err := args[0].ToString(ctx)

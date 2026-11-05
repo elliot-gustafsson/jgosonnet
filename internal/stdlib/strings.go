@@ -19,71 +19,94 @@ import (
 
 const codepointMax = 0x10FFFF
 
-func liftString(f func(string) string) evaluator.Func {
-	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-		a, err := args[0].EvalString(ctx)
-		if err != nil {
-			return evaluator.ValueNone, err
-		}
-		res := f(a)
-		return evaluator.MakeString(res, ctx), nil
+func std_trim(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].EvalString(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
 	}
+	return evaluator.MakeString(strings.TrimSpace(a), ctx), nil
 }
 
-func liftStringErr(f func(string) (string, error)) evaluator.Func {
-	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-		a, err := args[0].EvalString(ctx)
-		if err != nil {
-			return evaluator.ValueNone, err
-		}
-		res, err := f(a)
-		if err != nil {
-			return evaluator.ValueNone, err
-		}
-		return evaluator.MakeString(res, ctx), nil
+func std_stripChars(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].EvalString(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
 	}
+	b, err := args[1].EvalString(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return evaluator.MakeString(strings.Trim(a, b), ctx), nil
 }
 
-func liftString2(f func(string, string) string) evaluator.Func {
-	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-		a, err := args[0].EvalString(ctx)
-		if err != nil {
-			return evaluator.ValueNone, err
-		}
-		b, err := args[1].EvalString(ctx)
-		if err != nil {
-			return evaluator.ValueNone, err
-		}
-		res := f(a, b)
-		return evaluator.MakeString(res, ctx), nil
+func std_rstripChars(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].EvalString(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
 	}
+	b, err := args[1].EvalString(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return evaluator.MakeString(strings.TrimRight(a, b), ctx), nil
 }
 
-var std_trim = liftString(strings.TrimSpace)
-var std_stripChars = liftString2(strings.Trim)
-var std_rstripChars = liftString2(strings.TrimRight)
-var std_lstripChars = liftString2(strings.TrimLeft)
+func std_lstripChars(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].EvalString(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	b, err := args[1].EvalString(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return evaluator.MakeString(strings.TrimLeft(a, b), ctx), nil
+}
 
-var std_md5 = liftString(func(s string) string {
+func std_md5(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	s, err := args[0].EvalString(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
 	hash := md5.Sum([]byte(s))
-	return hex.EncodeToString(hash[:])
-})
-var std_sha1 = liftString(func(s string) string {
+	return evaluator.MakeString(hex.EncodeToString(hash[:]), ctx), nil
+}
+
+func std_sha1(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	s, err := args[0].EvalString(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
 	hash := sha1.Sum([]byte(s))
-	return hex.EncodeToString(hash[:])
-})
-var std_sha256 = liftString(func(s string) string {
+	return evaluator.MakeString(hex.EncodeToString(hash[:]), ctx), nil
+}
+
+func std_sha256(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	s, err := args[0].EvalString(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
 	hash := sha256.Sum256([]byte(s))
-	return hex.EncodeToString(hash[:])
-})
-var std_sha512 = liftString(func(s string) string {
+	return evaluator.MakeString(hex.EncodeToString(hash[:]), ctx), nil
+}
+
+func std_sha512(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	s, err := args[0].EvalString(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
 	hash := sha512.Sum512([]byte(s))
-	return hex.EncodeToString(hash[:])
-})
-var std_sha3 = liftString(func(s string) string {
+	return evaluator.MakeString(hex.EncodeToString(hash[:]), ctx), nil
+}
+
+func std_sha3(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	s, err := args[0].EvalString(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
 	hash := sha3.Sum512([]byte(s))
-	return hex.EncodeToString(hash[:])
-})
+	return evaluator.MakeString(hex.EncodeToString(hash[:]), ctx), nil
+}
 
 func std_base64(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	inputVal, err := args[0].Eval(ctx)
@@ -132,13 +155,17 @@ func std_base64(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 	return evaluator.MakeString(res, ctx), nil
 }
 
-var std_base64Decode = liftStringErr(func(s string) (string, error) {
+func std_base64Decode(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	s, err := args[0].EvalString(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
 	out, err := base64.StdEncoding.DecodeString(s)
 	if err != nil {
-		return "", err
+		return evaluator.ValueNone, err
 	}
-	return string(out), err
-})
+	return evaluator.MakeString(string(out), ctx), nil
+}
 
 func std_base64DecodeBytes(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	arg, err := args[0].EvalString(ctx)
@@ -156,8 +183,21 @@ func std_base64DecodeBytes(args []evaluator.NamedValue, ctx evaluator.Context) (
 	return arrVal, nil
 }
 
-var std_asciiLower = liftString(strings.ToLower)
-var std_asciiUpper = liftString(strings.ToUpper)
+func std_asciiLower(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].EvalString(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return evaluator.MakeString(strings.ToLower(a), ctx), nil
+}
+
+func std_asciiUpper(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	a, err := args[0].EvalString(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return evaluator.MakeString(strings.ToUpper(a), ctx), nil
+}
 
 func std_isEmpty(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	arg, err := args[0].EvalString(ctx)
@@ -469,23 +509,16 @@ func std_splitLimitR(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 	return evaluator.MakeArray(res, ctx), nil
 }
 
-func liftCastString(f func(string) string) evaluator.Func {
-	return func(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-		val, err := args[0].Eval(ctx)
-		if err != nil {
-			return evaluator.ValueNone, err
-		}
-
-		strval, err := val.ToString(ctx)
-		if err != nil {
-			return evaluator.ValueNone, err
-		}
-		res := f(strval)
-		return evaluator.MakeString(res, ctx), nil
+func std_escapeStringBash(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	val, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
 	}
-}
+	s, err := val.ToString(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
 
-var std_escapeStringBash = liftCastString(func(s string) string {
 	var b strings.Builder
 	b.WriteByte('\'')
 
@@ -501,15 +534,31 @@ var std_escapeStringBash = liftCastString(func(s string) string {
 	b.WriteString(s[last:])
 
 	b.WriteByte('\'')
-	return b.String()
+	return evaluator.MakeString(b.String(), ctx), nil
+}
 
-})
+func std_escapeStringDollars(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	val, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	s, err := val.ToString(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	return evaluator.MakeString(strings.ReplaceAll(s, "$", "$$"), ctx), nil
+}
 
-var std_escapeStringDollars = liftCastString(func(s string) string {
-	return strings.ReplaceAll(s, "$", "$$")
-})
+func std_escapeStringXML(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
+	val, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	s, err := val.ToString(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
 
-var std_escapeStringXML = liftCastString(func(s string) string {
 	var b strings.Builder
 	last := 0
 	for i := 0; i < len(s); i++ {
@@ -533,8 +582,8 @@ var std_escapeStringXML = liftCastString(func(s string) string {
 		last = i + 1
 	}
 	b.WriteString(s[last:])
-	return b.String()
-})
+	return evaluator.MakeString(b.String(), ctx), nil
+}
 
 func std_escapeStringJson(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
