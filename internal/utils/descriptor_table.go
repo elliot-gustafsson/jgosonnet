@@ -88,12 +88,26 @@ func (dt *DescriptorTable) Append(key uint32) uint32 {
 func (dt *DescriptorTable) Get(key uint32) (uint32, bool) {
 	idx := hashUint32(key) & dt.capMask
 	for {
-		entry := &dt.entries[idx]
+		entry := dt.entries[idx]
 		if entry.Key == key {
 			return entry.Value, true
 		}
 		if entry.Key == 0 {
 			return 0, false
+		}
+		idx = (idx + 1) & dt.capMask
+	}
+}
+
+func (dt *DescriptorTable) GetIndex(key uint32) int {
+	idx := hashUint32(key) & dt.capMask
+	for {
+		entry := dt.entries[idx]
+		if entry.Key == key {
+			return int(entry.Value)
+		}
+		if entry.Key == 0 {
+			return -1
 		}
 		idx = (idx + 1) & dt.capMask
 	}

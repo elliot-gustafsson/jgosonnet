@@ -38,21 +38,15 @@ type Layer struct {
 	ParentScopePtr uintptr
 }
 
-func (l *Layer) findField(key uint32) (layerId int) {
-
+func (l *Layer) findField(key uint32) int {
 	if l.Index != nil {
-		if i, ok := l.Index.Get(key); ok {
-			return int(i)
-		}
-	} else {
-		keys := l.Keys
-		for i := range keys {
-			if keys[i] == key {
-				return i
-			}
+		return l.Index.GetIndex(key)
+	}
+	for i, k := range l.Keys {
+		if k == key {
+			return i
 		}
 	}
-
 	return -1
 }
 
@@ -89,13 +83,20 @@ func (l *Layer) UnpackFieldScopes() []uintptr {
 	return unsafe.Slice(ptr, len(l.Keys))
 }
 
+type singleLayerObject struct {
+	obj   Object
+	layer [1]*Layer
+}
+
 func NewSingleLayerObject(allocator *arena.Allocator, layer *Layer) *Object {
-	o := arena.Create[Object](allocator)
-	arena.Memclr(o)
-	o.Layers = arena.Alloc[*Layer](allocator, 1)
-	arena.MemclrSlice(o.Layers)
-	o.Layers[0] = layer
-	return o
+	s := arena.Create[singleLayerObject](allocator)
+	arena.Memclr(s)
+	s.layer[0] = layer
+	s.obj.Layers = s.layer[:]
+	if layer.AssertsPtr == 0 {
+		s.obj.AssertionState = AssertStatusChecked
+	}
+	return &s.obj
 }
 
 const (
@@ -381,19 +382,18 @@ func (t *Object) HasField(key uint32, includeHidden bool, ctx Context) bool {
 }
 
 func (t *Object) getScope(layerIndex int, layer *Layer, ctx Context) (uintptr, error) {
-
-	// no locals no need to create another scope
-	if len(layer.LocalKeys) == 0 {
-		return layer.ParentScopePtr, nil
+	if layer.LocalKeys != nil {
+		return t.createLayerScope(layerIndex, ctx)
 	}
-
-	return t.createLayerScope(layerIndex, layer, ctx)
+	return layer.ParentScopePtr, nil
 }
 
 //go:noinline
-func (t *Object) createLayerScope(layerIndex int, layer *Layer, ctx Context) (uintptr, error) {
+func (t *Object) createLayerScope(layerIndex int, ctx Context) (uintptr, error) {
+	layers := t.GetLayers(ctx)
+	layer := layers[layerIndex]
 	if t.Scopes == nil {
-		t.Scopes = arena.Alloc[uintptr](ctx.State.Allocator, len(t.GetLayers(ctx)))
+		t.Scopes = arena.Alloc[uintptr](ctx.State.Allocator, len(layers))
 		clear(t.Scopes)
 	}
 
@@ -498,6 +498,9 @@ func MergeObjects(leftPtr, rightPtr uintptr, ctx Context) *Object {
 	arena.Memclr(o)
 	o.LeftPtr = leftPtr
 	o.RightPtr = rightPtr
+	l := (*Object)(resolveUintptr(leftPtr))
+	r := (*Object)(resolveUintptr(rightPtr))
+	o.AssertionState = l.AssertionState & r.AssertionState & AssertStatusChecked
 	return o
 }
 
@@ -847,13 +850,14 @@ func getValue(obj *Object, layerId, fieldId int, ctx Context) (Value, error) {
 }
 
 func runAssertions(obj *Object, ctx Context) error {
-	if obj.AssertionState == AssertStatusChecked {
+	if obj.AssertionState != AssertStatusUnchecked {
 		return nil
 	}
-	if obj.AssertionState == AssertStatusChecking {
-		return nil
-	}
+	return runAssertionsSlow(obj, ctx)
+}
 
+//go:noinline
+func runAssertionsSlow(obj *Object, ctx Context) error {
 	obj.AssertionState = AssertStatusChecking
 
 	layers := obj.GetLayers(ctx)

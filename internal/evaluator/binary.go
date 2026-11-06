@@ -9,6 +9,47 @@ import (
 )
 
 func handleBinaryOp(op ast.BinaryOp, left, right Value, ctx Context) (Value, error) {
+	if left.IsNumber() && right.IsNumber() {
+		ln, rn := left.Number(), right.Number()
+		switch op {
+		case ast.BopPlus:
+			val := ln + rn
+			if val > math.MaxFloat64 || val < -math.MaxFloat64 {
+				return ValueNone, OverflowErr
+			}
+			return MakeNumber(val), nil
+		case ast.BopMinus:
+			val := ln - rn
+			if val > math.MaxFloat64 || val < -math.MaxFloat64 {
+				return ValueNone, OverflowErr
+			}
+			return MakeNumber(val), nil
+		case ast.BopMult:
+			val := ln * rn
+			if val > math.MaxFloat64 || val < -math.MaxFloat64 {
+				return ValueNone, OverflowErr
+			}
+			return MakeNumber(val), nil
+		case ast.BopLess:
+			return MakeBool(ln < rn), nil
+		case ast.BopLessEq:
+			return MakeBool(ln <= rn), nil
+		case ast.BopGreater:
+			return MakeBool(ln > rn), nil
+		case ast.BopGreaterEq:
+			return MakeBool(ln >= rn), nil
+		case ast.BopManifestEqual:
+			return MakeBool(ln == rn), nil
+		case ast.BopManifestUnequal:
+			return MakeBool(ln != rn), nil
+		default:
+			res, err := handleNumberOp(ln, rn, op)
+			if err != nil {
+				return ValueNone, err
+			}
+			return MakeNumber(res), nil
+		}
+	}
 
 	switch op {
 	case ast.BopPlus:
@@ -170,33 +211,67 @@ var DivisionByZeroErr = MakeRuntimeError(errors.New("Division by zero."))
 var OverflowErr = MakeRuntimeError(errors.New("Overflow"))
 var NanErr = MakeRuntimeError(errors.New("Not a number"))
 
-func liftBitwise(f func(int64, int64) int64, positiveRightArg bool) func(float64, float64) (float64, error) {
-	return func(left, right float64) (float64, error) {
-
-		if left < minSafeIntValue || left > maxSafeIntValue {
-			err := fmt.Errorf("Bitwise operator argument %v outside of range [%v, %v]", left, int64(minSafeIntValue), int64(maxSafeIntValue))
-			return 0, MakeRuntimeError(err)
-		}
-		if right < minSafeIntValue || right > maxSafeIntValue {
-			err := fmt.Errorf("Bitwise operator argument %v outside of range [%v, %v]", right, int64(minSafeIntValue), int64(maxSafeIntValue))
-			return 0, MakeRuntimeError(err)
-		}
-		if positiveRightArg && right < 0 {
-			return 0, MakeRuntimeError(errors.New("Shift by negative exponent."))
-		}
-		res := float64(f(int64(left), int64(right)))
-		if math.IsNaN(res) {
-			return 0, NanErr
-		}
-		if math.IsInf(res, 0) {
-			return 0, OverflowErr
-		}
-		return res, nil
+func checkBitwiseArgs(left, right float64, positiveRightArg bool) (int64, int64, error) {
+	if left < minSafeIntValue || left > maxSafeIntValue {
+		err := fmt.Errorf("Bitwise operator argument %v outside of range [%v, %v]", left, int64(minSafeIntValue), int64(maxSafeIntValue))
+		return 0, 0, MakeRuntimeError(err)
 	}
+	if right < minSafeIntValue || right > maxSafeIntValue {
+		err := fmt.Errorf("Bitwise operator argument %v outside of range [%v, %v]", right, int64(minSafeIntValue), int64(maxSafeIntValue))
+		return 0, 0, MakeRuntimeError(err)
+	}
+	if positiveRightArg && right < 0 {
+		return 0, 0, MakeRuntimeError(errors.New("Shift by negative exponent."))
+	}
+	return int64(left), int64(right), nil
 }
 
-var builtinShiftL = liftBitwise(func(x, y int64) int64 { return x << uint(y%64) }, true)
-var builtinShiftR = liftBitwise(func(x, y int64) int64 { return x >> uint(y%64) }, true)
-var builtinBitwiseAnd = liftBitwise(func(x, y int64) int64 { return x & y }, false)
-var builtinBitwiseOr = liftBitwise(func(x, y int64) int64 { return x | y }, false)
-var builtinBitwiseXor = liftBitwise(func(x, y int64) int64 { return x ^ y }, false)
+func finishBitwise(res float64) (float64, error) {
+	if math.IsNaN(res) {
+		return 0, NanErr
+	}
+	if res > math.MaxFloat64 || res < -math.MaxFloat64 {
+		return 0, OverflowErr
+	}
+	return res, nil
+}
+
+func builtinShiftL(left, right float64) (float64, error) {
+	x, y, err := checkBitwiseArgs(left, right, true)
+	if err != nil {
+		return 0, err
+	}
+	return finishBitwise(float64(x << uint(y%64)))
+}
+
+func builtinShiftR(left, right float64) (float64, error) {
+	x, y, err := checkBitwiseArgs(left, right, true)
+	if err != nil {
+		return 0, err
+	}
+	return finishBitwise(float64(x >> uint(y%64)))
+}
+
+func builtinBitwiseAnd(left, right float64) (float64, error) {
+	x, y, err := checkBitwiseArgs(left, right, false)
+	if err != nil {
+		return 0, err
+	}
+	return finishBitwise(float64(x & y))
+}
+
+func builtinBitwiseOr(left, right float64) (float64, error) {
+	x, y, err := checkBitwiseArgs(left, right, false)
+	if err != nil {
+		return 0, err
+	}
+	return finishBitwise(float64(x | y))
+}
+
+func builtinBitwiseXor(left, right float64) (float64, error) {
+	x, y, err := checkBitwiseArgs(left, right, false)
+	if err != nil {
+		return 0, err
+	}
+	return finishBitwise(float64(x ^ y))
+}
