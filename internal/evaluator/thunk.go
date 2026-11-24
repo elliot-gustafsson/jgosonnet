@@ -2,43 +2,9 @@ package evaluator
 
 import (
 	"errors"
-	"fmt"
 	"unsafe"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
-	"github.com/google/go-jsonnet/ast"
-)
-
-type ThunkType uint8
-
-const (
-	ThunkTypeNone ThunkType = iota
-	// Literals should never be thunked
-	// ThunkTypeNull
-	// ThunkTypeString
-	// ThunkTypeNumber
-	// ThunkTypeBool
-
-	// ThunkTypeSelf
-
-	ThunkTypeObject
-	ThunkTypeArray
-	ThunkTypeLocal
-	ThunkTypeApply
-	ThunkTypeIndex
-	ThunkTypeVar
-	ThunkTypeFunction
-	ThunkTypeConditional
-	ThunkTypeBinary
-	ThunkTypeUnary
-	ThunkTypeImport
-	ThunkTypeImportStr
-	ThunkTypeImportBin
-	ThunkTypeSuperIndex
-	ThunkTypeInSuper
-	ThunkTypeError
-
-	ThunkTypeGoCallback
 )
 
 type ThunkNodePtr uint64
@@ -50,7 +16,7 @@ type Thunk struct {
 	EvalState int
 }
 
-func NewThunk(nodeType ThunkType, nodePtr unsafe.Pointer, scopePtr uintptr, ctx Context) Value {
+func NewThunk(nodeType IRKind, nodePtr unsafe.Pointer, scopePtr uintptr, ctx Context) Value {
 	t := arena.Create[Thunk](ctx.State.Allocator)
 	t.NodePtr = boxThunkNodePtr(nodeType, nodePtr)
 	t.ScopePtr = scopePtr
@@ -59,12 +25,12 @@ func NewThunk(nodeType ThunkType, nodePtr unsafe.Pointer, scopePtr uintptr, ctx 
 	return MakeThunkValue(t, ctx)
 }
 
-func boxThunkNodePtr(nodeType ThunkType, nodePtr unsafe.Pointer) ThunkNodePtr {
+func boxThunkNodePtr(nodeType IRKind, nodePtr unsafe.Pointer) ThunkNodePtr {
 	return ThunkNodePtr((uint64(nodeType) << 56) | uint64(uintptr(nodePtr)))
 }
 
-func (v ThunkNodePtr) unbox() (t ThunkType, p unsafe.Pointer) {
-	t = ThunkType(v >> 56)
+func (v ThunkNodePtr) unbox() (t IRKind, p unsafe.Pointer) {
+	t = IRKind(v >> 56)
 	p = unsafe.Pointer(uintptr(v &^ tagMask))
 	return
 }
@@ -86,62 +52,11 @@ func (t *Thunk) Eval(baseCtx Context) (value Value, err error) {
 	ctx.SuperOffset = uint32(t.EvalState)
 	t.EvalState = -2
 
-	switch nodeType {
-	default:
-		return ValueNone, fmt.Errorf("unhandled thunk node type (%d)", nodeType)
-
-	case ThunkTypeObject:
-		node := (*ast.DesugaredObject)(nodePtr)
-		value, err = handleDesugaredObject(node, scopeId, ctx)
-	case ThunkTypeArray:
-		node := (*ast.Array)(nodePtr)
-		value, err = handleArray(node, scopeId, ctx)
-	case ThunkTypeLocal:
-		node := (*ast.Local)(nodePtr)
-		value, err = handleLocal(node, scopeId, ctx)
-	case ThunkTypeApply:
-		node := (*ast.Apply)(nodePtr)
-		value, err = handleApply(node, scopeId, ctx)
-	case ThunkTypeIndex:
-		node := (*ast.Index)(nodePtr)
-		value, err = handleIndex(node, scopeId, ctx)
-	case ThunkTypeVar:
-		node := (*ast.Var)(nodePtr)
-		value, err = handleVar(node, scopeId, ctx)
-	case ThunkTypeFunction:
-		node := (*ast.Function)(nodePtr)
-		value, err = handleFunction(node, scopeId, ctx)
-	case ThunkTypeConditional:
-		node := (*ast.Conditional)(nodePtr)
-		value, err = handleConditional(node, scopeId, ctx)
-	case ThunkTypeBinary:
-		node := (*ast.Binary)(nodePtr)
-		value, err = handleBinary(node, scopeId, ctx)
-	case ThunkTypeUnary:
-		node := (*ast.Unary)(nodePtr)
-		value, err = handleUnary(node, scopeId, ctx)
-	case ThunkTypeImport:
-		node := (*ast.Import)(nodePtr)
-		value, err = handleImport(node, ctx)
-	case ThunkTypeImportStr:
-		node := (*ast.ImportStr)(nodePtr)
-		value, err = handleImportStr(node, ctx)
-	case ThunkTypeImportBin:
-		node := (*ast.ImportBin)(nodePtr)
-		value, err = handleImportBin(node, ctx)
-	case ThunkTypeSuperIndex:
-		node := (*ast.SuperIndex)(nodePtr)
-		value, err = handleSuperIndex(node, scopeId, ctx)
-	case ThunkTypeInSuper:
-		node := (*ast.InSuper)(nodePtr)
-		value, err = handleInSuper(node, scopeId, ctx)
-	case ThunkTypeError:
-		node := (*ast.Error)(nodePtr)
-		value, err = handleError(node, scopeId, ctx)
-
-	case ThunkTypeGoCallback:
+	if nodeType == IRKindGoCallback {
 		node := (*GoCallbackNode)(nodePtr)
 		value, err = node.FuncVal.FunctionExec(node.Args, ctx)
+	} else {
+		value, err = evaluateIR((*IRNode)(nodePtr), scopeId, ctx)
 	}
 
 	if err != nil {

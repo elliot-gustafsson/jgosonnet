@@ -13,19 +13,42 @@ const (
 )
 
 type Allocator struct {
-	base   unsafe.Pointer
-	chunks []*[ChunkSize]byte
-	curr   int
-	offset uintptr
-	jumbos [][]byte
+	base      unsafe.Pointer
+	chunks    []*[ChunkSize]byte
+	curr      int
+	offset    uintptr
+	jumbos    [][]byte
+	highWater int
+	dirty     bool
 }
 
 func NewAllocator() (a *Allocator) {
 	a = &Allocator{
-		chunks: make([]*[ChunkSize]byte, 1, 64),
+		chunks:    make([]*[ChunkSize]byte, 1, 64),
+		highWater: -1,
 	}
 	a.chunks[0] = new([ChunkSize]byte)
 	a.base = unsafe.Pointer(a.chunks[0])
+	return
+}
+
+// CreateZeroed allocates type T in the arena and zeroes it only when reusing
+// dirty memory from a prior Reset() cycle (fresh arena chunks are already zeroed).
+func CreateZeroed[T any](a *Allocator) (ptr *T) {
+	ptr = Create[T](a)
+	if a.dirty {
+		Memclr(ptr)
+	}
+	return
+}
+
+// AllocZeroed allocates a slice of type T in the arena and zeroes it only when
+// reusing dirty memory from a prior Reset() cycle.
+func AllocZeroed[T any](a *Allocator, length int) (s []T) {
+	s = Alloc[T](a, length)
+	if a.dirty && len(s) > 0 {
+		MemclrSlice(s)
+	}
 	return
 }
 
@@ -141,9 +164,16 @@ func Realloc[T any](a *Allocator, slice []T, length int) (s []T) {
 }
 
 func (a *Allocator) Reset() {
+	if a.curr > a.highWater {
+		a.highWater = a.curr
+	} else if a.highWater < 0 && a.offset > 0 {
+		a.highWater = 0
+	}
+
 	a.curr = 0
 	a.base = unsafe.Pointer(a.chunks[0])
 	a.offset = 0
+	a.dirty = a.highWater >= 0
 
 	// Release jumbo buffers to the Go garbage collector
 	if len(a.jumbos) > 0 {
@@ -184,6 +214,9 @@ func allocRawSlow(a *Allocator, size, align uintptr) (ptr unsafe.Pointer) {
 	a.curr++
 	if a.curr >= len(a.chunks) {
 		a.chunks = append(a.chunks, new([ChunkSize]byte))
+		a.dirty = false
+	} else {
+		a.dirty = a.curr <= a.highWater
 	}
 
 	ptr = unsafe.Pointer(a.chunks[a.curr])
@@ -191,6 +224,5 @@ func allocRawSlow(a *Allocator, size, align uintptr) (ptr unsafe.Pointer) {
 	a.offset = size
 	a.base = ptr
 
-	// clear(unsafe.Slice((*byte)(ptr), size))
 	return
 }

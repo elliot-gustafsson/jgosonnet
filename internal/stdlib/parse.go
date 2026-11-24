@@ -12,7 +12,6 @@ import (
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
-	"github.com/elliot-gustafsson/jgosonnet/internal/utils"
 	"gopkg.in/yaml.v3"
 )
 
@@ -135,17 +134,11 @@ func rawDataToValue(x any, ctx evaluator.Context) (evaluator.Value, error) {
 		fieldCount := len(data)
 		allocator := ctx.State.Allocator
 
-		layer := arena.Create[evaluator.Layer](allocator)
-		arena.Memclr(layer)
+		layer, dl := evaluator.NewDynamicLayer(allocator)
 
-		layer.Keys = arena.Alloc[uint32](allocator, fieldCount)
-		layer.Values = arena.Alloc[evaluator.Value](allocator, fieldCount)
-		layer.Meta = arena.Alloc[uint8](allocator, fieldCount)
-
-		useMap := fieldCount > evaluator.MaxLayerLinearKeys
-		if useMap {
-			layer.Index = utils.NewEmptyDescriptorTable(allocator, fieldCount)
-		}
+		dl.Keys = arena.Alloc[uint32](allocator, fieldCount)
+		dl.Values = arena.Alloc[evaluator.Value](allocator, fieldCount)
+		dl.Meta = arena.Alloc[uint8](allocator, fieldCount)
 
 		index := 0
 		for keyName, value := range data {
@@ -156,21 +149,17 @@ func rawDataToValue(x any, ctx evaluator.Context) (evaluator.Value, error) {
 				return evaluator.ValueNone, err
 			}
 
-			layer.Keys[index] = keyId
-			layer.Values[index] = v
-			layer.Meta[index] = evaluator.DefaultFieldMeta
-
-			if useMap {
-				layer.Index.Append(keyId)
-			}
+			dl.Keys[index] = keyId
+			dl.Values[index] = v
+			dl.Meta[index] = evaluator.DefaultFieldMeta
 
 			index++
 		}
 
 		if index < fieldCount {
-			layer.Keys = layer.Keys[:index]
-			layer.Values = layer.Values[:index]
-			layer.Meta = layer.Meta[:index]
+			dl.Keys = dl.Keys[:index]
+			dl.Values = dl.Values[:index]
+			dl.Meta = dl.Meta[:index]
 		}
 
 		obj := evaluator.NewSingleLayerObject(allocator, layer)

@@ -3,11 +3,11 @@ package stdlib
 import (
 	"fmt"
 	"math"
-	"strings"
 	"unicode/utf8"
+	"unsafe"
 
-	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
+	"github.com/elliot-gustafsson/jgosonnet/internal/interner"
 	"github.com/elliot-gustafsson/jgosonnet/internal/utils"
 )
 
@@ -193,53 +193,82 @@ var functions = []struct {
 	{"manifestTomlEx", evaluator.NativeFunction{Func: std_manifestTomlEx, Params: []string{"value", "indent"}, OptStart: 2}},
 }
 
-func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
+var (
+	baseStdInterner *interner.Interner
+	baseStdLayer    *evaluator.Layer
+	baseStdObj      *evaluator.Object
+	baseStdValue    evaluator.Value
+	baseStdLookup   map[string]evaluator.Value
+)
+
+func init() {
+	inter := interner.NewInterner()
+
+	// Pre-intern common fixed symbols so every Evaluator shares identical IDs
+	// and can reuse the immutable baseStdValue with zero per-evaluation setup cost.
+	inter.InternStatic("thisFile")
+	inter.InternStatic("key")
+	inter.InternStatic("value")
 
 	fieldCount := len(functions) + len(constants)
-	allocator := ctx.State.Allocator
-
-	layer := arena.Create[evaluator.Layer](allocator)
-	arena.Memclr(layer)
-
-	layer.Keys = arena.Alloc[uint32](allocator, fieldCount)
-	layer.Values = arena.Alloc[evaluator.Value](allocator, fieldCount)
-	layer.Meta = arena.Alloc[uint8](allocator, fieldCount)
-	layer.Index = utils.NewEmptyDescriptorTable(allocator, fieldCount)
-
-	nativeFunctions := arena.Alloc[evaluator.NativeFunction](allocator, len(functions))
-	arena.MemclrSlice(nativeFunctions)
+	keys := make([]uint32, fieldCount)
+	vals := make([]evaluator.Value, fieldCount)
+	meta := make([]uint8, fieldCount)
+	lookup := make(map[string]evaluator.Value, fieldCount)
 
 	index := 0
 	for i := range functions {
-		nativeFunctions[i] = functions[i].fn
-
-		keyId := ctx.State.Interner.Intern(functions[i].name)
-
-		layer.Keys[index] = keyId
-		layer.Values[index] = evaluator.MakeNativeFunctionValue(&nativeFunctions[i], ctx)
-		layer.Meta[index] = 0
-
-		layer.Index.Append(keyId)
-
+		name := functions[i].name
+		keyId := inter.InternStatic(name)
+		v := evaluator.MakeNativeFunctionValue(&functions[i].fn, evaluator.Context{})
+		keys[index] = keyId
+		vals[index] = v
+		meta[index] = 0
+		lookup[name] = v
+		index++
+	}
+	for _, c := range constants {
+		keyId := inter.InternStatic(c.name)
+		keys[index] = keyId
+		vals[index] = c.val
+		meta[index] = 0
+		lookup[c.name] = c.val
 		index++
 	}
 
-	for _, t := range constants {
-		keyId := ctx.State.Interner.Intern(t.name)
-
-		layer.Keys[index] = keyId
-		layer.Values[index] = t.val
-		layer.Meta[index] = 0
-
-		layer.Index.Append(keyId)
-
-		index++
+	dl := &evaluator.DynamicLayer{
+		Keys:      keys,
+		Values:    vals,
+		Meta:      meta,
+		Index:     utils.NewHeapDescriptorTable(keys),
+		HasHidden: true,
+	}
+	layer := &evaluator.Layer{Dyn: dl}
+	obj := &evaluator.Object{
+		Layers:         []uintptr{uintptr(unsafe.Pointer(layer))},
+		LayerCount:     1,
+		AssertionState: evaluator.AssertStatusChecked,
+		Flags:          1, // objFlagHasHidden
 	}
 
-	obj := evaluator.NewSingleLayerObject(allocator, layer)
-	val := evaluator.MakeObjectValue(obj)
+	baseStdInterner = inter
+	baseStdLayer = layer
+	baseStdObj = obj
+	baseStdValue = evaluator.MakeObjectValue(obj)
+	baseStdLookup = lookup
+}
 
-	return val, nil
+func NewBaseInterner() *interner.Interner {
+	return baseStdInterner.Clone()
+}
+
+func LookupStdConst(name string) (evaluator.Value, bool) {
+	v, ok := baseStdLookup[name]
+	return v, ok
+}
+
+func InitStdLib(ctx evaluator.Context) (evaluator.Value, error) {
+	return baseStdValue, nil
 }
 
 func std_extVar(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -334,19 +363,21 @@ func std_assertEqual(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 		return evaluator.MakeBool(true), nil
 	}
 
-	var aStrB strings.Builder
-	err = evaluator.ManifestJson(&aStrB, a, ctx, evaluator.JsonConfigToString)
+	aBuf := evaluator.GetManifestBuf()
+	defer evaluator.PutManifestBuf(aBuf)
+	err = evaluator.ManifestJson(aBuf, a, ctx, evaluator.JsonConfigToString)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	var bStrB strings.Builder
-	err = evaluator.ManifestJson(&bStrB, b, ctx, evaluator.JsonConfigToString)
+	bBuf := evaluator.GetManifestBuf()
+	defer evaluator.PutManifestBuf(bBuf)
+	err = evaluator.ManifestJson(bBuf, b, ctx, evaluator.JsonConfigToString)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	return evaluator.MakeBool(false), evaluator.MakeRuntimeError(fmt.Errorf("Assertion failed. %s != %s", aStrB.String(), bStrB.String()))
+	return evaluator.MakeBool(false), evaluator.MakeRuntimeError(fmt.Errorf("Assertion failed. %s != %s", string(*aBuf), string(*bBuf)))
 }
 
 func std_isString(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -406,7 +437,14 @@ func std_isNull(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 }
 
 func std_toString(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	s, err := args[0].ToString(ctx)
+	v, err := args[0].Eval(ctx)
+	if err != nil {
+		return evaluator.ValueNone, err
+	}
+	if v.IsString() {
+		return v, nil
+	}
+	s, err := v.ToString(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}

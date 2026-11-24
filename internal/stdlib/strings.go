@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"unicode/utf8"
+	"unsafe"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 )
@@ -68,8 +69,10 @@ func std_md5(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	hash := md5.Sum([]byte(s))
-	return evaluator.MakeString(hex.EncodeToString(hash[:]), ctx), nil
+	hash := md5.Sum(unsafe.Slice(unsafe.StringData(s), len(s)))
+	ptr, buf := evaluator.AllocStringBuilder(ctx, hex.EncodedLen(len(hash)))
+	n := hex.Encode(buf[:cap(buf)], hash[:])
+	return evaluator.FinalizeStringBuilder(ptr, n), nil
 }
 
 func std_sha1(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -77,8 +80,10 @@ func std_sha1(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	hash := sha1.Sum([]byte(s))
-	return evaluator.MakeString(hex.EncodeToString(hash[:]), ctx), nil
+	hash := sha1.Sum(unsafe.Slice(unsafe.StringData(s), len(s)))
+	ptr, buf := evaluator.AllocStringBuilder(ctx, hex.EncodedLen(len(hash)))
+	n := hex.Encode(buf[:cap(buf)], hash[:])
+	return evaluator.FinalizeStringBuilder(ptr, n), nil
 }
 
 func std_sha256(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -86,8 +91,10 @@ func std_sha256(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	hash := sha256.Sum256([]byte(s))
-	return evaluator.MakeString(hex.EncodeToString(hash[:]), ctx), nil
+	hash := sha256.Sum256(unsafe.Slice(unsafe.StringData(s), len(s)))
+	ptr, buf := evaluator.AllocStringBuilder(ctx, hex.EncodedLen(len(hash)))
+	n := hex.Encode(buf[:cap(buf)], hash[:])
+	return evaluator.FinalizeStringBuilder(ptr, n), nil
 }
 
 func std_sha512(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -95,8 +102,10 @@ func std_sha512(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	hash := sha512.Sum512([]byte(s))
-	return evaluator.MakeString(hex.EncodeToString(hash[:]), ctx), nil
+	hash := sha512.Sum512(unsafe.Slice(unsafe.StringData(s), len(s)))
+	ptr, buf := evaluator.AllocStringBuilder(ctx, hex.EncodedLen(len(hash)))
+	n := hex.Encode(buf[:cap(buf)], hash[:])
+	return evaluator.FinalizeStringBuilder(ptr, n), nil
 }
 
 func std_sha3(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -104,8 +113,10 @@ func std_sha3(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Val
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	hash := sha3.Sum512([]byte(s))
-	return evaluator.MakeString(hex.EncodeToString(hash[:]), ctx), nil
+	hash := sha3.Sum512(unsafe.Slice(unsafe.StringData(s), len(s)))
+	ptr, buf := evaluator.AllocStringBuilder(ctx, hex.EncodedLen(len(hash)))
+	n := hex.Encode(buf[:cap(buf)], hash[:])
+	return evaluator.FinalizeStringBuilder(ptr, n), nil
 }
 
 func std_base64(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -397,6 +408,43 @@ func std_strReplace(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	return evaluator.MakeString(res, ctx), nil
 }
 
+func splitIntoArray(full, sep string, maxSplits int, ctx evaluator.Context) evaluator.Value {
+	if sep == "" {
+		n := utf8.RuneCountInString(full)
+		if maxSplits >= 0 && maxSplits < n {
+			n = maxSplits + 1
+		}
+		res, arrVal := evaluator.MakeArraySized(n, ctx)
+		i := 0
+		for pos, r := range full {
+			if maxSplits >= 0 && i == maxSplits {
+				res[i] = evaluator.MakeString(full[pos:], ctx)
+				break
+			}
+			w := utf8.RuneLen(r)
+			res[i] = evaluator.MakeString(full[pos:pos+w], ctx)
+			i++
+		}
+		return arrVal
+	}
+
+	count := strings.Count(full, sep)
+	if maxSplits >= 0 && count > maxSplits {
+		count = maxSplits
+	}
+
+	res, arrVal := evaluator.MakeArraySized(count+1, ctx)
+	sepLen := len(sep)
+	rem := full
+	for i := range count {
+		idx := strings.Index(rem, sep)
+		res[i] = evaluator.MakeString(rem[:idx], ctx)
+		rem = rem[idx+sepLen:]
+	}
+	res[count] = evaluator.MakeString(rem, ctx)
+	return arrVal
+}
+
 func std_split(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 
 	full, err := args[0].EvalString(ctx)
@@ -409,13 +457,7 @@ func std_split(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Va
 		return evaluator.ValueNone, err
 	}
 
-	parts := strings.Split(full, split)
-	res, arrVal := evaluator.MakeArraySized(len(parts), ctx)
-	for i, v := range parts {
-		res[i] = evaluator.MakeString(v, ctx)
-	}
-
-	return arrVal, nil
+	return splitIntoArray(full, split, -1, ctx), nil
 }
 
 func std_splitLimit(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -441,19 +483,8 @@ func std_splitLimit(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	if maxSplits < -1 {
 		return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("std.splitLimit third parameter should be -1 or non-negative, got %d", maxSplits))
 	}
-	var arr []string
-	if maxSplits < 0 {
-		arr = strings.Split(full, split)
-	} else {
-		arr = strings.SplitN(full, split, maxSplits+1)
-	}
 
-	res, arrVal := evaluator.MakeArraySized(len(arr), ctx)
-	for i, v := range arr {
-		res[i] = evaluator.MakeString(v, ctx)
-	}
-
-	return arrVal, nil
+	return splitIntoArray(full, split, maxSplits, ctx), nil
 }
 
 func std_splitLimitR(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -597,14 +628,15 @@ func std_escapeStringJson(args []evaluator.NamedValue, ctx evaluator.Context) (e
 		return evaluator.ValueNone, err
 	}
 
-	var b strings.Builder
+	bp := evaluator.GetManifestBuf()
+	defer evaluator.PutManifestBuf(bp)
 
-	err = evaluator.ManifestJson(&b, evaluator.MakeString(strval, ctx), ctx, evaluator.JsonConfigMinified)
+	err = evaluator.ManifestJson(bp, evaluator.MakeString(strval, ctx), ctx, evaluator.JsonConfigMinified)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	return evaluator.MakeString(b.String(), ctx), nil
+	return evaluator.MakeStringFromBytes(*bp, ctx), nil
 }
 
 func std_equalsIgnoreCase(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {

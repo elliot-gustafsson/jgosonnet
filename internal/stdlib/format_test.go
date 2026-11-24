@@ -1054,16 +1054,14 @@ func toValue(v any, ctx evaluator.Context) evaluator.Value {
 		}
 		return evaluator.MakeArray(arr, ctx)
 	case map[string]any:
-		layer := &evaluator.Layer{
-			Keys: make([]uint32, 0, len(val)),
-			Meta: make([]uint8, 0, len(val)),
-		}
+		layer, dl := evaluator.NewDynamicLayer(ctx.State.Allocator)
+		dl.Keys = make([]uint32, 0, len(val))
+		dl.Meta = make([]uint8, 0, len(val))
 		for k, item := range val {
 			keyId := ctx.State.Interner.Intern(k)
-			layer.Keys = append(layer.Keys, keyId)
-			layer.Values = append(layer.Values, toValue(item, ctx))
-			layer.Meta = append(layer.Meta, evaluator.DefaultFieldMeta)
-
+			dl.Keys = append(dl.Keys, keyId)
+			dl.Values = append(dl.Values, toValue(item, ctx))
+			dl.Meta = append(dl.Meta, evaluator.DefaultFieldMeta)
 		}
 		objId := evaluator.NewSingleLayerObject(ctx.State.Allocator, layer)
 		return evaluator.MakeObjectValue(objId)

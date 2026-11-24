@@ -107,11 +107,27 @@ func bopPlus(left, right Value, ctx Context) (Value, error) {
 
 	// Allow 123 + '123', should return '123123'
 	if left.IsString() {
+		ls := left.String(ctx)
+		if right.IsString() {
+			rs := right.String(ctx)
+			if len(ls) == 0 {
+				return right, nil
+			}
+			if len(rs) == 0 {
+				return left, nil
+			}
+			return MakeStringConcat(ls, rs, ctx), nil
+		}
 		rs, err := right.ToString(ctx)
 		if err != nil {
 			return ValueNone, err
 		}
-		ls := left.String(ctx)
+		if len(ls) == 0 {
+			return MakeString(rs, ctx), nil
+		}
+		if len(rs) == 0 {
+			return left, nil
+		}
 		return MakeStringConcat(ls, rs, ctx), nil
 	}
 
@@ -121,6 +137,12 @@ func bopPlus(left, right Value, ctx Context) (Value, error) {
 			return ValueNone, err
 		}
 		rs := right.String(ctx)
+		if len(ls) == 0 {
+			return right, nil
+		}
+		if len(rs) == 0 {
+			return MakeString(ls, ctx), nil
+		}
 		return MakeStringConcat(ls, rs, ctx), nil
 	}
 

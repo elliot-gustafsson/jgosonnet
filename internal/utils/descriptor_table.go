@@ -17,6 +17,28 @@ type DescriptorTable struct {
 	count   uint32
 }
 
+func NewHeapDescriptorTable(symbols []uint32) *DescriptorTable {
+	n := uint32(len(symbols))
+	cap := nextPowerOf2(n + (n >> 1))
+	capMask := cap - 1
+
+	entries := make([]Descriptor, cap)
+	for i, sym := range symbols {
+		idx := hashUint32(sym) & capMask
+		for entries[idx].Key != 0 {
+			idx = (idx + 1) & capMask
+		}
+		entries[idx].Key = sym
+		entries[idx].Value = uint32(i)
+	}
+
+	return &DescriptorTable{
+		entries: entries,
+		capMask: capMask,
+		count:   n,
+	}
+}
+
 func NewDescriptorTable(a *arena.Allocator, symbols []uint32) (dt *DescriptorTable) {
 	n := uint32(len(symbols))
 	// 1.4x capacity guarantees a max load factor of ~70% for minimal probing
@@ -35,8 +57,7 @@ func NewDescriptorTable(a *arena.Allocator, symbols []uint32) (dt *DescriptorTab
 		entries[idx].Value = uint32(i)
 	}
 
-	dt = arena.Create[DescriptorTable](a)
-	arena.Memclr(dt)
+	dt = arena.CreateZeroed[DescriptorTable](a)
 	*dt = DescriptorTable{
 		entries: entries,
 		capMask: capMask,
@@ -51,14 +72,12 @@ func NewEmptyDescriptorTable(a *arena.Allocator, l int) (dt *DescriptorTable) {
 	cap := nextPowerOf2(n + (n >> 1))
 	capMask := cap - 1
 
-	dt = arena.Create[DescriptorTable](a)
-	arena.Memclr(dt)
+	dt = arena.CreateZeroed[DescriptorTable](a)
 	*dt = DescriptorTable{
-		entries: arena.Alloc[Descriptor](a, int(cap)),
+		entries: arena.AllocZeroed[Descriptor](a, int(cap)),
 		capMask: capMask,
 		count:   0,
 	}
-	clear(dt.entries)
 	return
 }
 
@@ -113,9 +132,10 @@ func (dt *DescriptorTable) GetIndex(key uint32) int {
 	}
 }
 
-// hashUint32 is a multiplicative Fibonacci hash
+// hashUint32 is a multiplicative Fibonacci hash with upper-bit mixing
 func hashUint32(x uint32) uint32 {
-	return x * 2654435769
+	x *= 2654435769
+	return x ^ (x >> 16)
 }
 
 // nextPowerOf2 rounds up to the nearest power of 2.

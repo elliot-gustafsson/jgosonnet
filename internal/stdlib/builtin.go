@@ -22,12 +22,10 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 	n := len(inputArr)
 	allocator := ctx.State.Allocator
 
-	layer := arena.Create[evaluator.Layer](allocator)
-	arena.Memclr(layer)
-	layer.Keys = arena.Alloc[uint32](allocator, n)
-	layer.Nodes = arena.Alloc[ast.Node](allocator, n)
-	arena.MemclrSlice(layer.Nodes)
-	layer.Meta = arena.Alloc[uint8](allocator, n)
+	layer, dl := evaluator.NewDynamicLayer(allocator)
+	dl.Keys = arena.Alloc[uint32](allocator, n)
+	dl.Nodes = arena.AllocZeroed[*evaluator.IRNode](allocator, n)
+	dl.Meta = arena.Alloc[uint8](allocator, n)
 
 	scopes := arena.Alloc[uintptr](allocator, n)
 	layer.ParentScopePtr = uintptr(unsafe.Pointer(unsafe.SliceData(scopes))) | 1
@@ -35,7 +33,7 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 	var dt *utils.DescriptorTable
 	if n > evaluator.MaxLayerLinearKeys {
 		dt = utils.NewEmptyDescriptorTable(allocator, n)
-		layer.Index = dt
+		dl.Index = dt
 	}
 
 	index := 0
@@ -52,30 +50,35 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 			return evaluator.ValueNone, evaluator.MakeRuntimeError(errors.New("Object comprehension can only have one layer"))
 		}
 
-		innerLayer := l[0]
-		if len(innerLayer.Keys) == 0 {
+		innerLayer := evaluator.LayerAt(l, 0)
+		innerKeys := innerLayer.Keys()
+		if len(innerKeys) == 0 {
 			continue
 		}
-		if len(innerLayer.Keys) != 1 {
+		if len(innerKeys) != 1 {
 			return evaluator.ValueNone, evaluator.MakeRuntimeError(errors.New("Object comprehension can only have one field"))
 		}
 
-		key := innerLayer.Keys[0]
+		key := innerKeys[0]
 		if dt != nil {
 			if dt.Append(key) == math.MaxUint32 {
 				return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("Duplicate field name: %q", ctx.State.Interner.Get(key)))
 			}
 		} else {
 			for j := 0; j < index; j++ {
-				if layer.Keys[j] == key {
+				if dl.Keys[j] == key {
 					return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("Duplicate field name: %q", ctx.State.Interner.Get(key)))
 				}
 			}
 		}
 
-		layer.Keys[index] = key
-		layer.Nodes[index] = innerLayer.Nodes[0]
-		layer.Meta[index] = innerLayer.Meta[0]
+		meta := innerLayer.Meta()[0]
+		dl.Keys[index] = key
+		dl.Nodes[index] = innerLayer.Nodes()[0]
+		dl.Meta[index] = meta
+		if ast.ObjectFieldHide(meta&evaluator.MaskVisibility) == ast.ObjectFieldHidden {
+			dl.HasHidden = true
+		}
 
 		scopes[index] = innerLayer.ParentScopePtr
 
@@ -83,9 +86,9 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 	}
 
 	if index < n {
-		layer.Keys = layer.Keys[:index]
-		layer.Nodes = layer.Nodes[:index]
-		layer.Meta = layer.Meta[:index]
+		dl.Keys = dl.Keys[:index]
+		dl.Nodes = dl.Nodes[:index]
+		dl.Meta = dl.Meta[:index]
 	}
 
 	obj := evaluator.NewSingleLayerObject(allocator, layer)
@@ -104,11 +107,57 @@ func builtin_flatMapArray(args []evaluator.NamedValue, ctx evaluator.Context) (e
 		return evaluator.ValueNone, err
 	}
 
-	mapperFuncInput := arena.Alloc[evaluator.NamedValue](ctx.State.Allocator, 1)
-
-	// TODO: benchmark if stack or arena arrays are better
-	subArrayValues := make([]evaluator.Value, len(inputArr))
+	n := len(inputArr)
+	var stackSub [32]evaluator.Value
+	var subArrayValues []evaluator.Value
+	if n <= len(stackSub) {
+		subArrayValues = stackSub[:n]
+	} else {
+		subArrayValues = arena.Alloc[evaluator.Value](ctx.State.Allocator, n)
+	}
 	totalLen := 0
+
+	// Fast path: 1-parameter user function (all desugared array & object comprehensions)
+	if mapperFunc.Type() == evaluator.ValueTypeFunction {
+		f := mapperFunc.Function()
+		ir := f.IR
+		if len(ir.ParamKeyIds) == 1 {
+			if ctx.Depth >= ctx.State.MaxStack {
+				return evaluator.ValueNone, evaluator.MakeRuntimeError(fmt.Errorf("max stack frames exceeded."))
+			}
+			callCtx := ctx
+			callCtx.Depth++
+			callCtx.Self = f.Self
+			callCtx.SuperOffset = f.SuperOffset
+			body := ir.Body
+			parentScope := f.ScopePtr
+
+			for i, v := range inputArr {
+				slots, childScopeId := callCtx.NewScope(parentScope, 1)
+				slots[0] = v
+				out, err := evaluator.EvaluateNode(body, childScopeId, callCtx)
+				if err != nil {
+					return evaluator.ValueNone, err
+				}
+				if !out.IsArray() {
+					return evaluator.ValueNone, fmt.Errorf("unexpected response type of builtin_flatMapArray map func call: %s, expected array", out.Type().String())
+				}
+				subArrayValues[i] = out
+				totalLen += len(out.Array())
+			}
+
+			res, val := evaluator.MakeArraySized(totalLen, ctx)
+			index := 0
+			for _, out := range subArrayValues {
+				arr := out.Array()
+				copy(res[index:], arr)
+				index += len(arr)
+			}
+			return val, nil
+		}
+	}
+
+	mapperFuncInput := arena.Alloc[evaluator.NamedValue](ctx.State.Allocator, 1)
 	for i, v := range inputArr {
 		mapperFuncInput[0] = evaluator.NamedValue{Value: v}
 		out, err := mapperFunc.FunctionExec(mapperFuncInput, ctx)

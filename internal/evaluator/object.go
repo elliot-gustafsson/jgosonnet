@@ -15,34 +15,106 @@ import (
 
 const (
 	MaxPlanLinearKeys  = 32 // Threshold for compileObjectPlan map fallback
-	MaxLayerLinearKeys = 32 // Threshold for Layer.Index map fallback
+	MaxLayerLinearKeys = 32 // Threshold for eager DynamicLayer.Index map fallback
+	LazyLayerIndexMin  = 8  // Threshold for lazy DynamicLayer.Index on first findField
 
 	MaskVisibility = 0x03 // Binary 00000011
 	FlagPlusSuper  = 0x04 // Binary 00000100
 	FlagTombstone  = 0x08 // Binary 00001000
 )
 
+// DynamicLayer holds per-instance field tables for non-static layers
+// (computed keys, objectFlatMerge, std.parseJson/Yaml, std.prune, std.mapWithKey,
+// std.objectRemoveKey, std.mergePatch, stdlib, file thisFile layer).
+type DynamicLayer struct {
+	Keys       []uint32
+	Nodes      []*IRNode
+	Values     []Value
+	Meta       []uint8
+	Index      *utils.DescriptorTable
+	LocalNodes []*IRNode
+	Asserts    []*IRNode
+	HasHidden  bool
+}
+
+// Layer is a compact 24-byte object layer. Static object literals set Template
+// (shared immutable compile-time data) and leave Dyn nil.
 type Layer struct {
-	Keys   []uint32
-	Nodes  ast.Nodes
-	Values []Value
-	Meta   []uint8
-
-	Index *utils.DescriptorTable
-
-	LocalKeys  []uint32
-	LocalNodes ast.Nodes
-
-	AssertsPtr uintptr
-
+	Template       *LayerTemplate
+	Dyn            *DynamicLayer
 	ParentScopePtr uintptr
 }
 
-func (l *Layer) findField(key uint32) int {
-	if l.Index != nil {
-		return l.Index.GetIndex(key)
+func NewDynamicLayer(allocator *arena.Allocator) (*Layer, *DynamicLayer) {
+	dl := arena.CreateZeroed[DynamicLayer](allocator)
+	l := arena.CreateZeroed[Layer](allocator)
+	l.Dyn = dl
+	return l, dl
+}
+
+func (l *Layer) Keys() []uint32 {
+	if l.Template != nil {
+		return l.Template.Keys
 	}
-	for i, k := range l.Keys {
+	return l.Dyn.Keys
+}
+
+func (l *Layer) Meta() []uint8 {
+	if l.Template != nil {
+		return l.Template.Meta
+	}
+	return l.Dyn.Meta
+}
+
+func (l *Layer) Nodes() []*IRNode {
+	if l.Template != nil {
+		return l.Template.Nodes
+	}
+	return l.Dyn.Nodes
+}
+
+func (l *Layer) LocalNodes() []*IRNode {
+	if l.Template != nil {
+		return l.Template.LocalNodes
+	}
+	return l.Dyn.LocalNodes
+}
+
+func (l *Layer) Asserts() []*IRNode {
+	if l.Template != nil {
+		return l.Template.Asserts
+	}
+	return l.Dyn.Asserts
+}
+
+func (l *Layer) HasHidden() bool {
+	if l.Template != nil {
+		return l.Template.HasHidden
+	}
+	return l.Dyn.HasHidden
+}
+
+func (l *Layer) findField(key uint32, allocator *arena.Allocator) int {
+	if t := l.Template; t != nil {
+		if t.Index != nil {
+			return t.Index.GetIndex(key)
+		}
+		for i, k := range t.Keys {
+			if k == key {
+				return i
+			}
+		}
+		return -1
+	}
+	d := l.Dyn
+	if d.Index != nil {
+		return d.Index.GetIndex(key)
+	}
+	if len(d.Keys) > LazyLayerIndexMin && allocator != nil {
+		d.Index = utils.NewDescriptorTable(allocator, d.Keys)
+		return d.Index.GetIndex(key)
+	}
+	for i, k := range d.Keys {
 		if k == key {
 			return i
 		}
@@ -50,215 +122,312 @@ func (l *Layer) findField(key uint32) int {
 	return -1
 }
 
-func (l *Layer) packAsserts(s []ast.Node) {
-	if len(s) > math.MaxUint16 {
-		panic("asserts length exceeds uint16 max (65535)")
-	}
-
-	ptr := uintptr(unsafe.Pointer(unsafe.SliceData(s)))
-
-	const addrMask = (1 << 48) - 1
-	l.AssertsPtr = (uintptr(len(s)) << 48) | (ptr & addrMask)
-}
-
-func (l *Layer) unpackAsserts() []ast.Node {
-	if l.AssertsPtr == 0 {
-		return nil
-	}
-
-	length := int(l.AssertsPtr >> 48)
-
-	// mask of the top 16 bits
-	const lenMask = 0xFFFF << 48
-
-	ptr := unsafe.Pointer(uintptr(l.AssertsPtr &^ lenMask))
-	return unsafe.Slice((*ast.Node)(ptr), length)
-}
-
 func (l *Layer) UnpackFieldScopes() []uintptr {
 	if l.ParentScopePtr&1 == 0 {
 		return nil
 	}
 	ptr := (*uintptr)(unsafe.Pointer(l.ParentScopePtr &^ 1))
-	return unsafe.Slice(ptr, len(l.Keys))
+	return unsafe.Slice(ptr, len(l.Keys()))
 }
 
 type singleLayerObject struct {
 	obj   Object
-	layer [1]*Layer
+	layer [1]uintptr
+}
+
+type staticSingleLayerObject struct {
+	obj      Object
+	layerPtr [1]uintptr
+	layer    Layer
+}
+
+// NewStaticSingleLayerObject allocates a 64-byte Object + embedded 24-byte Layer
+// in a single 96-byte arena allocation for static object literals.
+func NewStaticSingleLayerObject(allocator *arena.Allocator, tmpl *LayerTemplate, scopePtr uintptr) *Object {
+	s := arena.CreateZeroed[staticSingleLayerObject](allocator)
+	s.layer.Template = tmpl
+	s.layer.ParentScopePtr = scopePtr
+	s.layerPtr[0] = uintptr(unsafe.Pointer(&s.layer))
+	s.obj.Layers = s.layerPtr[:]
+	s.obj.LayerCount = 1
+	if len(tmpl.Asserts) == 0 {
+		s.obj.AssertionState = AssertStatusChecked
+	}
+	if tmpl.HasHidden {
+		s.obj.Flags = objFlagHasHidden
+	}
+	return &s.obj
 }
 
 func NewSingleLayerObject(allocator *arena.Allocator, layer *Layer) *Object {
-	s := arena.Create[singleLayerObject](allocator)
-	arena.Memclr(s)
-	s.layer[0] = layer
+	s := arena.CreateZeroed[singleLayerObject](allocator)
+	s.layer[0] = uintptr(unsafe.Pointer(layer))
 	s.obj.Layers = s.layer[:]
-	if layer.AssertsPtr == 0 {
+	s.obj.LayerCount = 1
+	if len(layer.Asserts()) == 0 {
 		s.obj.AssertionState = AssertStatusChecked
 	}
+	if layer.HasHidden() {
+		s.obj.Flags = objFlagHasHidden
+	}
 	return &s.obj
+}
+
+func NewMultiLayerObject(allocator *arena.Allocator, existingLayers []uintptr, topLayer *Layer) *Object {
+	newLen := len(existingLayers) + 1
+	newLayers := arena.Alloc[uintptr](allocator, newLen)
+	copy(newLayers, existingLayers)
+	newLayers[newLen-1] = uintptr(unsafe.Pointer(topLayer))
+
+	resObj := arena.CreateZeroed[Object](allocator)
+	resObj.Layers = newLayers
+	resObj.LayerCount = uint32(newLen)
+
+	hasHidden := topLayer.HasHidden()
+	if !hasHidden {
+		for _, lp := range existingLayers {
+			if (*Layer)(resolveUintptr(lp)).HasHidden() {
+				hasHidden = true
+				break
+			}
+		}
+	}
+	if hasHidden {
+		resObj.Flags = objFlagHasHidden
+	}
+	return resObj
+}
+
+func LayerAt(layers []uintptr, idx int) *Layer {
+	return (*Layer)(resolveUintptr(layers[idx]))
+}
+
+func layerAt(layers []uintptr, idx int) *Layer {
+	return (*Layer)(resolveUintptr(layers[idx]))
 }
 
 const (
 	AssertStatusUnchecked uint8 = 0
 	AssertStatusChecking  uint8 = 1
 	AssertStatusChecked   uint8 = 2
+
+	objFlagHasHidden uint8 = 1 << 0
 )
 
 const (
 	FieldCacheInlineCount = 4
 	FieldCacheUnevaled    = Value(1)
+
+	cacheVisUnknown uint8 = 0
+	cacheVisHidden  uint8 = 1
+	cacheVisVisible uint8 = 2
 )
 
 type FieldCache struct {
-	inlineKeys    [FieldCacheInlineCount]uint32
-	inlineVals    [FieldCacheInlineCount]Value
-	fieldCache    *utils.PropertyMap[Value]
-	inlineCount   uint8
-	inlineVisible uint8
+	inlineKeys  [FieldCacheInlineCount]uint32
+	inlineVals  [FieldCacheInlineCount]Value
+	fieldCache  *utils.PropertyMap[Value]
+	inlineCount uint8
+	inlineVis   uint8 // 2 bits per inline slot: cacheVisUnknown/Hidden/Visible
 }
 
-func (c *FieldCache) Get(key uint32) (v Value, visible bool, ok bool) {
+func (c *FieldCache) getInline(key uint32) (Value, uint8, bool) {
 	for i := range c.inlineCount {
 		if c.inlineKeys[i] == key {
-			val := c.inlineVals[i]
-			if val == FieldCacheUnevaled {
-				return ValueNone, false, false
-			}
-			visible := (c.inlineVisible & (1 << i)) != 0
-			return val, visible, true
+			return c.inlineVals[i], (c.inlineVis >> (i * 2)) & 3, true
 		}
+	}
+	return ValueNone, cacheVisUnknown, false
+}
+
+//go:noinline
+func (c *FieldCache) getRawSlow(key uint32) (Value, uint8, bool) {
+	if entry, meta, ok := c.fieldCache.GetEx(key); ok {
+		return entry, meta, true
+	}
+	return ValueNone, cacheVisUnknown, false
+}
+
+func (c *FieldCache) getRaw(key uint32) (Value, uint8, bool) {
+	if v, vis, ok := c.getInline(key); ok {
+		return v, vis, true
 	}
 	if c.fieldCache != nil {
-		if entry, meta, ok := c.fieldCache.GetEx(key); ok {
-			if entry == FieldCacheUnevaled {
-				return ValueNone, false, false
-			}
-			return entry, (meta == 1), true
-		}
+		return c.getRawSlow(key)
 	}
-	return ValueNone, false, false
+	return ValueNone, cacheVisUnknown, false
 }
 
-func (c *FieldCache) Set(key uint32, val Value, visible bool, ctx Context) {
+func (c *FieldCache) setRaw(key uint32, val Value, vis uint8, ctx Context) {
 	for i := range c.inlineCount {
 		if c.inlineKeys[i] == key {
-			c.inlineVals[i] = val
-			if visible {
-				c.inlineVisible |= (1 << i) // Set bit
-			} else {
-				c.inlineVisible &= ^(1 << i) // Clear bit
+			if val != FieldCacheUnevaled || c.inlineVals[i] == ValueNone {
+				c.inlineVals[i] = val
+			}
+			if vis != cacheVisUnknown {
+				shift := i * 2
+				c.inlineVis = (c.inlineVis &^ (3 << shift)) | (vis << shift)
 			}
 			return
 		}
 	}
 	if c.inlineCount < FieldCacheInlineCount {
-		c.inlineKeys[c.inlineCount] = key
-		c.inlineVals[c.inlineCount] = val
-		if visible {
-			c.inlineVisible |= (1 << c.inlineCount)
-		}
+		idx := c.inlineCount
+		c.inlineKeys[idx] = key
+		c.inlineVals[idx] = val
+		shift := idx * 2
+		c.inlineVis = (c.inlineVis &^ (3 << shift)) | (vis << shift)
 		c.inlineCount++
 		return
 	}
 
 	allocator := ctx.State.Allocator
-
 	if c.fieldCache == nil {
 		c.fieldCache = utils.NewPropertyMap[Value](allocator, 8)
 	}
-	var meta uint8
-	if visible {
-		meta = 1
+	if val == FieldCacheUnevaled {
+		if existing, _, ok := c.fieldCache.GetEx(key); ok && existing != ValueNone {
+			val = existing
+		}
 	}
-	c.fieldCache.PutEx(allocator, key, val, meta)
+	c.fieldCache.PutEx(allocator, key, val, vis)
 }
 
-func (c *FieldCache) Has(key uint32) (visible bool, exists bool, ok bool) {
-	for i := range c.inlineCount {
-		if c.inlineKeys[i] == key {
-			val := c.inlineVals[i]
-			if val == ValueNone {
-				return false, false, true
-			}
-			visible := (c.inlineVisible & (1 << i)) != 0
-			return visible, true, true
-		}
+func (t *Object) ensureCache(ctx Context) *FieldCache {
+	if t.Cache == nil {
+		t.Cache = arena.CreateZeroed[FieldCache](ctx.State.Allocator)
 	}
-	if c.fieldCache != nil {
-		if entry, meta, ok := c.fieldCache.GetEx(key); ok {
-			if entry == ValueNone {
-				return false, false, true
-			}
-			return (meta == 1), true, true
-		}
-	}
-	return false, false, false
+	return t.Cache
 }
 
 type Object struct {
-	Layers []*Layer
+	Layers []uintptr
 
 	// Used ONLY for lazy merging (A + B)
 	LeftPtr  uintptr
 	RightPtr uintptr
 
-	Cache FieldCache
+	Cache     *FieldCache
+	ScopesPtr uintptr
 
-	Scopes []uintptr
-
+	LayerCount     uint32
 	AssertionState uint8
+	Flags          uint8
 }
 
-func (t *Object) GetField(key uint32, ctx Context) (val Value, vis bool, err error) {
-	val, vis, ok := t.Cache.Get(key)
-	if ok {
-		return
-	}
-	val, vis, err = t.getField(key, ctx, 0)
+func (t *Object) cacheSet(key uint32, val Value, vis uint8, ctx Context) {
+	t.ensureCache(ctx).setRaw(key, val, vis, ctx)
+}
 
-	if err == nil {
-		t.Cache.Set(key, val, vis, ctx)
+// GetField retrieves a field value without scanning lower layers for visibility.
+func (t *Object) GetField(key uint32, ctx Context) (val Value, err error) {
+	if c := t.Cache; c != nil {
+		if v, _, found := c.getInline(key); found {
+			if v != FieldCacheUnevaled {
+				return v, nil
+			}
+		} else if c.fieldCache != nil {
+			if v, _, found := c.getRawSlow(key); found && v != FieldCacheUnevaled {
+				return v, nil
+			}
+		}
 	}
-	return
+	var visState uint8
+	val, visState, err = t.getField(key, ctx, 0, false)
+	if err == nil {
+		t.cacheSet(key, val, visState, ctx)
+	}
+	return val, err
+}
+
+// GetFieldVis retrieves both the field value and its final visibility.
+func (t *Object) GetFieldVis(key uint32, ctx Context) (val Value, visible bool, err error) {
+	if t.Cache != nil {
+		if v, visState, found := t.Cache.getRaw(key); found && v != FieldCacheUnevaled {
+			if v.IsNone() {
+				return ValueNone, false, nil
+			}
+			if visState != cacheVisUnknown {
+				return v, visState == cacheVisVisible, nil
+			}
+			vis := t.resolveFieldVisibility(key, ctx)
+			t.Cache.setRaw(key, v, vis, ctx)
+			return v, vis == cacheVisVisible, nil
+		}
+	}
+	var visState uint8
+	val, visState, err = t.getField(key, ctx, 0, true)
+	if err == nil {
+		t.cacheSet(key, val, visState, ctx)
+	}
+	return val, visState == cacheVisVisible, err
 }
 
 func (t *Object) GetFieldWithOffset(key uint32, ctx Context, offset int) (Value, bool, error) {
-	return t.getField(key, ctx, offset)
+	val, visState, err := t.getField(key, ctx, offset, false)
+	return val, visState == cacheVisVisible, err
+}
+
+func (t *Object) resolveFieldVisibility(key uint32, ctx Context) uint8 {
+	if (t.Flags & objFlagHasHidden) == 0 {
+		return cacheVisVisible
+	}
+	layers := t.GetLayers(ctx)
+	alloc := ctx.State.Allocator
+	for layerOffset := len(layers) - 1; layerOffset >= 0; layerOffset-- {
+		layer := layerAt(layers, layerOffset)
+		fieldIndex := layer.findField(key, alloc)
+		if fieldIndex == -1 {
+			continue
+		}
+		vis, _, tombstone := EvalFieldMeta(layer.Meta()[fieldIndex])
+		if tombstone {
+			layerOffset -= int(uint32(layer.Dyn.Values[fieldIndex]))
+			continue
+		}
+		if vis == ast.ObjectFieldHidden {
+			return cacheVisHidden
+		}
+		if vis == ast.ObjectFieldVisible {
+			return cacheVisVisible
+		}
+	}
+	return cacheVisVisible
 }
 
 //go:noinline
-func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visible bool, err error) {
+func (t *Object) getField(key uint32, ctx Context, offset int, needVis bool) (res Value, visState uint8, err error) {
 
 	err = runAssertions(t, ctx)
 	if err != nil {
-		return ValueNone, false, err
+		return ValueNone, cacheVisUnknown, err
 	}
 
 	currentVisibility := ast.ObjectFieldInherit
 
 	layers := t.GetLayers(ctx)
+	alloc := ctx.State.Allocator
 
 	var layerOffset int
 
 	for layerOffset = len(layers) - (1 + offset); layerOffset >= 0; layerOffset-- {
-		layer := layers[layerOffset]
+		layer := layerAt(layers, layerOffset)
 
-		fieldIndex := layer.findField(key)
+		fieldIndex := layer.findField(key, alloc)
 		if fieldIndex == -1 {
 			continue
 		}
 
-		visibility, plusSuper, tombstone := EvalFieldMeta(layer.Meta[fieldIndex])
+		visibility, plusSuper, tombstone := EvalFieldMeta(layer.Meta()[fieldIndex])
 
 		if tombstone {
-			layerOffset -= int(uint32(layer.Values[fieldIndex]))
+			layerOffset -= int(uint32(layer.Dyn.Values[fieldIndex]))
 			continue
 		}
 
 		val, err := getValue(t, layerOffset, fieldIndex, ctx)
 		if err != nil {
-			return ValueNone, false, err
+			return ValueNone, cacheVisUnknown, err
 		}
 
 		if visibility != ast.ObjectFieldInherit {
@@ -266,7 +435,6 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 		}
 
 		if res.IsNone() && !plusSuper {
-			// Fast exit if its the first time we encounter the key and it shouldnt merge with super
 			res = val
 			break
 		}
@@ -276,36 +444,39 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 		} else {
 			v, err := bopPlus(val, res, ctx)
 			if err != nil {
-				return ValueNone, false, err
+				return ValueNone, cacheVisUnknown, err
 			}
 			res = v
 		}
 
 		if !plusSuper {
-			// If field does not have plus, just break since later layers dont matter
 			break
 		}
 	}
 
 	if res.IsNone() {
-		return ValueNone, false, nil
+		return ValueNone, cacheVisHidden, nil
 	}
 
 	if currentVisibility == ast.ObjectFieldInherit {
-		// If not explicitly visible, search for same key in lower layers to determine final visibility
-
+		if (t.Flags & objFlagHasHidden) == 0 {
+			return res, cacheVisVisible, nil
+		}
+		if !needVis {
+			return res, cacheVisUnknown, nil
+		}
 		for j := layerOffset - 1; j >= 0; j-- {
-			layer := layers[j]
+			layer := layerAt(layers, j)
 
-			fieldIndex := layer.findField(key)
+			fieldIndex := layer.findField(key, alloc)
 			if fieldIndex == -1 {
 				continue
 			}
 
-			visibility, _, tombstone := EvalFieldMeta(layer.Meta[fieldIndex])
+			visibility, _, tombstone := EvalFieldMeta(layer.Meta()[fieldIndex])
 
 			if tombstone {
-				j -= int(uint32(layer.Values[fieldIndex]))
+				j -= int(uint32(layer.Dyn.Values[fieldIndex]))
 				continue
 			}
 
@@ -316,73 +487,99 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 		}
 	}
 
-	visible = currentVisibility != ast.ObjectFieldHidden
-
-	return res, visible, nil
+	if currentVisibility == ast.ObjectFieldHidden {
+		return res, cacheVisHidden, nil
+	}
+	return res, cacheVisVisible, nil
 }
 
 func (t *Object) HasField(key uint32, includeHidden bool, ctx Context) bool {
-	if visible, exists, ok := t.Cache.Has(key); ok {
-		if !exists {
-			return false
+	if c := t.Cache; c != nil {
+		var val Value
+		var visState uint8
+		var found bool
+		if val, visState, found = c.getInline(key); !found && c.fieldCache != nil {
+			val, visState, found = c.getRawSlow(key)
 		}
-		return includeHidden || visible
+		if found {
+			if val == ValueNone {
+				return false
+			}
+			if includeHidden {
+				return true
+			}
+			if visState != cacheVisUnknown {
+				return visState == cacheVisVisible
+			}
+			vis := t.resolveFieldVisibility(key, ctx)
+			c.setRaw(key, val, vis, ctx)
+			return vis == cacheVisVisible
+		}
 	}
 
 	var exists bool
-	var res_visibility ast.ObjectFieldHide
+	var visState uint8 = cacheVisVisible
 
 	layers := t.GetLayers(ctx)
+	alloc := ctx.State.Allocator
 	for layerOffset := len(layers) - 1; layerOffset >= 0; layerOffset-- {
-		layer := layers[layerOffset]
-		fieldIndex := layer.findField(key)
+		layer := layerAt(layers, layerOffset)
+		fieldIndex := layer.findField(key, alloc)
 		if fieldIndex == -1 {
 			continue
 		}
 
-		visibility, _, tombstone := EvalFieldMeta(layer.Meta[fieldIndex])
+		visibility, _, tombstone := EvalFieldMeta(layer.Meta()[fieldIndex])
 		if tombstone {
-			layerOffset -= int(uint32(layer.Values[fieldIndex]))
+			layerOffset -= int(uint32(layer.Dyn.Values[fieldIndex]))
 			continue
 		}
 
 		if visibility == ast.ObjectFieldInherit {
-			for j := layerOffset - 1; j >= 0; j-- {
-				l := layers[j]
-				fi := l.findField(key)
-				if fi == -1 {
-					continue
-				}
-				v, _, ts := EvalFieldMeta(l.Meta[fi])
-				if ts {
-					j -= int(uint32(l.Values[fi]))
-					continue
-				}
-				if v != ast.ObjectFieldInherit {
-					visibility = v
-					break
+			if (t.Flags & objFlagHasHidden) != 0 {
+				if includeHidden {
+					visState = cacheVisUnknown
+				} else {
+					for j := layerOffset - 1; j >= 0; j-- {
+						l := layerAt(layers, j)
+						fi := l.findField(key, alloc)
+						if fi == -1 {
+							continue
+						}
+						v, _, ts := EvalFieldMeta(l.Meta()[fi])
+						if ts {
+							j -= int(uint32(l.Dyn.Values[fi]))
+							continue
+						}
+						if v != ast.ObjectFieldInherit {
+							visibility = v
+							break
+						}
+					}
+					if visibility == ast.ObjectFieldHidden {
+						visState = cacheVisHidden
+					}
 				}
 			}
+		} else if visibility == ast.ObjectFieldHidden {
+			visState = cacheVisHidden
 		}
 
-		res_visibility = visibility
 		exists = true
 		break
-
 	}
 
 	if exists {
-		visible := res_visibility != ast.ObjectFieldHidden
-		t.Cache.Set(key, FieldCacheUnevaled, visible, ctx)
-		return includeHidden || visible
+		t.cacheSet(key, FieldCacheUnevaled, visState, ctx)
+		return includeHidden || visState == cacheVisVisible
 	}
 
-	t.Cache.Set(key, ValueNone, false, ctx)
+	t.cacheSet(key, ValueNone, cacheVisHidden, ctx)
 	return false
 }
 
 func (t *Object) getScope(layerIndex int, layer *Layer, ctx Context) (uintptr, error) {
-	if layer.LocalKeys != nil {
+	if len(layer.LocalNodes()) > 0 {
 		return t.createLayerScope(layerIndex, ctx)
 	}
 	return layer.ParentScopePtr, nil
@@ -391,31 +588,28 @@ func (t *Object) getScope(layerIndex int, layer *Layer, ctx Context) (uintptr, e
 //go:noinline
 func (t *Object) createLayerScope(layerIndex int, ctx Context) (uintptr, error) {
 	layers := t.GetLayers(ctx)
-	layer := layers[layerIndex]
-	if t.Scopes == nil {
-		t.Scopes = arena.Alloc[uintptr](ctx.State.Allocator, len(layers))
-		clear(t.Scopes)
+	layer := layerAt(layers, layerIndex)
+	var scopes []uintptr
+	if t.ScopesPtr == 0 {
+		scopes = arena.AllocZeroed[uintptr](ctx.State.Allocator, len(layers))
+		t.ScopesPtr = uintptr(unsafe.Pointer(unsafe.SliceData(scopes)))
+	} else {
+		scopes = unsafe.Slice((*uintptr)(resolveUintptr(t.ScopesPtr)), len(layers))
 	}
 
-	scopePtr := t.Scopes[layerIndex]
+	scopePtr := scopes[layerIndex]
 	if scopePtr != 0 {
 		return scopePtr, nil
 	}
 
-	s, scopeId := ctx.NewScope(layer.ParentScopePtr, len(layer.LocalKeys))
+	localNodes := layer.LocalNodes()
+	slots, scopeId := ctx.NewScope(layer.ParentScopePtr, len(localNodes))
 
-	for i := range layer.LocalKeys {
-		node := layer.LocalNodes[i]
-
-		val, err := evaluateNodeLazy(node, scopeId, ctx)
-		if err != nil {
-			return 0, err
-		}
-
-		s.Bindings[i] = NamedValue{layer.LocalKeys[i], val}
+	for i, node := range localNodes {
+		slots[i] = evaluateIRLazy(node, scopeId, ctx)
 	}
 
-	t.Scopes[layerIndex] = scopeId
+	scopes[layerIndex] = scopeId
 
 	return scopeId, nil
 }
@@ -437,12 +631,51 @@ func EvalFieldMeta(m uint8) (visibility ast.ObjectFieldHide, plusSuper, tombston
 	return
 }
 
+func (t *Object) HasVisibleFields(ctx Context) bool {
+	layers := t.GetLayers(ctx)
+	if len(layers) == 1 {
+		layer := layerAt(layers, 0)
+		if tmpl := layer.Template; tmpl != nil {
+			return tmpl.VisibleCount > 0
+		}
+		for _, m := range layer.Dyn.Meta {
+			if (m&FlagTombstone) == 0 && ast.ObjectFieldHide(m&MaskVisibility) != ast.ObjectFieldHidden {
+				return true
+			}
+		}
+		return false
+	}
+
+	fps := compileObjectPlan(t, ctx)
+	for i := range fps {
+		if !fps[i].IsHidden() {
+			return true
+		}
+	}
+	return false
+}
+
 func (t *Object) Length(ctx Context) int {
-	fps := CompileObjectPlan(t, ctx)
+	layers := t.GetLayers(ctx)
+	if len(layers) == 1 {
+		layer := layerAt(layers, 0)
+		if tmpl := layer.Template; tmpl != nil {
+			return tmpl.VisibleCount
+		}
+		length := 0
+		for _, m := range layer.Dyn.Meta {
+			if (m&FlagTombstone) == 0 && ast.ObjectFieldHide(m&MaskVisibility) != ast.ObjectFieldHidden {
+				length++
+			}
+		}
+		return length
+	}
+
+	fps := compileObjectPlan(t, ctx)
 
 	length := 0
-	for _, v := range fps {
-		if v.IsHidden() {
+	for i := range fps {
+		if fps[i].IsHidden() {
 			continue
 		}
 		length++
@@ -450,41 +683,35 @@ func (t *Object) Length(ctx Context) int {
 	return length
 }
 
-func (t *Object) appendLayers(dest []*Layer, ctx Context) []*Layer {
+func (t *Object) fillLayers(dest []uintptr, idx int) int {
 	if t.Layers != nil {
-		targetLen := len(dest) + len(t.Layers)
-		if targetLen > cap(dest) {
-			n := len(dest)
-			newCap := max(targetLen, cap(dest)*2)
-			dest = arena.Realloc(ctx.State.Allocator, dest, newCap)
-			arena.MemclrSlice(dest[n:])
-			dest = dest[:n]
-		}
-
-		return append(dest, t.Layers...)
+		return idx + copy(dest[idx:], t.Layers)
 	}
 
 	if t.LeftPtr == 0 || t.RightPtr == 0 {
-		return dest
+		return idx
 	}
 
-	// copy lefts layer ids
 	l := (*Object)(resolveUintptr(t.LeftPtr))
-	dest = l.appendLayers(dest, ctx)
+	idx = l.fillLayers(dest, idx)
 
-	// copy rights layer ids
 	r := (*Object)(resolveUintptr(t.RightPtr))
-	return r.appendLayers(dest, ctx)
+	return r.fillLayers(dest, idx)
 }
 
-func (t *Object) GetLayers(ctx Context) []*Layer {
+func (t *Object) GetLayers(ctx Context) []uintptr {
 	if t.Layers != nil {
 		return t.Layers
 	}
 
-	layers := arena.Alloc[*Layer](ctx.State.Allocator, 8)
-	arena.MemclrSlice(layers)
-	layers = t.appendLayers(layers[:0], ctx)
+	total := int(t.LayerCount)
+	if total == 0 {
+		return nil
+	}
+
+	layers := arena.Alloc[uintptr](ctx.State.Allocator, total)
+	n := t.fillLayers(layers, 0)
+	layers = layers[:n]
 
 	t.Layers = layers
 	t.LeftPtr = 0
@@ -494,22 +721,31 @@ func (t *Object) GetLayers(ctx Context) []*Layer {
 }
 
 func MergeObjects(leftPtr, rightPtr uintptr, ctx Context) *Object {
-	o := arena.Create[Object](ctx.State.Allocator)
-	arena.Memclr(o)
+	o := arena.CreateZeroed[Object](ctx.State.Allocator)
 	o.LeftPtr = leftPtr
 	o.RightPtr = rightPtr
 	l := (*Object)(resolveUintptr(leftPtr))
 	r := (*Object)(resolveUintptr(rightPtr))
+	o.LayerCount = l.LayerCount + r.LayerCount
 	o.AssertionState = l.AssertionState & r.AssertionState & AssertStatusChecked
+	o.Flags = l.Flags | r.Flags
 	return o
 }
 
+const (
+	fpFlagHasFirst uint8 = 1 << 0
+	fpFlagIsClosed uint8 = 1 << 1
+)
+
 type FieldPlan struct {
-	Layers           []LayerRef
+	First            LayerRef
+	ExtraPtr         uintptr
+	ExtraLen         uint32
+	ExtraCap         uint32
 	KeyId            uint32
 	ShadowUntilLayer uint16
 	Visibility       uint8
-	IsClosed         bool
+	Flags            uint8
 }
 
 func (fp FieldPlan) IsHidden() bool {
@@ -524,6 +760,31 @@ func (fp FieldPlan) IsVisible() bool {
 	return fp.Visibility == uint8(ast.ObjectFieldVisible)
 }
 
+func (fp *FieldPlan) appendLayerRef(allocator *arena.Allocator, ref LayerRef) {
+	if (fp.Flags & fpFlagHasFirst) == 0 {
+		fp.First = ref
+		fp.Flags |= fpFlagHasFirst
+		return
+	}
+	if fp.ExtraLen == fp.ExtraCap {
+		newCap := fp.ExtraCap * 2
+		if newCap == 0 {
+			newCap = 4
+		}
+		var oldSlice []LayerRef
+		if fp.ExtraLen > 0 {
+			oldSlice = unsafe.Slice((*LayerRef)(resolveUintptr(fp.ExtraPtr)), fp.ExtraLen)
+		}
+		newSlice := arena.Alloc[LayerRef](allocator, int(newCap))
+		copy(newSlice, oldSlice)
+		fp.ExtraPtr = uintptr(unsafe.Pointer(unsafe.SliceData(newSlice)))
+		fp.ExtraCap = newCap
+	}
+	extra := unsafe.Slice((*LayerRef)(resolveUintptr(fp.ExtraPtr)), fp.ExtraCap)
+	extra[fp.ExtraLen] = ref
+	fp.ExtraLen++
+}
+
 type LayerRef struct {
 	LayerIdx int32
 	FieldIdx int32
@@ -535,23 +796,21 @@ func CompileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 
 func CompileObjectPlanEx(obj *Object, ctx Context, naturalSort bool) []FieldPlan {
 	plans := compileObjectPlan(obj, ctx)
+	if len(plans) <= 1 {
+		return plans
+	}
 
-	interner := ctx.State.Interner
+	inter := ctx.State.Interner
 
 	if naturalSort {
 		slices.SortFunc(plans, func(a, b FieldPlan) int {
-			aName := interner.Get(a.KeyId)
-			bName := interner.Get(b.KeyId)
-			return naturalStringSort(aName, bName)
+			return naturalStringSort(inter.Get(a.KeyId), inter.Get(b.KeyId))
 		})
 		return plans
 	}
 
 	slices.SortFunc(plans, func(a, b FieldPlan) int {
-		aName := interner.Get(a.KeyId)
-		bName := interner.Get(b.KeyId)
-		return cmp.Compare(aName, bName)
-
+		return cmp.Compare(inter.Get(a.KeyId), inter.Get(b.KeyId))
 	})
 
 	return plans
@@ -562,13 +821,42 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 
 	layers := obj.GetLayers(ctx)
 
+	if len(layers) == 1 {
+		layer := layerAt(layers, 0)
+		keys := layer.Keys()
+		n := len(keys)
+		if n == 0 {
+			return nil
+		}
+		meta := layer.Meta()
+		plans := arena.Alloc[FieldPlan](allocator, n)
+		out := 0
+		for f, keyID := range keys {
+			vis, _, tombstone := EvalFieldMeta(meta[f])
+			if tombstone {
+				continue
+			}
+			plans[out] = FieldPlan{
+				First:            LayerRef{0, int32(f)},
+				KeyId:            keyID,
+				ShadowUntilLayer: math.MaxUint16,
+				Visibility:       uint8(vis),
+				Flags:            fpFlagHasFirst | fpFlagIsClosed,
+			}
+			out++
+		}
+		return plans[:out]
+	}
+
 	maxKeys := 0
 	for i := range layers {
-		maxKeys += len(layers[i].Keys)
+		maxKeys += len(layerAt(layers, i).Keys())
+	}
+	if maxKeys == 0 {
+		return nil
 	}
 
 	plans := arena.Alloc[FieldPlan](allocator, maxKeys)
-	arena.MemclrSlice(plans)
 	plans = plans[:0]
 
 	var planIdxMap *utils.DescriptorTable
@@ -580,9 +868,11 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 	var validate bool
 
 	for l := len(layers) - 1; l >= 0; l-- {
-		layer := layers[l]
+		layer := layerAt(layers, l)
+		keys := layer.Keys()
+		meta := layer.Meta()
 
-		for f, keyID := range layer.Keys {
+		for f, keyID := range keys {
 
 			pIdx := -1
 			if useMap {
@@ -599,13 +889,9 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 			}
 
 			if pIdx == -1 {
-				lrs := arena.Alloc[LayerRef](allocator, 4)
-				arena.MemclrSlice(lrs)
-
 				plans = append(plans, FieldPlan{
 					KeyId:            keyID,
 					Visibility:       uint8(ast.ObjectFieldInherit),
-					Layers:           lrs[:0],
 					ShadowUntilLayer: math.MaxUint16,
 				})
 				pIdx = len(plans) - 1
@@ -613,10 +899,9 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 				if useMap {
 					planIdxMap.Append(keyID)
 				}
-
 			}
 
-			vis, plus, tombstone := EvalFieldMeta(layer.Meta[f])
+			vis, plus, tombstone := EvalFieldMeta(meta[f])
 
 			plan := &plans[pIdx]
 
@@ -629,7 +914,7 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 				}
 			}
 
-			if plan.IsClosed {
+			if (plan.Flags & fpFlagIsClosed) != 0 {
 				continue
 			}
 
@@ -639,20 +924,14 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 
 			if tombstone {
 				validate = true
-				plan.ShadowUntilLayer = uint16(l) - uint16(layer.Values[f])
+				plan.ShadowUntilLayer = uint16(l) - uint16(layer.Dyn.Values[f])
 				continue
 			}
 
-			if len(plan.Layers) == cap(plan.Layers) {
-				n := len(plan.Layers)
-				plan.Layers = arena.Realloc(allocator, plan.Layers, n*2)
-				arena.MemclrSlice(plan.Layers[n:])
-				plan.Layers = plan.Layers[:n]
-			}
-			plan.Layers = append(plan.Layers, LayerRef{int32(l), int32(f)})
+			plan.appendLayerRef(allocator, LayerRef{int32(l), int32(f)})
 
 			if !plus {
-				plan.IsClosed = true
+				plan.Flags |= fpFlagIsClosed
 			}
 		}
 	}
@@ -663,7 +942,7 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 
 	validPlans := plans[:0]
 	for _, p := range plans {
-		if len(p.Layers) > 0 {
+		if (p.Flags & fpFlagHasFirst) != 0 {
 			validPlans = append(validPlans, p)
 		}
 	}
@@ -672,9 +951,10 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 }
 
 func (t *FieldPlan) GetValue(obj *Object, ctx Context) (Value, error) {
-	value, _, ok := obj.Cache.Get(t.KeyId)
-	if ok {
-		return value, nil
+	if obj.Cache != nil {
+		if value, _, found := obj.Cache.getRaw(t.KeyId); found && value != FieldCacheUnevaled {
+			return value, nil
+		}
 	}
 
 	err := runAssertions(obj, ctx)
@@ -682,50 +962,68 @@ func (t *FieldPlan) GetValue(obj *Object, ctx Context) (Value, error) {
 		return ValueNone, err
 	}
 
-	layersCount := len(t.Layers)
-
-	if layersCount == 0 {
+	if (t.Flags & fpFlagHasFirst) == 0 {
 		return ValueNone, fmt.Errorf("no layers passed to plan.getValue")
 	}
 
-	// lastIdx := len(t.Layers) - 1
-
-	layerRef := t.Layers[0]
-
-	value, err = getValue(obj, int(layerRef.LayerIdx), int(layerRef.FieldIdx), ctx)
+	value, err := getValue(obj, int(t.First.LayerIdx), int(t.First.FieldIdx), ctx)
 	if err != nil {
 		return ValueNone, err
 	}
 
-	for i := 1; i < layersCount; i++ {
+	if t.ExtraLen > 0 {
+		extra := unsafe.Slice((*LayerRef)(resolveUintptr(t.ExtraPtr)), t.ExtraLen)
+		for _, overlayRef := range extra {
+			innerVal, err := getValue(obj, int(overlayRef.LayerIdx), int(overlayRef.FieldIdx), ctx)
+			if err != nil {
+				return ValueNone, err
+			}
 
-		overlayRef := t.Layers[i]
+			innerVal, err = innerVal.Eval(ctx)
+			if err != nil {
+				return ValueNone, err
+			}
 
-		innerVal, err := getValue(obj, int(overlayRef.LayerIdx), int(overlayRef.FieldIdx), ctx)
-		if err != nil {
-			return ValueNone, err
+			res, err := bopPlus(innerVal, value, ctx)
+			if err != nil {
+				return ValueNone, err
+			}
+
+			res, err = res.Eval(ctx)
+			if err != nil {
+				return ValueNone, err
+			}
+			value = res
 		}
-
-		innerVal, err = innerVal.Eval(ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-
-		res, err := bopPlus(innerVal, value, ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-
-		res, err = res.Eval(ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-		value = res
 	}
 
-	obj.Cache.Set(t.KeyId, value, !t.IsHidden(), ctx)
+	vis := cacheVisVisible
+	if t.IsHidden() {
+		vis = cacheVisHidden
+	}
+	obj.cacheSet(t.KeyId, value, vis, ctx)
 
 	return value, nil
+}
+
+// getSingleLayerFieldValue evaluates a field of a single-layer static object.
+// Constant fields bypass FieldCache allocation and getValue completely.
+func getSingleLayerFieldValue(obj *Object, tmpl *LayerTemplate, keyId uint32, fieldIdx int, ctx Context) (Value, error) {
+	node := tmpl.Nodes[fieldIdx]
+	if node.Kind == IRKindConst {
+		return node.ConstVal, nil
+	}
+	if obj.Cache != nil {
+		if val, _, found := obj.Cache.getRaw(keyId); found && val != FieldCacheUnevaled {
+			return val, nil
+		}
+	}
+	val, err := getValue(obj, 0, fieldIdx, ctx)
+	if err != nil {
+		return ValueNone, err
+	}
+	obj.cacheSet(keyId, val, cacheVisVisible, ctx)
+	return val, nil
 }
 
 func manifestObject(obj *Object, ctx Context) (map[string]any, error) {
@@ -742,10 +1040,8 @@ func manifestObject(obj *Object, ctx Context) (map[string]any, error) {
 	plans := CompileObjectPlan(obj, ctx)
 
 	res := make(map[string]any, len(plans))
-	for _, plan := range plans {
-		// if len(values) == 0 {
-		// 	continue
-		// }
+	for i := range plans {
+		plan := &plans[i]
 		keyId := plan.KeyId
 
 		if plan.IsHidden() {
@@ -764,10 +1060,8 @@ func manifestObject(obj *Object, ctx Context) (map[string]any, error) {
 			return nil, err
 		}
 
-		// Clone due to arenas being reset
 		nameClone := strings.Clone(name)
 		res[nameClone] = rawVal
-
 	}
 
 	return res, nil
@@ -784,7 +1078,8 @@ func ManifestObjectRoot(obj *Object, ctx Context) ([]NamedValue, error) {
 
 	res := arena.Alloc[NamedValue](ctx.State.Allocator, len(plans))
 	var index int
-	for _, plan := range plans {
+	for i := range plans {
+		plan := &plans[i]
 
 		if plan.IsHidden() {
 			continue
@@ -810,27 +1105,37 @@ func getValue(obj *Object, layerId, fieldId int, ctx Context) (Value, error) {
 
 	layers := obj.GetLayers(ctx)
 
-	var val Value
+	l := layerAt(layers, layerId)
 
-	l := layers[layerId]
-
-	if l.Values != nil {
-		val = l.Values[fieldId]
-	} else {
-
-		n := l.Nodes[fieldId]
-
-		evalCtx := ctx
-		evalCtx.SuperOffset = uint32(len(layers) - 1 - layerId)
-
-		if evalCtx.Depth >= evalCtx.State.MaxStack {
-			return ValueNone, MakeRuntimeError(fmt.Errorf("max stack frames exceeded."))
+	var n *IRNode
+	if t := l.Template; t != nil {
+		n = t.Nodes[fieldId]
+		if n.Kind == IRKindConst {
+			return n.ConstVal, nil
 		}
-		evalCtx.Depth++
+	} else {
+		d := l.Dyn
+		if d.Values != nil {
+			return d.Values[fieldId], nil
+		}
+		n = d.Nodes[fieldId]
+		if n.Kind == IRKindConst {
+			return n.ConstVal, nil
+		}
+	}
 
-		var scopeId uintptr
-		var err error
+	evalCtx := ctx
+	evalCtx.SuperOffset = uint32(len(layers) - 1 - layerId)
 
+	if evalCtx.Depth >= evalCtx.State.MaxStack {
+		return ValueNone, MakeRuntimeError(fmt.Errorf("max stack frames exceeded."))
+	}
+	evalCtx.Depth++
+
+	var scopeId uintptr
+	var err error
+
+	if l.Template == nil {
 		if s := l.UnpackFieldScopes(); s != nil {
 			scopeId = s[fieldId]
 		} else {
@@ -839,14 +1144,14 @@ func getValue(obj *Object, layerId, fieldId int, ctx Context) (Value, error) {
 				return ValueNone, err
 			}
 		}
-
-		val, err = EvaluateNode(n, scopeId, evalCtx)
+	} else {
+		scopeId, err = obj.getScope(layerId, l, evalCtx)
 		if err != nil {
 			return ValueNone, err
 		}
 	}
 
-	return val, nil
+	return EvaluateNode(n, scopeId, evalCtx)
 }
 
 func runAssertions(obj *Object, ctx Context) error {
@@ -863,10 +1168,10 @@ func runAssertionsSlow(obj *Object, ctx Context) error {
 	layers := obj.GetLayers(ctx)
 
 	for i := len(layers) - 1; i >= 0; i-- {
-		layer := layers[i]
+		layer := layerAt(layers, i)
 
-		asserts := layer.unpackAsserts()
-		if asserts == nil {
+		asserts := layer.Asserts()
+		if len(asserts) == 0 {
 			continue
 		}
 
@@ -894,25 +1199,48 @@ func runAssertionsSlow(obj *Object, ctx Context) error {
 }
 
 func GetObjectFields(obj *Object, ctx Context, inclhidden bool) []Value {
+	layers := obj.GetLayers(ctx)
+	if !inclhidden && len(layers) == 1 && layerAt(layers, 0).Template != nil {
+		tmpl := layerAt(layers, 0).Template
+		if tmpl.VisibleCount == 0 {
+			return nil
+		}
+		order := tmpl.GetSortedVisible(ctx.State.Interner)
+		res := arena.Alloc[Value](ctx.State.Allocator, len(order))
+		for i, fIdx := range order {
+			res[i] = MakeStringConst(tmpl.Keys[fIdx])
+		}
+		return res
+	}
 
 	plans := CompileObjectPlan(obj, ctx)
+	if len(plans) == 0 {
+		return nil
+	}
 
-	res := make([]Value, 0, len(plans))
-	for _, fp := range plans {
+	res := arena.Alloc[Value](ctx.State.Allocator, len(plans))
+	index := 0
+	for i := range plans {
+		fp := &plans[i]
 		if inclhidden || !fp.IsHidden() {
-			res = append(res, MakeString(ctx.State.Interner.Get(fp.KeyId), ctx))
+			res[index] = MakeStringConst(fp.KeyId)
+			index++
 		}
 	}
 
-	return res
+	return res[:index]
 }
 
 func GetObjectValues(obj *Object, ctx Context, inclHidden bool) ([]Value, error) {
 	plans := CompileObjectPlan(obj, ctx)
+	if len(plans) == 0 {
+		return nil, nil
+	}
 
-	res := make([]Value, 0, len(plans))
-	for _, plan := range plans {
-
+	res := arena.Alloc[Value](ctx.State.Allocator, len(plans))
+	index := 0
+	for i := range plans {
+		plan := &plans[i]
 		if !inclHidden && plan.IsHidden() {
 			continue
 		}
@@ -922,26 +1250,37 @@ func GetObjectValues(obj *Object, ctx Context, inclHidden bool) ([]Value, error)
 			return nil, err
 		}
 
-		res = append(res, val)
-
+		res[index] = val
+		index++
 	}
 
-	return res, nil
+	return res[:index], nil
 }
 
 func GetObjectKeysValues(obj *Object, ctx Context, inclHidden bool) ([]Value, error) {
 	allocator := ctx.State.Allocator
 
 	plans := CompileObjectPlan(obj, ctx)
+	if len(plans) == 0 {
+		return nil, nil
+	}
 
-	keyIdx := ctx.State.Interner.Intern("key")
-	valueIdx := ctx.State.Interner.Intern("value")
+	keyIdx := ctx.State.Interner.InternStatic("key")
+	valueIdx := ctx.State.Interner.InternStatic("value")
+
+	sharedKeys := arena.Alloc[uint32](allocator, 2)
+	sharedKeys[0] = keyIdx
+	sharedKeys[1] = valueIdx
+
+	sharedMeta := arena.Alloc[uint8](allocator, 2)
+	sharedMeta[0] = DefaultFieldMeta
+	sharedMeta[1] = DefaultFieldMeta
 
 	res := arena.Alloc[Value](allocator, len(plans))
 
 	var index int
-	for _, plan := range plans {
-
+	for i := range plans {
+		plan := &plans[i]
 		if !inclHidden && plan.IsHidden() {
 			continue
 		}
@@ -951,44 +1290,33 @@ func GetObjectKeysValues(obj *Object, ctx Context, inclHidden bool) ([]Value, er
 			return nil, err
 		}
 
-		layer := arena.Create[Layer](allocator)
-		arena.Memclr(layer)
+		layer, dl := NewDynamicLayer(allocator)
+		dl.Keys = sharedKeys
+		dl.Values = arena.Alloc[Value](allocator, 2)
+		dl.Values[0] = MakeStringConst(plan.KeyId)
+		dl.Values[1] = val
+		dl.Meta = sharedMeta
 
-		layer.Keys = arena.Alloc[uint32](allocator, 2)
-		layer.Keys[0] = keyIdx
-		layer.Keys[1] = valueIdx
-
-		layer.Values = arena.Alloc[Value](allocator, 2)
-		layer.Values[0] = MakeString(ctx.State.Interner.Get(plan.KeyId), ctx)
-		layer.Values[1] = val
-
-		layer.Meta = arena.Alloc[uint8](allocator, 2)
-		layer.Meta[0] = DefaultFieldMeta
-		layer.Meta[1] = DefaultFieldMeta
-
-		obj := NewSingleLayerObject(allocator, layer)
-		kv := MakeObjectValue(obj)
-
-		res[index] = kv
-
+		kvObj := NewSingleLayerObject(allocator, layer)
+		res[index] = MakeObjectValue(kvObj)
 		index++
-
 	}
 
-	if index < len(plans) {
-		res = res[:index]
-	}
-
-	return res, nil
+	return res[:index], nil
 }
 
 func GetObjectKeysValuesArray(obj *Object, ctx Context, inclHidden bool) ([]uint32, []Value, error) {
 	plans := CompileObjectPlan(obj, ctx)
+	if len(plans) == 0 {
+		return nil, nil, nil
+	}
 
-	keys := make([]uint32, 0, len(plans))
-	vals := make([]Value, 0, len(plans))
-	for _, plan := range plans {
-
+	allocator := ctx.State.Allocator
+	keys := arena.Alloc[uint32](allocator, len(plans))
+	vals := arena.Alloc[Value](allocator, len(plans))
+	index := 0
+	for i := range plans {
+		plan := &plans[i]
 		if !inclHidden && plan.IsHidden() {
 			continue
 		}
@@ -998,11 +1326,12 @@ func GetObjectKeysValuesArray(obj *Object, ctx Context, inclHidden bool) ([]uint
 			return nil, nil, err
 		}
 
-		keys = append(keys, plan.KeyId)
-		vals = append(vals, val)
+		keys[index] = plan.KeyId
+		vals[index] = val
+		index++
 	}
 
-	return keys, vals, nil
+	return keys[:index], vals[:index], nil
 }
 
 func (t *Object) Prune(ctx Context) (Value, error) {
@@ -1011,24 +1340,19 @@ func (t *Object) Prune(ctx Context) (Value, error) {
 		return ValueNone, err
 	}
 
-	plans := CompileObjectPlan(t, ctx)
+	plans := compileObjectPlan(t, ctx)
 
 	n := len(plans)
 	allocator := ctx.State.Allocator
 
-	layer := arena.Create[Layer](allocator)
-	arena.Memclr(layer)
-	layer.Keys = arena.Alloc[uint32](allocator, n)
-	layer.Values = arena.Alloc[Value](allocator, n)
-	layer.Meta = arena.Alloc[uint8](allocator, n)
-
-	useMap := n > MaxLayerLinearKeys
-	if useMap {
-		layer.Index = utils.NewEmptyDescriptorTable(allocator, n)
-	}
+	layer, dl := NewDynamicLayer(allocator)
+	dl.Keys = arena.Alloc[uint32](allocator, n)
+	dl.Values = arena.Alloc[Value](allocator, n)
+	dl.Meta = arena.Alloc[uint8](allocator, n)
 
 	index := 0
-	for _, plan := range plans {
+	for i := range plans {
+		plan := &plans[i]
 		if plan.IsHidden() {
 			continue
 		}
@@ -1041,7 +1365,6 @@ func (t *Object) Prune(ctx Context) (Value, error) {
 		val, err = val.Eval(ctx)
 		if err != nil {
 			return ValueNone, err
-
 		}
 
 		prunedVal, err := val.Prune(ctx)
@@ -1053,20 +1376,16 @@ func (t *Object) Prune(ctx Context) (Value, error) {
 			continue
 		}
 
-		layer.Keys[index] = plan.KeyId
-		layer.Values[index] = prunedVal
-		layer.Meta[index] = CreateFieldMeta(ast.ObjectFieldHide(plan.Visibility), false)
-
-		if useMap {
-			layer.Index.Append(plan.KeyId)
-		}
+		dl.Keys[index] = plan.KeyId
+		dl.Values[index] = prunedVal
+		dl.Meta[index] = CreateFieldMeta(ast.ObjectFieldHide(plan.Visibility), false)
 		index++
 	}
 
 	if index < n {
-		layer.Keys = layer.Keys[:index]
-		layer.Values = layer.Values[:index]
-		layer.Meta = layer.Meta[:index]
+		dl.Keys = dl.Keys[:index]
+		dl.Values = dl.Values[:index]
+		dl.Meta = dl.Meta[:index]
 	}
 
 	obj := NewSingleLayerObject(allocator, layer)
@@ -1087,7 +1406,6 @@ func (a *Object) Equal(b *Object, ctx Context) (bool, error) {
 
 	i, j := 0, 0
 	for i < len(planAs) && j < len(planBs) {
-		// Skip hidden fields for both objects
 		if planAs[i].IsHidden() {
 			i++
 			continue
@@ -1134,14 +1452,12 @@ func (a *Object) Equal(b *Object, ctx Context) (bool, error) {
 		j++
 	}
 
-	// Make sure object A has no remaining visible fields
 	for i < len(planAs) {
 		if !planAs[i].IsHidden() {
 			return false, nil
 		}
 		i++
 	}
-	// Make sure object B has no remaining visible fields
 	for j < len(planBs) {
 		if !planBs[j].IsHidden() {
 			return false, nil

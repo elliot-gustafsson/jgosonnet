@@ -22,10 +22,8 @@ func NewPropertyMap[T any](a *arena.Allocator, initialCap uint32) *PropertyMap[T
 		cap = 8
 	}
 
-	pm := arena.Create[PropertyMap[T]](a)
-	arena.Memclr(pm)
-	pm.entries = arena.Alloc[Property[T]](a, int(cap))
-	arena.MemclrSlice(pm.entries)
+	pm := arena.CreateZeroed[PropertyMap[T]](a)
+	pm.entries = arena.AllocZeroed[Property[T]](a, int(cap))
 	pm.capMask = cap - 1
 	pm.count = 0
 	return pm

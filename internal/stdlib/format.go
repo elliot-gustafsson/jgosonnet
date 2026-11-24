@@ -30,8 +30,8 @@ func std_format(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 		return evaluator.ValueNone, err
 	}
 
-	// add a min buffer of 128
-	initialCap := len(format) + max(128, len(format))
+	// add a min buffer of 128, without doubling huge templates into unnecessary jumbo allocs
+	initialCap := len(format) + max(128, len(format)/4)
 	// if the underlaying buffer need to resize it will escape to the heap.
 	// keeping track of when a resize and grow using the arena is much slower in the hot path.
 	ptr, buf := evaluator.AllocStringBuilder(ctx, initialCap)
@@ -274,7 +274,7 @@ func formatString(b []byte, str string, data evaluator.Value, ctx evaluator.Cont
 			keyId := ctx.State.Interner.Intern(key)
 			subCtx := ctx
 			subCtx.Self = data
-			val, _, err := dict.GetField(keyId, subCtx)
+			val, err := dict.GetField(keyId, subCtx)
 			if err != nil {
 				return nil, err
 			}
@@ -311,6 +311,11 @@ func formatString(b []byte, str string, data evaluator.Value, ctx evaluator.Cont
 		switch verb {
 		case 's':
 
+			if currentArg.IsString() && width == 0 && flags == 0 {
+				b = append(b, currentArg.String(ctx)...)
+				continue
+			}
+
 			strVal, err := currentArg.ToString(ctx)
 			if err != nil {
 				return nil, err
@@ -331,7 +336,7 @@ func formatString(b []byte, str string, data evaluator.Value, ctx evaluator.Cont
 			}
 			num := int64(currentArg.Number())
 
-			if width == 0 && flags == 0 {
+			if width == 0 && precVal == -1 && (flags&^FormatFlagZeroPad) == 0 {
 				b = strconv.AppendInt(b, num, 10)
 				continue
 			}

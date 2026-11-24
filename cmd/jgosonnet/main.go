@@ -68,12 +68,6 @@ func run() error {
 		return err
 	}
 
-	fmt.Print(s)
-
-	// err = json.NewEncoder(os.Stdout).Encode(val)
-	// if err != nil {
-	// 	return err
-	// }
-
-	return nil
+	_, err = os.Stdout.WriteString(s)
+	return err
 }

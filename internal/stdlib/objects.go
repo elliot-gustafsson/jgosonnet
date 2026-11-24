@@ -8,6 +8,20 @@ import (
 	"github.com/elliot-gustafsson/jgosonnet/internal/utils"
 )
 
+func internStringVal(arg evaluator.NamedValue, ctx evaluator.Context) (uint32, error) {
+	v, err := arg.Eval(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if !v.IsString() {
+		return 0, evaluator.TypeErrorSpecific(evaluator.ValueTypeString, v.Type())
+	}
+	if keyId := v.AsStringConst(); keyId != 0 {
+		return keyId, nil
+	}
+	return ctx.State.Interner.Intern(v.String(ctx)), nil
+}
+
 func std_get(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
 	// std.get(o, f, default=null, inc_hidden=true)
 
@@ -19,7 +33,7 @@ func std_get(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 		return evaluator.ValueNone, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, objVal.Type())
 	}
 
-	field, err := args[1].EvalString(ctx)
+	keyId, err := internStringVal(args[1], ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -42,16 +56,25 @@ func std_get(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 		inclHidden = v
 	}
 
-	keyId := ctx.State.Interner.Intern(field)
-
 	childCtx := ctx
 	childCtx.Self = objVal
 
-	val, visible, err := objVal.Object().GetField(keyId, childCtx)
+	if inclHidden {
+		val, err := objVal.Object().GetField(keyId, childCtx)
+		if err != nil {
+			return evaluator.ValueNone, err
+		}
+		if val.IsNone() {
+			return defaultVal, nil
+		}
+		return val, nil
+	}
+
+	val, visible, err := objVal.Object().GetFieldVis(keyId, childCtx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	if val.IsNone() || !visible && !inclHidden {
+	if val.IsNone() || !visible {
 		return defaultVal, nil
 	}
 	return val, nil
@@ -141,11 +164,10 @@ func std_objectHas(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	s, err := args[1].EvalString(ctx)
+	keyId, err := internStringVal(args[1], ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	keyId := ctx.State.Interner.Intern(s)
 	hasField := obj.HasField(keyId, false, ctx)
 	return evaluator.MakeBool(hasField), nil
 }
@@ -155,11 +177,10 @@ func std_objectHasAll(args []evaluator.NamedValue, ctx evaluator.Context) (evalu
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	s, err := args[1].EvalString(ctx)
+	keyId, err := internStringVal(args[1], ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	keyId := ctx.State.Interner.Intern(s)
 	hasField := obj.HasField(keyId, true, ctx)
 	return evaluator.MakeBool(hasField), nil
 }
@@ -173,7 +194,7 @@ func std_objectHasEx(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 		return evaluator.ValueNone, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, objVal.Type())
 	}
 
-	fname, err := args[1].EvalString(ctx)
+	keyId, err := internStringVal(args[1], ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -182,8 +203,6 @@ func std_objectHasEx(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-
-	keyId := ctx.State.Interner.Intern(fname)
 
 	hasField := objVal.Object().HasField(keyId, hidden, ctx)
 	return evaluator.MakeBool(hasField), nil
@@ -209,12 +228,11 @@ func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 	fieldCount := len(keys)
 	allocator := ctx.State.Allocator
 
-	layer := arena.Create[evaluator.Layer](allocator)
-	arena.Memclr(layer)
+	layer, dl := evaluator.NewDynamicLayer(allocator)
 
-	layer.Keys = arena.Alloc[uint32](allocator, fieldCount)
-	layer.Values = arena.Alloc[evaluator.Value](allocator, fieldCount)
-	layer.Meta = arena.Alloc[uint8](allocator, fieldCount)
+	dl.Keys = arena.Alloc[uint32](allocator, fieldCount)
+	dl.Values = arena.Alloc[evaluator.Value](allocator, fieldCount)
+	dl.Meta = arena.Alloc[uint8](allocator, fieldCount)
 
 	resObj := evaluator.NewSingleLayerObject(allocator, layer)
 	resObjVal := evaluator.MakeObjectValue(resObj)
@@ -227,21 +245,18 @@ func std_mapWithkey(args []evaluator.NamedValue, ctx evaluator.Context) (evaluat
 		v := vals[i]
 		idx := i * 2
 
-		keyString := ctx.State.Interner.Get(k)
-
-		allArgs[idx] = evaluator.NamedValue{Value: evaluator.MakeString(keyString, ctx)}
+		allArgs[idx] = evaluator.NamedValue{Value: evaluator.MakeStringConst(k)}
 		allArgs[idx+1] = evaluator.NamedValue{Value: v}
 
-		n := arena.Create[evaluator.GoCallbackNode](allocator)
-		arena.Memclr(n)
+		n := arena.CreateZeroed[evaluator.GoCallbackNode](allocator)
 		*n = evaluator.GoCallbackNode{
 			FuncVal: mapFunc,
 			Args:    allArgs[idx : idx+2],
 		}
 
-		layer.Keys[i] = k
-		layer.Values[i] = evaluator.NewThunk(evaluator.ThunkTypeGoCallback, unsafe.Pointer(n), 0, mapCtx)
-		layer.Meta[i] = evaluator.DefaultFieldMeta
+		dl.Keys[i] = k
+		dl.Values[i] = evaluator.NewThunk(evaluator.IRKindGoCallback, unsafe.Pointer(n), 0, mapCtx)
+		dl.Meta[i] = evaluator.DefaultFieldMeta
 
 	}
 
@@ -259,39 +274,27 @@ func std_objectRemoveKey(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 	}
 	obj := objVal.Object()
 
-	key, err := args[1].EvalString(ctx)
+	keyId, err := internStringVal(args[1], ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
 	allocator := ctx.State.Allocator
 
-	keyId := ctx.State.Interner.Intern(key)
-
 	existingLayers := obj.GetLayers(ctx)
 
-	tombstoneLayer := arena.Create[evaluator.Layer](allocator)
-	arena.Memclr(tombstoneLayer)
+	tombstoneLayer, dl := evaluator.NewDynamicLayer(allocator)
 
-	tombstoneLayer.Keys = arena.Alloc[uint32](allocator, 1)
-	tombstoneLayer.Keys[0] = keyId
+	dl.Keys = arena.Alloc[uint32](allocator, 1)
+	dl.Keys[0] = keyId
 
-	tombstoneLayer.Values = arena.Alloc[evaluator.Value](allocator, 1)
-	tombstoneLayer.Values[0] = evaluator.MakeTombstoneValue(len(existingLayers))
+	dl.Values = arena.Alloc[evaluator.Value](allocator, 1)
+	dl.Values[0] = evaluator.MakeTombstoneValue(len(existingLayers))
 
-	tombstoneLayer.Meta = arena.Alloc[uint8](allocator, 1)
-	tombstoneLayer.Meta[0] = evaluator.FlagTombstone | evaluator.DefaultFieldMeta
+	dl.Meta = arena.Alloc[uint8](allocator, 1)
+	dl.Meta[0] = evaluator.FlagTombstone | evaluator.DefaultFieldMeta
 
-	newLen := len(existingLayers) + 1
-	newLayers := arena.Alloc[*evaluator.Layer](allocator, newLen)
-	arena.MemclrSlice(newLayers)
-	copy(newLayers, existingLayers)
-	newLayers[newLen-1] = tombstoneLayer
-
-	resObj := arena.Create[evaluator.Object](allocator)
-	arena.Memclr(resObj)
-
-	resObj.Layers = newLayers
+	resObj := evaluator.NewMultiLayerObject(allocator, existingLayers, tombstoneLayer)
 	return evaluator.MakeObjectValue(resObj), nil
 }
 
@@ -327,7 +330,7 @@ func doMergePatch(target, patch evaluator.Value, ctx evaluator.Context) (evaluat
 	allocator := ctx.State.Allocator
 
 	var targetObj *evaluator.Object
-	var targetLayers []*evaluator.Layer
+	var targetLayers []uintptr
 	if !target.IsNone() {
 		target, err = target.Eval(ctx)
 		if err != nil {
@@ -341,25 +344,24 @@ func doMergePatch(target, patch evaluator.Value, ctx evaluator.Context) (evaluat
 
 	fieldCount := len(patchPlans)
 
-	layer := arena.Create[evaluator.Layer](allocator)
-	arena.Memclr(layer)
+	layer, dl := evaluator.NewDynamicLayer(allocator)
 
-	layer.Keys = arena.Alloc[uint32](allocator, fieldCount)
-	layer.Values = arena.Alloc[evaluator.Value](allocator, fieldCount)
-	layer.Meta = arena.Alloc[uint8](allocator, fieldCount)
+	dl.Keys = arena.Alloc[uint32](allocator, fieldCount)
+	dl.Values = arena.Alloc[evaluator.Value](allocator, fieldCount)
+	dl.Meta = arena.Alloc[uint8](allocator, fieldCount)
 
 	useMap := fieldCount > evaluator.MaxLayerLinearKeys
 	if useMap {
-		layer.Index = utils.NewEmptyDescriptorTable(allocator, fieldCount)
+		dl.Index = utils.NewEmptyDescriptorTable(allocator, fieldCount)
 	}
 
 	var index int
-	for _, plan := range patchPlans {
+	for i := range patchPlans {
+		plan := &patchPlans[i]
 		if plan.IsHidden() {
 			continue
 		}
 
-		// Evaluate patch field in patch's context
 		val, err := plan.GetValue(patchObj, ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
@@ -375,11 +377,11 @@ func doMergePatch(target, patch evaluator.Value, ctx evaluator.Context) (evaluat
 		// RFC 7396: Null patch value removes the field from target
 		if val.IsNull() {
 			if targetObj != nil {
-				layer.Keys[index] = keyId
-				layer.Values[index] = evaluator.MakeTombstoneValue(len(targetLayers))
-				layer.Meta[index] = evaluator.FlagTombstone | evaluator.DefaultFieldMeta
+				dl.Keys[index] = keyId
+				dl.Values[index] = evaluator.MakeTombstoneValue(len(targetLayers))
+				dl.Meta[index] = evaluator.FlagTombstone | evaluator.DefaultFieldMeta
 				if useMap {
-					layer.Index.Append(keyId)
+					dl.Index.Append(keyId)
 				}
 				index++
 			}
@@ -390,7 +392,7 @@ func doMergePatch(target, patch evaluator.Value, ctx evaluator.Context) (evaluat
 		if val.IsObject() {
 			var mergedVal evaluator.Value
 			if targetObj != nil {
-				targetFieldVal, vis, err := targetObj.GetField(keyId, ctx)
+				targetFieldVal, vis, err := targetObj.GetFieldVis(keyId, ctx)
 				if err != nil {
 					return evaluator.ValueNone, err
 				}
@@ -421,30 +423,30 @@ func doMergePatch(target, patch evaluator.Value, ctx evaluator.Context) (evaluat
 				mergedVal = m
 			}
 
-			layer.Keys[index] = keyId
-			layer.Values[index] = mergedVal
-			layer.Meta[index] = evaluator.DefaultFieldMeta
+			dl.Keys[index] = keyId
+			dl.Values[index] = mergedVal
+			dl.Meta[index] = evaluator.DefaultFieldMeta
 			if useMap {
-				layer.Index.Append(keyId)
+				dl.Index.Append(keyId)
 			}
 			index++
 			continue
 		}
 
 		// Primitive, array, or boolean values replace target field directly
-		layer.Keys[index] = keyId
-		layer.Values[index] = val
-		layer.Meta[index] = evaluator.DefaultFieldMeta
+		dl.Keys[index] = keyId
+		dl.Values[index] = val
+		dl.Meta[index] = evaluator.DefaultFieldMeta
 		if useMap {
-			layer.Index.Append(keyId)
+			dl.Index.Append(keyId)
 		}
 		index++
 	}
 
 	if index < fieldCount {
-		layer.Keys = layer.Keys[:index]
-		layer.Values = layer.Values[:index]
-		layer.Meta = layer.Meta[:index]
+		dl.Keys = dl.Keys[:index]
+		dl.Values = dl.Values[:index]
+		dl.Meta = dl.Meta[:index]
 	}
 
 	// If target was not an object, return a single-layer object containing non-null patch fields
@@ -454,15 +456,6 @@ func doMergePatch(target, patch evaluator.Value, ctx evaluator.Context) (evaluat
 	}
 
 	// Stack patch layer on top of existing target layers
-	newLen := len(targetLayers) + 1
-	newLayers := arena.Alloc[*evaluator.Layer](allocator, newLen)
-	arena.MemclrSlice(newLayers)
-	copy(newLayers, targetLayers)
-	newLayers[newLen-1] = layer
-
-	resObj := arena.Create[evaluator.Object](allocator)
-	arena.Memclr(resObj)
-	resObj.Layers = newLayers
-
+	resObj := evaluator.NewMultiLayerObject(allocator, targetLayers, layer)
 	return evaluator.MakeObjectValue(resObj), nil
 }

@@ -22,13 +22,11 @@ func setupBenchContext() Context {
 
 func makeBenchFunc(ctx Context, paramNames []string, defaultArg ast.Node) Value {
 	params := make([]ast.Parameter, len(paramNames))
-	paramKeyIds := arena.Alloc[uint32](ctx.State.Allocator, len(paramNames))
 	for i, name := range paramNames {
 		params[i] = ast.Parameter{Name: ast.Identifier(name)}
 		if i == len(paramNames)-1 && defaultArg != nil {
 			params[i].DefaultArg = defaultArg
 		}
-		paramKeyIds[i] = ctx.State.Interner.Intern(name)
 	}
 
 	body := &ast.LiteralNull{}
@@ -37,12 +35,12 @@ func makeBenchFunc(ctx Context, paramNames []string, defaultArg ast.Node) Value 
 		Body:       body,
 	}
 
+	irNode := CompileAST(node, ctx.State.Interner)
 	f := arena.Create[Function](ctx.State.Allocator)
 	arena.Memclr(f)
 	*f = Function{
-		Node:        node,
-		ScopePtr:    0,
-		ParamKeyIds: paramKeyIds,
+		IR:       (*IRFunction)(irNode.Extra),
+		ScopePtr: 0,
 	}
 	return MakeFunctionValue(f, ctx)
 }

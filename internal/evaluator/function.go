@@ -4,17 +4,13 @@ import (
 	"fmt"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
-	"github.com/google/go-jsonnet/ast"
 )
 
 type Func = func(args []NamedValue, ctx Context) (Value, error)
 
 type Function struct {
-	Node     *ast.Function
-	ScopePtr uintptr
-
-	ParamKeyIds []uint32
-
+	IR          *IRFunction
+	ScopePtr    uintptr
 	Self        Value
 	SuperOffset uint32
 }
@@ -25,21 +21,9 @@ type NativeFunction struct {
 	OptStart uint32
 }
 
-// func (t *Function) Noop() bool {
-// 	return t.Node == nil
-// }
-
 // Length of a function is the number of required args
 func (t *Function) Length() int {
-	params := t.Node.Parameters
-
-	var n int
-	for _, p := range params {
-		if p.DefaultArg == nil {
-			n++
-		}
-	}
-	return n
+	return t.IR.RequiredCnt
 }
 
 func execFunction(funcVal Value, args []NamedValue, ctx Context, tailstrict bool) (Value, error) {
@@ -59,9 +43,9 @@ func execFunction(funcVal Value, args []NamedValue, ctx Context, tailstrict bool
 //go:noinline
 func execUserFunction(funcVal Value, args []NamedValue, callCtx Context, tailstrict bool) (Value, error) {
 	f := funcVal.Function()
-	paramCount := len(f.Node.Parameters)
-	paramKeyIds := f.ParamKeyIds
-	node := f.Node
+	ir := f.IR
+	paramKeyIds := ir.ParamKeyIds
+	paramCount := len(paramKeyIds)
 	scopePtr := f.ScopePtr
 
 	ctx := callCtx
@@ -78,7 +62,7 @@ func execUserFunction(funcVal Value, args []NamedValue, callCtx Context, tailstr
 
 	if paramCount == 0 {
 		if argsLen == 0 {
-			return EvaluateNode(node.Body, scopePtr, ctx)
+			return EvaluateNode(ir.Body, scopePtr, ctx)
 		}
 		if args[0].Key == 0 {
 			return errTooManyPositional(0, countPositional(args))
@@ -86,7 +70,7 @@ func execUserFunction(funcVal Value, args []NamedValue, callCtx Context, tailstr
 		return errNoSuchParam(args[0].Key, ctx)
 	}
 
-	s, childScopeId := ctx.NewScope(scopePtr, paramCount)
+	slots, childScopeId := ctx.NewScope(scopePtr, paramCount)
 
 	// bind positional args
 	posIdx := 0
@@ -101,22 +85,24 @@ func execUserFunction(funcVal Value, args []NamedValue, callCtx Context, tailstr
 			}
 			return errTooManyPositional(paramCount, numPos)
 		}
-		a := args[posIdx]
+		v := args[posIdx].Value
 		if tailstrict {
 			var err error
-			a.Value, err = a.Eval(ctx)
+			v, err = v.Eval(ctx)
 			if err != nil {
 				return ValueNone, err
 			}
 		}
-		a.Key = paramKeyIds[posIdx]
-		s.Bindings[posIdx] = a
+		slots[posIdx] = v
 		posIdx++
 	}
 
 	if posIdx == argsLen && posIdx == paramCount {
-		return EvaluateNode(node.Body, childScopeId, ctx)
+		return EvaluateNode(ir.Body, childScopeId, ctx)
 	}
+
+	// Zero unbound trailing slots before binding named/default args
+	clear(slots[posIdx:])
 
 	// bind named args
 	if posIdx < argsLen {
@@ -127,9 +113,10 @@ func execUserFunction(funcVal Value, args []NamedValue, callCtx Context, tailstr
 				return errPosArgAfterNamed()
 			}
 
+			val := na.Value
 			if tailstrict {
 				var err error
-				na.Value, err = na.Eval(ctx)
+				val, err = val.Eval(ctx)
 				if err != nil {
 					return ValueNone, err
 				}
@@ -137,10 +124,10 @@ func execUserFunction(funcVal Value, args []NamedValue, callCtx Context, tailstr
 
 			for j := range paramCount {
 				if paramKeyIds[j] == na.Key {
-					if !s.Bindings[j].IsNone() {
+					if !slots[j].IsNone() {
 						return errArgAlreadyProvided(na.Key, ctx)
 					}
-					s.Bindings[j] = na
+					slots[j] = val
 					continue NamedArgsOuterLoop
 				}
 			}
@@ -150,37 +137,30 @@ func execUserFunction(funcVal Value, args []NamedValue, callCtx Context, tailstr
 	}
 
 	// fill default args
+	defaultArgs := ir.DefaultArgs
 	for i := posIdx; i < paramCount; i++ {
-		if !s.Bindings[i].IsNone() {
+		if !slots[i].IsNone() {
 			continue
 		}
 
-		n := node.Parameters[i].DefaultArg
-		if n == nil {
+		if defaultArgs == nil || defaultArgs[i] == nil {
 			return errMissingArg(paramKeyIds[i], ctx)
 		}
 
-		da, err := evaluateNodeLazy(n, childScopeId, ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-
+		da := evaluateIRLazy(defaultArgs[i], childScopeId, ctx)
 		if tailstrict {
+			var err error
 			da, err = da.Eval(ctx)
 			if err != nil {
 				return ValueNone, err
 			}
 		}
 
-		s.Bindings[i] = NamedValue{paramKeyIds[i], da}
+		slots[i] = da
 	}
 
-	return EvaluateNode(node.Body, childScopeId, ctx)
+	return EvaluateNode(ir.Body, childScopeId, ctx)
 }
-
-// func (t NativeFunction) Noop() bool {
-// 	return t.fn == nil
-// }
 
 func (t *NativeFunction) Length() int {
 	return int(t.OptStart)

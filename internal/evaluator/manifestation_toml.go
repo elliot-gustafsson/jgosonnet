@@ -2,10 +2,9 @@ package evaluator
 
 import (
 	"fmt"
-	"strings"
 )
 
-func ManifestToml(b *strings.Builder, value Value, ctx Context, sindent string) error {
+func ManifestToml(b *[]byte, value Value, ctx Context, sindent string) error {
 
 	if !value.IsObject() {
 		return fmt.Errorf("root value must be object for toml manifestation, got: %s", value.Type().String())
@@ -13,16 +12,14 @@ func ManifestToml(b *strings.Builder, value Value, ctx Context, sindent string) 
 
 	obj := value.Object()
 
-	err := renderTomlTable(b, obj, ctx, sindent, []string{}, "", false)
-	if err != nil {
-		return err
-	}
-	return nil
+	var err error
+	*b, err = renderTomlTable(*b, obj, ctx, sindent, []string{}, "", false)
+	return err
 }
 
-func renderTomlTable(b *strings.Builder, obj *Object, ctx Context, sindent string, path []string, cindent string, initNewline bool) error {
+func renderTomlTable(b []byte, obj *Object, ctx Context, sindent string, path []string, cindent string, initNewline bool) ([]byte, error) {
 	if ctx.Depth >= ctx.State.MaxStack {
-		return MakeRuntimeError(fmt.Errorf("max manifest depth exceeded, possible infinite recursion"))
+		return b, MakeRuntimeError(fmt.Errorf("max manifest depth exceeded, possible infinite recursion"))
 	}
 	ctx.Depth++
 
@@ -32,19 +29,20 @@ func renderTomlTable(b *strings.Builder, obj *Object, ctx Context, sindent strin
 
 	complexValues := make([]NamedValue, 0, len(fieldPlans)/2)
 
-	for _, plan := range fieldPlans {
+	for i := range fieldPlans {
+		plan := &fieldPlans[i]
 		if plan.IsHidden() {
 			continue
 		}
 
 		val, err := plan.GetValue(obj, ctx)
 		if err != nil {
-			return err
+			return b, err
 		}
 
 		isSection, err := tomlIsSection(val, ctx)
 		if err != nil {
-			return err
+			return b, err
 		}
 
 		if isSection {
@@ -53,100 +51,94 @@ func renderTomlTable(b *strings.Builder, obj *Object, ctx Context, sindent strin
 		}
 
 		if initNewline {
-			b.WriteByte('\n')
+			b = append(b, '\n')
 			initNewline = false
 		}
 
 		if hasWritten {
-			b.WriteByte('\n')
+			b = append(b, '\n')
 		}
 
 		fieldName := ctx.State.Interner.Get(plan.KeyId)
 
-		b.WriteString(cindent)
-		writeTomlKey(b, fieldName)
-		b.WriteString(" = ")
+		b = append(b, cindent...)
+		b = appendTomlKey(b, fieldName)
+		b = append(b, " = "...)
 
-		err = writeTomlValue(b, val, ctx, cindent, sindent, false)
+		b, err = appendTomlValue(b, val, ctx, cindent, sindent, false)
 		if err != nil {
-			return err
+			return b, err
 		}
 
 		hasWritten = true
 	}
 
-	if /* hasWritten && */ len(complexValues) > 0 {
-		b.WriteString("\n\n")
+	if len(complexValues) > 0 {
+		b = append(b, "\n\n"...)
 	}
 
 	for i, val := range complexValues {
 		if i == 0 && !hasWritten && initNewline {
-			b.WriteByte('\n')
+			b = append(b, '\n')
 		} else if i > 0 {
-			b.WriteString("\n\n")
+			b = append(b, "\n\n"...)
 		}
 
 		fieldName := ctx.State.Interner.Get(val.Key)
 
 		childPath := tomlAddToPath(path, fieldName)
 
+		var err error
 		switch val.Type() {
 		case ValueTypeObject:
-			err := writeTomlTable(b, val.Object(), ctx, sindent, childPath, cindent)
+			b, err = appendTomlTable(b, val.Object(), ctx, sindent, childPath, cindent)
 			if err != nil {
-				return err
+				return b, err
 			}
 		case ValueTypeArray:
-			err := writeTomlTableArray(b, val.Array(), ctx, sindent, childPath, cindent)
+			b, err = appendTomlTableArray(b, val.Array(), ctx, sindent, childPath, cindent)
 			if err != nil {
-				return err
+				return b, err
 			}
 		default:
-			return fmt.Errorf("invalid type for section: %s", val.Type().String())
+			return b, fmt.Errorf("invalid type for section: %s", val.Type().String())
 		}
-		continue
 	}
 
-	return nil
+	return b, nil
 }
 
-func writeTomlValue(b *strings.Builder, value Value, ctx Context, cindent, sindent string, inline bool) error {
+func appendTomlValue(b []byte, value Value, ctx Context, cindent, sindent string, inline bool) ([]byte, error) {
 	if ctx.Depth >= ctx.State.MaxStack {
-		return MakeRuntimeError(fmt.Errorf("max manifest depth exceeded, possible infinite recursion"))
+		return b, MakeRuntimeError(fmt.Errorf("max manifest depth exceeded, possible infinite recursion"))
 	}
 	ctx.Depth++
 
 	value, err := value.Eval(ctx)
 	if err != nil {
-		return err
+		return b, err
 	}
 
 	switch value.Type() {
 	default:
-		return fmt.Errorf("unsupported value type %s for toml manifestation", value.Type().String())
+		return b, fmt.Errorf("unsupported value type %s for toml manifestation", value.Type().String())
 	case ValueTypeBool:
 		if value.Bool() {
-			b.WriteString("true")
-		} else {
-			b.WriteString("false")
+			return append(b, "true"...), nil
 		}
-		return nil
+		return append(b, "false"...), nil
 	case ValueTypeNumber:
-		var p [64]byte
-		b.Write(unparseNumber(p[:0], value.Number()))
-		return nil
+		return unparseNumber(b, value.Number()), nil
 	case ValueTypeString:
-		writeJsonString(b, value.String(ctx))
-		return nil
+		return appendJsonString(b, value.String(ctx)), nil
 	case ValueTypeArray:
 		arr := value.Array()
 
 		if len(arr) == 0 {
-			b.WriteString("[]")
-			return nil
+			return append(b, "[]"...), nil
 		}
 
-		b.WriteByte('[')
+		b = append(b, '[')
 
 		newIndent := cindent + sindent
 		separator := "\n"
@@ -155,150 +147,143 @@ func writeTomlValue(b *strings.Builder, value Value, ctx Context, cindent, sinde
 			separator = " "
 		}
 
-		b.WriteString(separator)
+		b = append(b, separator...)
 
 		for i, v := range arr {
 			v, err := v.Eval(ctx)
 			if err != nil {
-				return err
+				return b, err
 			}
 
 			if i > 0 {
-				b.WriteByte(',')
-				b.WriteString(separator)
+				b = append(b, ',')
+				b = append(b, separator...)
 			}
 
-			b.WriteString(newIndent)
-			err = writeTomlValue(b, v, ctx, "", sindent, true)
+			b = append(b, newIndent...)
+			b, err = appendTomlValue(b, v, ctx, "", sindent, true)
 			if err != nil {
-				return err
+				return b, err
 			}
-
 		}
-		b.WriteString(separator)
+		b = append(b, separator...)
 		if !inline {
-			b.WriteString(cindent)
+			b = append(b, cindent...)
 		}
-		b.WriteByte(']')
+		b = append(b, ']')
 
-		return nil
+		return b, nil
 	case ValueTypeObject:
 		obj := value.Object()
 		evalCtx := ctx
 		evalCtx.Self = value
 		err := runAssertions(obj, evalCtx)
 		if err != nil {
-			return err
+			return b, err
 		}
 		plans := CompileObjectPlan(obj, ctx)
 
 		if len(plans) == 0 {
-			b.WriteString("{}")
-			return nil
+			return append(b, "{}"...), nil
 		}
 
-		b.WriteString("{ ")
+		b = append(b, "{ "...)
 
 		hasWritten := false
 
-		for _, plan := range plans {
+		for i := range plans {
+			plan := &plans[i]
 			if plan.IsHidden() {
 				continue
 			}
 
 			v, err := plan.GetValue(obj, ctx)
 			if err != nil {
-				return err
+				return b, err
 			}
 
 			if hasWritten {
-				b.WriteString(", ")
+				b = append(b, ", "...)
 			}
 
 			fieldName := ctx.State.Interner.Get(plan.KeyId)
-			writeTomlKey(b, fieldName)
-			b.WriteString(" = ")
+			b = appendTomlKey(b, fieldName)
+			b = append(b, " = "...)
 
-			err = writeTomlValue(b, v, ctx, "", sindent, true)
+			b, err = appendTomlValue(b, v, ctx, "", sindent, true)
 			if err != nil {
-				return err
+				return b, err
 			}
 
 			hasWritten = true
 		}
 
-		b.WriteString(" }")
-		return nil
+		b = append(b, " }"...)
+		return b, nil
 	}
-
 }
 
-func writeTomlTable(b *strings.Builder, obj *Object, ctx Context, sindent string, path []string, cindent string) error {
-
-	b.WriteString(cindent)
-	b.WriteByte('[')
+func appendTomlTable(b []byte, obj *Object, ctx Context, sindent string, path []string, cindent string) ([]byte, error) {
+	b = append(b, cindent...)
+	b = append(b, '[')
 
 	for i, el := range path {
 		if i > 0 {
-			b.WriteByte('.')
+			b = append(b, '.')
 		}
-		writeTomlKey(b, el)
-
+		b = appendTomlKey(b, el)
 	}
 
-	b.WriteByte(']')
+	b = append(b, ']')
 
 	return renderTomlTable(b, obj, ctx, sindent, path, cindent+sindent, true)
 }
 
-func writeTomlTableArray(b *strings.Builder, arr []Value, ctx Context, sindent string, path []string, cindent string) error {
-
+func appendTomlTableArray(b []byte, arr []Value, ctx Context, sindent string, path []string, cindent string) ([]byte, error) {
 	hasWritten := false
 	for _, v := range arr {
 		v, err := v.Eval(ctx)
 		if err != nil {
-			return err
+			return b, err
 		}
 
 		if !v.IsObject() {
-			return fmt.Errorf("invalid type for section: %s", v.Type().String())
+			return b, fmt.Errorf("invalid type for section: %s", v.Type().String())
 		}
 		if hasWritten {
-			b.WriteString("\n\n")
+			b = append(b, "\n\n"...)
 		}
 
-		b.WriteString(cindent)
-		b.WriteString("[[")
+		b = append(b, cindent...)
+		b = append(b, "[["...)
 		for i, el := range path {
 			if i > 0 {
-				b.WriteByte('.')
+				b = append(b, '.')
 			}
-			writeTomlKey(b, el)
+			b = appendTomlKey(b, el)
 		}
-		b.WriteString("]]")
+		b = append(b, "]]"...)
 
-		err = renderTomlTable(b, v.Object(), ctx, sindent, path, cindent+sindent, true)
+		b, err = renderTomlTable(b, v.Object(), ctx, sindent, path, cindent+sindent, true)
 		if err != nil {
-			return err
+			return b, err
 		}
 
 		hasWritten = true
-
 	}
 
-	return nil
+	return b, nil
 }
 
-func writeTomlKey(b *strings.Builder, s string) {
+func appendTomlKey(b []byte, s string) []byte {
 	bareAllowed := true
 
-	// for empty string, return ''
 	if len(s) == 0 {
-		b.WriteString("''")
-		return
+		return append(b, "''"...)
 	}
 
-	for _, c := range s {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
 		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' {
 			continue
 		}
@@ -308,11 +293,10 @@ func writeTomlKey(b *strings.Builder, s string) {
 	}
 
 	if bareAllowed {
-		b.WriteString(s)
-		return
+		return append(b, s...)
 	}
 
-	writeJsonString(b, s)
+	return appendJsonString(b, s)
 }
 
 func tomlIsSection(val Value, ctx Context) (bool, error) {

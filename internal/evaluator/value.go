@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"fmt"
 	"math"
-	"strings"
 	"unsafe"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
@@ -192,9 +191,13 @@ func FinalizeStringBuilder(ptr unsafe.Pointer, length int) Value {
 }
 
 func MakeStringConst(id uint32) Value {
-	// set lowest bit to 1 to signal its a interned string
+	// set lowest bit to 1 to signal its an interned string
 	return Value((uint64(ValueTypeString) << typeShift) | (uint64(id) << 1) | 1)
+}
 
+func MakeStaticString(p *string) Value {
+	// set bit 1 to signal a pointer to an immutable Go *string (arena strings are 8-byte aligned)
+	return Value((uint64(ValueTypeString) << typeShift) | uint64(uintptr(unsafe.Pointer(p))) | 2)
 }
 
 func MakeNumber(v float64) (rv Value) {
@@ -297,6 +300,9 @@ func (v Value) String(ctx Context) string {
 	if (uint64(v) & 1) == 1 {
 		return ctx.State.Interner.Get(uint32(v.Payload() >> 1))
 	}
+	if (uint64(v) & 2) == 2 {
+		return *(*string)(unsafe.Pointer(uintptr(v&^tagMask) &^ 2))
+	}
 
 	ptr := v.unboxPtr()
 	n := *(*int)(ptr)
@@ -337,23 +343,14 @@ func (v Value) Thunk() *Thunk {
 	return (*Thunk)(v.unboxPtr())
 }
 
-func (v Value) Eval(ctx Context) (rv Value, err error) {
+func (v Value) Eval(ctx Context) (Value, error) {
 	if !v.IsThunk() {
-		rv = v
-		return
+		return v, nil
 	}
-	rv, err = v.evalThunk(ctx)
-	return
-}
-
-//go:noinline
-func (v Value) evalThunk(ctx Context) (Value, error) {
 	thunk := v.Thunk()
-
 	if thunk.EvalState == -1 {
 		return thunk.Value, nil
 	}
-
 	return thunk.Eval(ctx)
 }
 
@@ -477,21 +474,27 @@ func (v Value) ToString(ctx Context) (string, error) {
 		}
 		return "false", nil
 	case ValueTypeArray:
-		var b strings.Builder
-		err := ManifestJson(&b, v, ctx, JsonConfigToString)
+		bp := GetManifestBuf()
+		err := ManifestJson(bp, v, ctx, JsonConfigToString)
 		if err != nil {
+			PutManifestBuf(bp)
 			return "", err
 		}
-		return b.String(), nil
+		res := string(*bp)
+		PutManifestBuf(bp)
+		return res, nil
 	case ValueTypeObject:
 		subCtx := ctx
 		subCtx.Self = v
-		var b strings.Builder
-		err := ManifestJson(&b, v, subCtx, JsonConfigToString)
+		bp := GetManifestBuf()
+		err := ManifestJson(bp, v, subCtx, JsonConfigToString)
 		if err != nil {
+			PutManifestBuf(bp)
 			return "", err
 		}
-		return b.String(), nil
+		res := string(*bp)
+		PutManifestBuf(bp)
+		return res, nil
 	case ValueTypeThunk:
 		v, err := v.Eval(ctx)
 		if err != nil {
@@ -550,7 +553,7 @@ func (v Value) IsEmpty(ctx Context) bool {
 	case ValueTypeNull:
 		return true
 	case ValueTypeObject:
-		return v.Object().Length(ctx) == 0
+		return !v.Object().HasVisibleFields(ctx)
 	case ValueTypeArray:
 		return len(v.Array()) == 0
 	}
@@ -585,13 +588,23 @@ func (v Value) Prune(ctx Context) (Value, error) {
 		return v.Object().Prune(ctx)
 	case ValueTypeArray:
 		arr := v.Array()
-		res := make([]Value, 0, len(arr))
-		for _, v := range arr {
-			v, err := v.Eval(ctx)
+		n := len(arr)
+		if n == 0 {
+			return v, nil
+		}
+		var stackBuf [16]Value
+		var res []Value
+		if n <= len(stackBuf) {
+			res = stackBuf[:0]
+		} else {
+			res = arena.Alloc[Value](ctx.State.Allocator, n)[:0]
+		}
+		for _, elem := range arr {
+			elem, err := elem.Eval(ctx)
 			if err != nil {
 				return ValueNone, err
 			}
-			out, err := v.Prune(ctx)
+			out, err := elem.Prune(ctx)
 			if err != nil {
 				return ValueNone, err
 			}

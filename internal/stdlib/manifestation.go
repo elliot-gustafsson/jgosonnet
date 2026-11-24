@@ -2,7 +2,6 @@ package stdlib
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 )
@@ -31,9 +30,6 @@ func std_manifestYamlDoc(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 		quote_keys = b
 	}
 
-	var b strings.Builder
-	b.Grow(1024)
-
 	c := evaluator.YamlManifestConfig{
 		IndentArrayInObjects: indent_array_in_object,
 		QuoteKeys:            quote_keys,
@@ -44,12 +40,16 @@ func std_manifestYamlDoc(args []evaluator.NamedValue, ctx evaluator.Context) (ev
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	err = evaluator.ManifestYaml(&b, v, ctx, c)
+
+	bp := evaluator.GetManifestBuf()
+	defer evaluator.PutManifestBuf(bp)
+
+	err = evaluator.ManifestYaml(bp, v, ctx, c)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	return evaluator.MakeString(b.String(), ctx), nil
+	return evaluator.MakeStringFromBytes(*bp, ctx), nil
 }
 
 func std_manifestYamlStream(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -86,8 +86,8 @@ func std_manifestYamlStream(args []evaluator.NamedValue, ctx evaluator.Context) 
 		quote_keys = b
 	}
 
-	var b strings.Builder
-	b.Grow(1024)
+	bp := evaluator.GetManifestBuf()
+	defer evaluator.PutManifestBuf(bp)
 
 	c := evaluator.YamlManifestConfig{
 		IndentArrayInObjects: indent_array_in_object,
@@ -100,65 +100,58 @@ func std_manifestYamlStream(args []evaluator.NamedValue, ctx evaluator.Context) 
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
-		b.WriteString(yamlSeparator)
-		b.WriteByte('\n')
+		*bp = append(*bp, yamlSeparator...)
+		*bp = append(*bp, '\n')
 
-		err = evaluator.ManifestYaml(&b, v, ctx, c)
+		err = evaluator.ManifestYaml(bp, v, ctx, c)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
-		b.WriteByte('\n')
+		*bp = append(*bp, '\n')
 	}
 
 	if c_document_end {
-		b.WriteString("...")
-		b.WriteByte('\n')
+		*bp = append(*bp, "...\n"...)
 	}
 
-	return evaluator.MakeString(b.String(), ctx), nil
+	return evaluator.MakeStringFromBytes(*bp, ctx), nil
 }
 
 func std_manifestJson(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	// std.manifestJsonEx(value, indent, newline, key_val_sep)
-
-	var b strings.Builder
-	b.Grow(1024)
-
 	a, err := args[0].Eval(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	err = evaluator.ManifestJson(&b, a, ctx, evaluator.JsonConfigPretty)
+	bp := evaluator.GetManifestBuf()
+	defer evaluator.PutManifestBuf(bp)
+
+	err = evaluator.ManifestJson(bp, a, ctx, evaluator.JsonConfigPretty)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	return evaluator.MakeString(b.String(), ctx), nil
+	return evaluator.MakeStringFromBytes(*bp, ctx), nil
 }
 
 func std_manifestJsonMinified(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	// std.manifestJsonEx(value, indent, newline, key_val_sep)
-
-	var b strings.Builder
-	b.Grow(1024)
-
 	a, err := args[0].Eval(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	err = evaluator.ManifestJson(&b, a, ctx, evaluator.JsonConfigMinified)
+	bp := evaluator.GetManifestBuf()
+	defer evaluator.PutManifestBuf(bp)
+
+	err = evaluator.ManifestJson(bp, a, ctx, evaluator.JsonConfigMinified)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	return evaluator.MakeString(b.String(), ctx), nil
+	return evaluator.MakeStringFromBytes(*bp, ctx), nil
 }
 
 func std_manifestJsonEx(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-	// std.manifestJsonEx(value, indent, newline, key_val_sep)
-
 	indent, err := args[1].EvalString(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
@@ -182,9 +175,6 @@ func std_manifestJsonEx(args []evaluator.NamedValue, ctx evaluator.Context) (eva
 		key_val_sep = v
 	}
 
-	var b strings.Builder
-	b.Grow(1024)
-
 	c := &evaluator.JsonManifestConfig{
 		IndentStep:  indent,
 		Newline:     newline,
@@ -195,12 +185,16 @@ func std_manifestJsonEx(args []evaluator.NamedValue, ctx evaluator.Context) (eva
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	err = evaluator.ManifestJson(&b, v, ctx, c)
+
+	bp := evaluator.GetManifestBuf()
+	defer evaluator.PutManifestBuf(bp)
+
+	err = evaluator.ManifestJson(bp, v, ctx, c)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	return evaluator.MakeString(b.String(), ctx), nil
+	return evaluator.MakeStringFromBytes(*bp, ctx), nil
 }
 
 func std_manifestIni(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -210,29 +204,28 @@ func std_manifestIni(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 		return evaluator.ValueNone, err
 	}
 
-	var b strings.Builder
-	b.Grow(512)
+	bp := evaluator.GetManifestBuf()
+	defer evaluator.PutManifestBuf(bp)
 
-	mainKeyId := ctx.State.Interner.Intern("main")
-	mainVal, visible, err := iniObj.GetField(mainKeyId, ctx)
+	mainKeyId := ctx.State.Interner.InternStatic("main")
+	mainVal, visible, err := iniObj.GetFieldVis(mainKeyId, ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	// std.objectHas matches even hidden fields, so we only check if it exists (!IsNone)
 	if visible && !mainVal.IsNone() {
 		mainVal, err := mainVal.EvalObject(ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
 
-		err = printIniSection(&b, mainVal, ctx)
+		err = printIniSection(bp, mainVal, ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
 	}
 
-	sectionsKeyId := ctx.State.Interner.Intern("sections")
-	sectionsVal, _, err := iniObj.GetField(sectionsKeyId, ctx)
+	sectionsKeyId := ctx.State.Interner.InternStatic("sections")
+	sectionsVal, err := iniObj.GetField(sectionsKeyId, ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
@@ -247,8 +240,8 @@ func std_manifestIni(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 	sectionsObj := sectionsVal.Object()
 	plans := evaluator.CompileObjectPlan(sectionsObj, ctx)
 
-	// TODO: look over error messages
-	for _, plan := range plans {
+	for i := range plans {
+		plan := &plans[i]
 		if plan.IsHidden() {
 			continue
 		}
@@ -268,24 +261,23 @@ func std_manifestIni(args []evaluator.NamedValue, ctx evaluator.Context) (evalua
 			return evaluator.ValueNone, fmt.Errorf("expected object for ini section field '%s', got %s", keyStr, val.Type().String())
 		}
 
-		b.WriteByte('[')
-		b.WriteString(keyStr)
-		b.WriteString("]\n")
-		err = printIniSection(&b, val.Object(), ctx)
+		*bp = append(*bp, '[')
+		*bp = append(*bp, keyStr...)
+		*bp = append(*bp, "]\n"...)
+		err = printIniSection(bp, val.Object(), ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
-
 	}
-	return evaluator.MakeString(b.String(), ctx), nil
+	return evaluator.MakeStringFromBytes(*bp, ctx), nil
 }
 
-// printIniSection is our custom helper to loop through and print properties
-func printIniSection(b *strings.Builder, obj *evaluator.Object, ctx evaluator.Context) error {
+func printIniSection(b *[]byte, obj *evaluator.Object, ctx evaluator.Context) error {
 
 	plans := evaluator.CompileObjectPlan(obj, ctx)
 
-	for _, plan := range plans {
+	for i := range plans {
+		plan := &plans[i]
 		if plan.IsHidden() {
 			continue
 		}
@@ -320,37 +312,36 @@ func printIniSection(b *strings.Builder, obj *evaluator.Object, ctx evaluator.Co
 	return nil
 }
 
-func printIniVal(b *strings.Builder, k string, v evaluator.Value, ctx evaluator.Context) error {
-
+func printIniVal(b *[]byte, k string, v evaluator.Value, ctx evaluator.Context) error {
 	strVal, err := v.ToString(ctx)
 	if err != nil {
 		return err
 	}
-	b.WriteString(k)
-	b.WriteString(" = ")
-	b.WriteString(strVal)
-	b.WriteByte('\n')
-
+	*b = append(*b, k...)
+	*b = append(*b, " = "...)
+	*b = append(*b, strVal...)
+	*b = append(*b, '\n')
 	return nil
 }
 
 func std_manifestPython(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-
 	v, err := args[0].Eval(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	var b strings.Builder
-	err = evaluator.ManifestJson(&b, v, ctx, evaluator.JsonConfigPython)
+
+	bp := evaluator.GetManifestBuf()
+	defer evaluator.PutManifestBuf(bp)
+
+	err = evaluator.ManifestJson(bp, v, ctx, evaluator.JsonConfigPython)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	return evaluator.MakeString(b.String(), ctx), nil
+	return evaluator.MakeStringFromBytes(*bp, ctx), nil
 }
 
 func std_manifestPythonVars(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-
 	obj, err := args[0].EvalObject(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
@@ -358,35 +349,35 @@ func std_manifestPythonVars(args []evaluator.NamedValue, ctx evaluator.Context) 
 
 	plans := evaluator.CompileObjectPlan(obj, ctx)
 
-	var b strings.Builder
-	for _, plan := range plans {
-		keyId := plan.KeyId
+	bp := evaluator.GetManifestBuf()
+	defer evaluator.PutManifestBuf(bp)
 
+	for i := range plans {
+		plan := &plans[i]
 		if plan.IsHidden() {
 			continue
 		}
 
-		name := ctx.State.Interner.Get(keyId)
-		b.WriteString(name)
-		b.WriteString(" = ")
+		name := ctx.State.Interner.Get(plan.KeyId)
+		*bp = append(*bp, name...)
+		*bp = append(*bp, " = "...)
 
 		value, err := plan.GetValue(obj, ctx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
 
-		err = evaluator.ManifestJson(&b, value, ctx, evaluator.JsonConfigPython)
+		err = evaluator.ManifestJson(bp, value, ctx, evaluator.JsonConfigPython)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
 
-		b.WriteByte('\n')
+		*bp = append(*bp, '\n')
 	}
-	return evaluator.MakeString(b.String(), ctx), nil
+	return evaluator.MakeStringFromBytes(*bp, ctx), nil
 }
 
 func std_manifestXmlJsonml(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-
 	a, err := args[0].Eval(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
@@ -394,23 +385,25 @@ func std_manifestXmlJsonml(args []evaluator.NamedValue, ctx evaluator.Context) (
 	if !a.IsArray() {
 		return evaluator.ValueNone, evaluator.TypeErrorSpecific(evaluator.ValueTypeArray, a.Type())
 	}
-	var b strings.Builder
-	b.Grow(1024)
-	err = auxManifestXmlJsonml(a, ctx, &b)
+
+	bp := evaluator.GetManifestBuf()
+	defer evaluator.PutManifestBuf(bp)
+
+	err = auxManifestXmlJsonml(a, ctx, bp)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	return evaluator.MakeString(b.String(), ctx), nil
+	return evaluator.MakeStringFromBytes(*bp, ctx), nil
 }
 
-func auxManifestXmlJsonml(v evaluator.Value, ctx evaluator.Context, b *strings.Builder) error {
+func auxManifestXmlJsonml(v evaluator.Value, ctx evaluator.Context, b *[]byte) error {
 	v, err := v.Eval(ctx)
 	if err != nil {
 		return err
 	}
 
 	if v.IsString() {
-		b.WriteString(v.String(ctx))
+		*b = append(*b, v.String(ctx)...)
 		return nil
 	}
 
@@ -442,12 +435,12 @@ func auxManifestXmlJsonml(v evaluator.Value, ctx evaluator.Context, b *strings.B
 			childrenStart = 2
 		}
 	}
-	b.WriteByte('<')
-	b.WriteString(tag)
+	*b = append(*b, '<')
+	*b = append(*b, tag...)
 	if hasAttrs {
-		// CompileObjectPlan inherently sorts object keys alphabetically!
 		fps := evaluator.CompileObjectPlan(attrs, ctx)
-		for _, fp := range fps {
+		for i := range fps {
+			fp := &fps[i]
 			if fp.IsHidden() {
 				continue
 			}
@@ -456,57 +449,53 @@ func auxManifestXmlJsonml(v evaluator.Value, ctx evaluator.Context, b *strings.B
 			if err != nil {
 				return err
 			}
-			// ToString identically mimics jsonnet's `%s` stringification coercion
 			strVal, err := fieldValue.ToString(ctx)
 			if err != nil {
 				return err
 			}
-			b.WriteByte(' ')
-			b.WriteString(keyStr)
-			b.WriteString(`="`)
-			b.WriteString(strVal)
-			b.WriteByte('"')
+			*b = append(*b, ' ')
+			*b = append(*b, keyStr...)
+			*b = append(*b, `="`...)
+			*b = append(*b, strVal...)
+			*b = append(*b, '"')
 		}
 	}
-	b.WriteByte('>')
+	*b = append(*b, '>')
 	for i := childrenStart; i < len(arr); i++ {
 		err = auxManifestXmlJsonml(arr[i], ctx, b)
 		if err != nil {
 			return err
 		}
 	}
-	b.WriteString("</")
-	b.WriteString(tag)
-	b.WriteByte('>')
+	*b = append(*b, "</"...)
+	*b = append(*b, tag...)
+	*b = append(*b, '>')
 	return nil
 }
 
 func std_manifestTomlEx(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
-
-	// Evaluate the value
 	val, err := args[0].Eval(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
-	// TOML root must be an object
 	if !val.IsObject() {
 		return evaluator.ValueNone, evaluator.TypeErrorSpecific(evaluator.ValueTypeObject, val.Type())
 	}
-	// Evaluate the indent string
 	sindent, err := args[1].Value.EvalString(ctx)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	var b strings.Builder
+	bp := evaluator.GetManifestBuf()
+	defer evaluator.PutManifestBuf(bp)
 
 	evalCtx := ctx
 	evalCtx.Self = val
 
-	err = evaluator.ManifestToml(&b, val, evalCtx, sindent)
+	err = evaluator.ManifestToml(bp, val, evalCtx, sindent)
 	if err != nil {
 		return evaluator.ValueNone, err
 	}
 
-	return evaluator.MakeString(b.String(), ctx), nil
+	return evaluator.MakeStringFromBytes(*bp, ctx), nil
 }

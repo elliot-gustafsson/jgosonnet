@@ -8,10 +8,10 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"unsafe"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
-	"github.com/elliot-gustafsson/jgosonnet/internal/interner"
 	"github.com/elliot-gustafsson/jgosonnet/internal/stdlib"
 )
 
@@ -59,7 +59,7 @@ func NewEvaluator() *Evaluator {
 	return &Evaluator{
 		traceOut:    os.Stderr,
 		maxStack:    10000,
-		astImporter: evaluator.NewAstImporter(),
+		astImporter: evaluator.NewAstImporter(stdlib.NewBaseInterner(), stdlib.LookupStdConst),
 		extVars:     make(map[string]string),
 		extCodes:    make(map[string]string),
 		tlaVars:     make(map[string]string),
@@ -164,7 +164,7 @@ const (
 	formatString
 )
 
-func formatValue(b *strings.Builder, val evaluator.Value, ctx evaluator.Context, fmtType manifestFormat) error {
+func formatValue(b *[]byte, val evaluator.Value, ctx evaluator.Context, fmtType manifestFormat) error {
 	switch fmtType {
 	case formatJSON:
 		return evaluator.ManifestJson(b, val, ctx, jsonManifestConfig)
@@ -174,7 +174,7 @@ func formatValue(b *strings.Builder, val evaluator.Value, ctx evaluator.Context,
 		if !val.IsString() {
 			return evaluator.TypeErrorSpecific(evaluator.ValueTypeString, val.Type())
 		}
-		b.WriteString(val.String(ctx))
+		*b = append(*b, val.String(ctx)...)
 		return nil
 	}
 	return nil
@@ -187,18 +187,17 @@ func (t *Evaluator) manifestSingle(file string, fmtType manifestFormat) (string,
 		return "", wrapEvaluationErr(err)
 	}
 
-	var b strings.Builder
-	b.Grow(16 * 1024)
+	buf := make([]byte, 0, 256)
 
-	if err := formatValue(&b, value, ctx, fmtType); err != nil {
+	if err := formatValue(&buf, value, ctx, fmtType); err != nil {
 		return "", wrapManifestationErr(err)
 	}
 
 	if !t.noNewline {
-		b.WriteByte('\n')
+		buf = append(buf, '\n')
 	}
 
-	return b.String(), nil
+	return unsafe.String(unsafe.SliceData(buf), len(buf)), nil
 }
 
 func (t *Evaluator) manifestMultiIter(file string, fmtType manifestFormat) (iter.Seq2[FileOutput, error], error) {
@@ -211,21 +210,23 @@ func (t *Evaluator) manifestMultiIter(file string, fmtType manifestFormat) (iter
 	iterator := func(yield func(FileOutput, error) bool) {
 		defer cleanup()
 
-		for _, v := range root {
-			var b strings.Builder
-			b.Grow(16 * 1024)
+		bp := evaluator.GetManifestBuf()
+		defer evaluator.PutManifestBuf(bp)
 
-			if err := formatValue(&b, v.Value, ctx, fmtType); err != nil {
+		for _, v := range root {
+			*bp = (*bp)[:0]
+
+			if err := formatValue(bp, v.Value, ctx, fmtType); err != nil {
 				yield(FileOutput{}, wrapManifestationErr(err))
 				return
 			}
 
 			if !t.noNewline {
-				b.WriteByte('\n')
+				*bp = append(*bp, '\n')
 			}
 
 			kClone := strings.Clone(ctx.State.Interner.Get(v.Key))
-			if !yield(FileOutput{Filename: kClone, Content: b.String()}, nil) {
+			if !yield(FileOutput{Filename: kClone, Content: string(*bp)}, nil) {
 				return
 			}
 		}
@@ -252,14 +253,12 @@ func (t *Evaluator) manifestMulti(file string, fmtType manifestFormat) (map[stri
 
 type EvaluationEngine struct {
 	Allocator *arena.Allocator
-	Interner  *interner.Interner
 }
 
 var enginePool = sync.Pool{
 	New: func() any {
 		return &EvaluationEngine{
 			Allocator: arena.NewAllocator(),
-			Interner:  interner.NewInterner(),
 		}
 	},
 }
@@ -271,26 +270,16 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 		return evaluator.ValueNone, evaluator.Context{}, func() {}, evaluator.MakeRuntimeError(fmt.Errorf("%w\n", err))
 	}
 
-	// f, err := os.Create("cpu.prof")
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// pprof.StartCPUProfile(f)
-
 	engine := enginePool.Get().(*EvaluationEngine)
 	cleanup := func() {
 		engine.Allocator.Reset()
-		engine.Interner.Reset()
 		enginePool.Put(engine)
-
-		// pprof.StopCPUProfile()
-		// f.Close()
 	}
 
 	ctx := evaluator.Context{
 		State: &evaluator.ContextState{
 			MaxStack:  t.maxStack,
-			Interner:  engine.Interner,
+			Interner:  t.astImporter.Interner,
 			Allocator: engine.Allocator,
 		},
 	}

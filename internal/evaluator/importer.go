@@ -5,8 +5,8 @@ import (
 	"sync"
 	"unsafe"
 
+	"github.com/elliot-gustafsson/jgosonnet/internal/interner"
 	"github.com/google/go-jsonnet"
-	"github.com/google/go-jsonnet/ast"
 )
 
 var parseCallPool = sync.Pool{
@@ -23,7 +23,7 @@ type Importer struct {
 
 type parseCall struct {
 	done chan struct{}
-	node ast.Node
+	node *IRNode
 	err  error
 }
 
@@ -33,8 +33,10 @@ type inFlightParse struct {
 }
 
 type AstImporter struct {
+	Interner  *interner.Interner
+	stdLookup StdLookupFunc
 	mu        sync.RWMutex
-	astCache  map[string]ast.Node
+	astCache  map[string]*IRNode
 	inFlights []inFlightParse
 }
 
@@ -42,15 +44,20 @@ func NewImporter(jPaths []string, baseStd Value, astImporter *AstImporter) *Impo
 	return &Importer{
 		JPaths:      jPaths,
 		BaseStd:     baseStd,
-		cache:       make(map[string]Value, 32),
+		cache:       make(map[string]Value, 8),
 		astImporter: astImporter,
 	}
 }
 
-func NewAstImporter() *AstImporter {
+func NewAstImporter(inter *interner.Interner, stdLookup StdLookupFunc) *AstImporter {
+	if inter == nil {
+		inter = interner.NewInterner()
+	}
 	return &AstImporter{
-		astCache:  make(map[string]ast.Node, 64),
-		inFlights: make([]inFlightParse, 0, 16),
+		Interner:  inter,
+		stdLookup: stdLookup,
+		astCache:  make(map[string]*IRNode, 8),
+		inFlights: make([]inFlightParse, 0, 4),
 	}
 }
 
@@ -62,15 +69,15 @@ func (i *Importer) Get(path string) Value {
 	return i.cache[path]
 }
 
-func (i *Importer) ResolveSnippet(name, data string) (ast.Node, error) {
+func (i *Importer) ResolveSnippet(name, data string) (*IRNode, error) {
 	return i.astImporter.ResolveSnippet(name, data)
 }
 
-func (i *Importer) ResolveImport(filePath string) (ast.Node, error) {
+func (i *Importer) ResolveImport(filePath string) (*IRNode, error) {
 	return i.astImporter.ResolveImport(filePath)
 }
 
-func (t *AstImporter) ResolveImport(filePath string) (ast.Node, error) {
+func (t *AstImporter) ResolveImport(filePath string) (*IRNode, error) {
 	t.mu.RLock()
 	node, exist := t.astCache[filePath]
 	t.mu.RUnlock()
@@ -81,7 +88,7 @@ func (t *AstImporter) ResolveImport(filePath string) (ast.Node, error) {
 }
 
 //go:noinline
-func (t *AstImporter) resolveImportSlow(filePath string) (node ast.Node, err error) {
+func (t *AstImporter) resolveImportSlow(filePath string) (node *IRNode, err error) {
 
 	node, slot, call, isLeader, err := t.claim(filePath)
 	if !isLeader {
@@ -98,11 +105,16 @@ func (t *AstImporter) resolveImportSlow(filePath string) (node ast.Node, err err
 
 	dataStr := unsafe.String(unsafe.SliceData(fileData), len(fileData))
 
-	node, err = jsonnet.SnippetToAST(filePath, dataStr)
-	return
+	rawNode, err := jsonnet.SnippetToAST(filePath, dataStr)
+	if err != nil {
+		return nil, err
+	}
+
+	node = CompileASTWithStd(rawNode, t.Interner, t.stdLookup)
+	return node, nil
 }
 
-func (t *AstImporter) ResolveSnippet(name, data string) (ast.Node, error) {
+func (t *AstImporter) ResolveSnippet(name, data string) (*IRNode, error) {
 	t.mu.RLock()
 	node, exist := t.astCache[name]
 	t.mu.RUnlock()
@@ -114,7 +126,7 @@ func (t *AstImporter) ResolveSnippet(name, data string) (ast.Node, error) {
 }
 
 //go:noinline
-func (t *AstImporter) resolveSnippetSlow(name, data string) (node ast.Node, err error) {
+func (t *AstImporter) resolveSnippetSlow(name, data string) (node *IRNode, err error) {
 	node, slot, call, isLeader, err := t.claim(name)
 	if !isLeader {
 		return
@@ -123,11 +135,16 @@ func (t *AstImporter) resolveSnippetSlow(name, data string) (node ast.Node, err 
 		t.release(slot, name, call, node, err)
 	}()
 
-	node, err = jsonnet.SnippetToAST(name, data)
-	return
+	rawNode, err := jsonnet.SnippetToAST(name, data)
+	if err != nil {
+		return nil, err
+	}
+
+	node = CompileASTWithStd(rawNode, t.Interner, t.stdLookup)
+	return node, nil
 }
 
-func (t *AstImporter) claim(key string) (cached ast.Node, slot int, call *parseCall, isLeader bool, err error) {
+func (t *AstImporter) claim(key string) (cached *IRNode, slot int, call *parseCall, isLeader bool, err error) {
 	// slow path
 	t.mu.Lock()
 	// double check cache under write lock
@@ -169,7 +186,7 @@ func (t *AstImporter) claim(key string) (cached ast.Node, slot int, call *parseC
 	return nil, slot, call, true, nil
 }
 
-func (t *AstImporter) release(slot int, key string, call *parseCall, node ast.Node, err error) {
+func (t *AstImporter) release(slot int, key string, call *parseCall, node *IRNode, err error) {
 	call.node = node
 	call.err = err
 
