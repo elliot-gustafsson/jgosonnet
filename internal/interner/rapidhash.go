@@ -11,6 +11,9 @@ const (
 	rapidSecret0 uint64 = 0x2d358dccaa6c78a5
 	rapidSecret1 uint64 = 0x8bb84b93962eacc9
 	rapidSecret2 uint64 = 0x4b33a62ed433d4a3
+
+	// Precomputed: rapidSeed ^ rapidMix(rapidSeed^rapidSecret0, rapidSecret1)
+	rapidSeedInit uint64 = 0x7a66f329b760c2f0
 )
 
 // wymum operation: 64x64 -> 128-bit multiply and XOR fold
@@ -34,21 +37,16 @@ func read8(p *byte, offset int) uint8 {
 // HashString implements the rapidhash algorithm.
 func HashString(s string) uint64 {
 	l := len(s)
-	seed := rapidSeed
-
-	// init seed with mixing and length
-	seed ^= rapidMix(seed^rapidSecret0, rapidSecret1) ^ uint64(l)
+	seed := rapidSeedInit ^ uint64(l)
 
 	if l == 0 {
 		return rapidMix(seed, rapidSecret2)
 	}
 
 	p := unsafe.StringData(s)
-	var a, b uint64
 
-	// 16 byte or smaller strings
 	if l <= 16 {
-		// split strings in left and right then mix them
+		var a, b uint64
 		if l >= 8 {
 			a = read64(p, 0)
 			b = read64(p, l-8)
@@ -56,9 +54,7 @@ func HashString(s string) uint64 {
 			a = uint64(read32(p, 0))
 			b = uint64(read32(p, l-4))
 		} else {
-			a = uint64(read8(p, 0)) << 16
-			a |= uint64(read8(p, l>>1)) << 8
-			a |= uint64(read8(p, l-1))
+			a = (uint64(read8(p, 0)) << 16) | (uint64(read8(p, l>>1)) << 8) | uint64(read8(p, l-1))
 		}
 		return rapidMix(seed^a, rapidSecret2^b)
 	}
@@ -70,9 +66,14 @@ func HashString(s string) uint64 {
 		return rapidMix(seed^a, rapidSecret2^b)
 	}
 
+	return hashStringOver32(p, l, seed)
+}
+
+//go:noinline
+func hashStringOver32(p *byte, l int, seed uint64) uint64 {
 	i := 0
 	if l > 96 {
-		// reads 96 bytes at a time and splits into 6 chunks continously and mixes n with n+3 to 3 results, then xor those.
+		// reads 96 bytes at a time and splits into 6 chunks continuously and mixes n with n+3 to 3 results, then xor those.
 		see1 := seed
 		see2 := seed
 		for ; i < l-96; i += 96 {
@@ -91,9 +92,9 @@ func HashString(s string) uint64 {
 		seed = rapidMix(read64(p, i)^rapidSecret2, read64(p, i+8)^seed^rapidSecret1)
 	}
 
-	// handle the remaning bytes
-	a = read64(p, l-16)
-	b = read64(p, l-8)
+	// handle the remaining bytes
+	a := read64(p, l-16)
+	b := read64(p, l-8)
 
 	return rapidMix(seed^a, rapidSecret2^b)
 }

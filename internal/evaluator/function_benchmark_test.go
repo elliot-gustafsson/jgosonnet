@@ -1,11 +1,12 @@
 package evaluator
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
+	fast "github.com/elliot-gustafsson/jgosonnet/internal/ast"
 	"github.com/elliot-gustafsson/jgosonnet/internal/interner"
-	"github.com/google/go-jsonnet/ast"
 )
 
 func setupBenchContext() Context {
@@ -13,45 +14,40 @@ func setupBenchContext() Context {
 	inter := interner.NewInterner()
 	return Context{
 		State: &ContextState{
-			// MaxStack:  10000,
+			MaxStack:  10000,
 			Interner:  inter,
 			Allocator: alloc,
 		},
 	}
 }
 
-func makeBenchFunc(ctx Context, paramNames []string, defaultArg ast.Node) Value {
-	params := make([]ast.Parameter, len(paramNames))
-	paramKeyIds := arena.Alloc[uint32](ctx.State.Allocator, len(paramNames))
-	for i, name := range paramNames {
-		params[i] = ast.Parameter{Name: ast.Identifier(name)}
-		if i == len(paramNames)-1 && defaultArg != nil {
-			params[i].DefaultArg = defaultArg
-		}
-		paramKeyIds[i] = ctx.State.Interner.Intern(name)
+func makeBenchFunc(ctx Context, paramNames []string, hasDefaultOnLast bool) (Value, fast.AST) {
+	parts := make([]string, len(paramNames))
+	copy(parts, paramNames)
+	if hasDefaultOnLast && len(parts) > 0 {
+		parts[len(parts)-1] = parts[len(parts)-1] + "=null"
 	}
-
-	body := &ast.LiteralNull{}
-	node := &ast.Function{
-		Parameters: params,
-		Body:       body,
+	snippet := "function(" + strings.Join(parts, ", ") + ") null"
+	a, rootIdx, err := fast.ParseSnippet("bench.jsonnet", snippet, ctx.State.Interner)
+	if err != nil {
+		panic(err)
 	}
 
 	f := arena.Create[Function](ctx.State.Allocator)
 	arena.Memclr(f)
 	*f = Function{
-		Node:        node,
-		ScopePtr:    0,
-		ParamKeyIds: paramKeyIds,
+		Bp:       a.Base(),
+		Offset:   rootIdx,
+		ScopePtr: 0,
 	}
-	return MakeFunctionValue(f, ctx)
+	return MakeFunctionValue(f, ctx), a
 }
 
 func BenchmarkExecUserFunction_1Positional(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		ctx := setupBenchContext()
-		fn := makeBenchFunc(ctx, []string{"x"}, nil)
+		fn, a := makeBenchFunc(ctx, []string{"x"}, false)
 		args := []NamedValue{{Value: MakeNumber(1)}}
 		for j := 0; j < 1000; j++ {
 			_, err := execUserFunction(fn, args, ctx, false)
@@ -59,6 +55,7 @@ func BenchmarkExecUserFunction_1Positional(b *testing.B) {
 				b.Fatal(err)
 			}
 		}
+		_ = a
 	}
 }
 
@@ -66,7 +63,7 @@ func BenchmarkExecUserFunction_2Positional(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		ctx := setupBenchContext()
-		fn := makeBenchFunc(ctx, []string{"x", "y"}, nil)
+		fn, a := makeBenchFunc(ctx, []string{"x", "y"}, false)
 		args := []NamedValue{{Value: MakeNumber(1)}, {Value: MakeNumber(2)}}
 		for j := 0; j < 1000; j++ {
 			_, err := execUserFunction(fn, args, ctx, false)
@@ -74,6 +71,7 @@ func BenchmarkExecUserFunction_2Positional(b *testing.B) {
 				b.Fatal(err)
 			}
 		}
+		_ = a
 	}
 }
 
@@ -81,7 +79,7 @@ func BenchmarkExecUserFunction_DefaultArg(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		ctx := setupBenchContext()
-		fn := makeBenchFunc(ctx, []string{"x", "y"}, &ast.LiteralNull{})
+		fn, a := makeBenchFunc(ctx, []string{"x", "y"}, true)
 		args := []NamedValue{{Value: MakeNumber(1)}}
 		for j := 0; j < 1000; j++ {
 			_, err := execUserFunction(fn, args, ctx, false)
@@ -89,6 +87,7 @@ func BenchmarkExecUserFunction_DefaultArg(b *testing.B) {
 				b.Fatal(err)
 			}
 		}
+		_ = a
 	}
 }
 
@@ -97,7 +96,7 @@ func BenchmarkExecUserFunction_NamedArg(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		ctx := setupBenchContext()
-		fn := makeBenchFunc(ctx, []string{"x", "y"}, nil)
+		fn, a := makeBenchFunc(ctx, []string{"x", "y"}, false)
 		yKey := ctx.State.Interner.Intern("y")
 		xKey := ctx.State.Interner.Intern("x")
 		args := []NamedValue{{Key: yKey, Value: MakeNumber(2)}, {Key: xKey, Value: MakeNumber(1)}}
@@ -107,5 +106,6 @@ func BenchmarkExecUserFunction_NamedArg(b *testing.B) {
 				b.Fatal(err)
 			}
 		}
+		_ = a
 	}
 }

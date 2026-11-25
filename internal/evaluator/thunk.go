@@ -8,47 +8,19 @@ import (
 	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
 )
 
-type ThunkType uint8
-
-const (
-	ThunkTypeNone ThunkType = iota
-	// Literals should never be thunked
-	// ThunkTypeNull
-	// ThunkTypeString
-	// ThunkTypeNumber
-	// ThunkTypeBool
-
-	// ThunkTypeSelf
-
-	ThunkTypeObject
-	ThunkTypeArray
-	ThunkTypeLocal
-	ThunkTypeApply
-	ThunkTypeIndex
-	ThunkTypeVar
-	ThunkTypeFunction
-	ThunkTypeConditional
-	ThunkTypeBinary
-	ThunkTypeUnary
-	ThunkTypeImport
-	ThunkTypeImportStr
-	ThunkTypeImportBin
-	ThunkTypeSuperIndex
-	ThunkTypeInSuper
-	ThunkTypeError
-
-	ThunkTypeGoCallback
-)
-
 const (
 	ThunkEvaled  = math.MaxUint32
 	ThunkEvaling = math.MaxUint32 - 1
+
+	ThunkOffsetGoCallback = math.MaxUint32
 )
 
-type ThunkNodePtr uint64
+type GoCallbackNode struct {
+	FuncVal Value
+	Args    []NamedValue
+}
 
 type Thunk struct {
-	// NodePtr   ThunkNodePtr
 	Bp        uintptr
 	ScopePtr  uintptr
 	Value     Value
@@ -66,6 +38,16 @@ func NewThunk(nodePtr unsafe.Pointer, offset uint32, scopePtr uintptr, ctx Conte
 	return MakeThunkValue(t, ctx)
 }
 
+func NewCallbackThunk(cb *GoCallbackNode, ctx Context) Value {
+	t := arena.Create[Thunk](ctx.State.Allocator)
+	t.Bp = uintptr(unsafe.Pointer(cb))
+	t.Offset = ThunkOffsetGoCallback
+	t.ScopePtr = 0
+	t.Value = ctx.Self
+	t.EvalState = ctx.SuperOffset
+	return MakeThunkValue(t, ctx)
+}
+
 //go:noinline
 func (t *Thunk) Eval(baseCtx Context) (value Value, err error) {
 	if t.EvalState == ThunkEvaled {
@@ -77,10 +59,15 @@ func (t *Thunk) Eval(baseCtx Context) (value Value, err error) {
 
 	ctx := baseCtx
 	ctx.Self = t.Value
-	ctx.SuperOffset = uint32(t.EvalState)
+	ctx.SuperOffset = t.EvalState
 	t.EvalState = ThunkEvaling
 
-	value, err = evaluateNode(unsafe.Pointer(t.Bp), uint32(t.Bp), t.ScopePtr, ctx)
+	if t.Offset == ThunkOffsetGoCallback {
+		cb := (*GoCallbackNode)(resolveUintptr(t.Bp))
+		value, err = cb.FuncVal.FunctionExec(cb.Args, ctx)
+	} else {
+		value, err = evaluateNode(resolveUintptr(t.Bp), t.Offset, t.ScopePtr, ctx)
+	}
 	if err != nil {
 		return ValueNone, err
 	}

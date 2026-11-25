@@ -9,31 +9,33 @@ import (
 	"unsafe"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
+	fast "github.com/elliot-gustafsson/jgosonnet/internal/ast"
 	"github.com/elliot-gustafsson/jgosonnet/internal/utils"
-	"github.com/google/go-jsonnet/ast"
 )
 
 const (
 	MaxPlanLinearKeys  = 32 // Threshold for compileObjectPlan map fallback
 	MaxLayerLinearKeys = 32 // Threshold for Layer.Index map fallback
 
-	MaskVisibility = 0x03 // Binary 00000011
-	FlagPlusSuper  = 0x04 // Binary 00000100
-	FlagTombstone  = 0x08 // Binary 00001000
+	MaskVisibility = fast.FieldMaskVisibility // Binary 00000011
+	FlagPlusSuper  = fast.FieldFlagPlusSuper  // Binary 00000100
+	FlagTombstone  = fast.FieldFlagTombstone  // Binary 00001000
 )
 
 type Layer struct {
-	Keys   []uint32
-	Nodes  ast.Nodes
-	Values []Value
-	Meta   []uint8
+	Bp               unsafe.Pointer
+	Keys             []uint32
+	NodeOffsets      []uint32
+	Values           []Value
+	Meta             []uint8
 
 	Index *utils.DescriptorTable
 
-	LocalKeys  []uint32
-	LocalNodes ast.Nodes
+	LocalKeys        []uint32
+	LocalNodeOffsets []uint32
 
-	AssertsPtr uintptr
+	AssertOffset uint32
+	AssertCount  uint32
 
 	ParentScopePtr uintptr
 }
@@ -48,31 +50,6 @@ func (l *Layer) findField(key uint32) int {
 		}
 	}
 	return -1
-}
-
-func (l *Layer) packAsserts(s []ast.Node) {
-	if len(s) > math.MaxUint16 {
-		panic("asserts length exceeds uint16 max (65535)")
-	}
-
-	ptr := uintptr(unsafe.Pointer(unsafe.SliceData(s)))
-
-	const addrMask = (1 << 48) - 1
-	l.AssertsPtr = (uintptr(len(s)) << 48) | (ptr & addrMask)
-}
-
-func (l *Layer) unpackAsserts() []ast.Node {
-	if l.AssertsPtr == 0 {
-		return nil
-	}
-
-	length := int(l.AssertsPtr >> 48)
-
-	// mask of the top 16 bits
-	const lenMask = 0xFFFF << 48
-
-	ptr := unsafe.Pointer(uintptr(l.AssertsPtr &^ lenMask))
-	return unsafe.Slice((*ast.Node)(ptr), length)
 }
 
 func (l *Layer) UnpackFieldScopes() []uintptr {
@@ -93,7 +70,7 @@ func NewSingleLayerObject(allocator *arena.Allocator, layer *Layer) *Object {
 	arena.Memclr(s)
 	s.layer[0] = layer
 	s.obj.Layers = s.layer[:]
-	if layer.AssertsPtr == 0 {
+	if layer.AssertCount == 0 {
 		s.obj.AssertionState = AssertStatusChecked
 	}
 	return &s.obj
@@ -235,7 +212,7 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 		return ValueNone, false, err
 	}
 
-	currentVisibility := ast.ObjectFieldInherit
+	currentVisibility := fast.FieldInherit
 
 	layers := t.GetLayers(ctx)
 
@@ -261,7 +238,7 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 			return ValueNone, false, err
 		}
 
-		if visibility != ast.ObjectFieldInherit {
+		if visibility != fast.FieldInherit {
 			currentVisibility = visibility
 		}
 
@@ -291,7 +268,7 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 		return ValueNone, false, nil
 	}
 
-	if currentVisibility == ast.ObjectFieldInherit {
+	if currentVisibility == fast.FieldInherit {
 		// If not explicitly visible, search for same key in lower layers to determine final visibility
 
 		for j := layerOffset - 1; j >= 0; j-- {
@@ -309,14 +286,14 @@ func (t *Object) getField(key uint32, ctx Context, offset int) (res Value, visib
 				continue
 			}
 
-			if visibility != ast.ObjectFieldInherit {
+			if visibility != fast.FieldInherit {
 				currentVisibility = visibility
 				break
 			}
 		}
 	}
 
-	visible = currentVisibility != ast.ObjectFieldHidden
+	visible = currentVisibility != fast.FieldHidden
 
 	return res, visible, nil
 }
@@ -330,7 +307,7 @@ func (t *Object) HasField(key uint32, includeHidden bool, ctx Context) bool {
 	}
 
 	var exists bool
-	var res_visibility ast.ObjectFieldHide
+	var res_visibility fast.FieldHide
 
 	layers := t.GetLayers(ctx)
 	for layerOffset := len(layers) - 1; layerOffset >= 0; layerOffset-- {
@@ -346,7 +323,7 @@ func (t *Object) HasField(key uint32, includeHidden bool, ctx Context) bool {
 			continue
 		}
 
-		if visibility == ast.ObjectFieldInherit {
+		if visibility == fast.FieldInherit {
 			for j := layerOffset - 1; j >= 0; j-- {
 				l := layers[j]
 				fi := l.findField(key)
@@ -358,7 +335,7 @@ func (t *Object) HasField(key uint32, includeHidden bool, ctx Context) bool {
 					j -= int(uint32(l.Values[fi]))
 					continue
 				}
-				if v != ast.ObjectFieldInherit {
+				if v != fast.FieldInherit {
 					visibility = v
 					break
 				}
@@ -372,7 +349,7 @@ func (t *Object) HasField(key uint32, includeHidden bool, ctx Context) bool {
 	}
 
 	if exists {
-		visible := res_visibility != ast.ObjectFieldHidden
+		visible := res_visibility != fast.FieldHidden
 		t.Cache.Set(key, FieldCacheUnevaled, visible, ctx)
 		return includeHidden || visible
 	}
@@ -405,9 +382,9 @@ func (t *Object) createLayerScope(layerIndex int, ctx Context) (uintptr, error) 
 	s, scopeId := ctx.NewScope(layer.ParentScopePtr, len(layer.LocalKeys))
 
 	for i := range layer.LocalKeys {
-		node := layer.LocalNodes[i]
+		nodeOff := layer.LocalNodeOffsets[i]
 
-		val, err := evaluateNodeLazy(node, scopeId, ctx)
+		val, err := evaluateNodeLazy(layer.Bp, nodeOff, scopeId, ctx)
 		if err != nil {
 			return 0, err
 		}
@@ -420,9 +397,9 @@ func (t *Object) createLayerScope(layerIndex int, ctx Context) (uintptr, error) 
 	return scopeId, nil
 }
 
-const DefaultFieldMeta = uint8(ast.ObjectFieldInherit) & MaskVisibility
+const DefaultFieldMeta = uint8(fast.FieldInherit) & MaskVisibility
 
-func CreateFieldMeta(visibility ast.ObjectFieldHide, plusSuper bool) uint8 {
+func CreateFieldMeta(visibility fast.FieldHide, plusSuper bool) uint8 {
 	m := uint8(visibility) & MaskVisibility
 	if plusSuper {
 		m |= FlagPlusSuper
@@ -430,8 +407,8 @@ func CreateFieldMeta(visibility ast.ObjectFieldHide, plusSuper bool) uint8 {
 	return m
 }
 
-func EvalFieldMeta(m uint8) (visibility ast.ObjectFieldHide, plusSuper, tombstone bool) {
-	visibility = ast.ObjectFieldHide(m & MaskVisibility)
+func EvalFieldMeta(m uint8) (visibility fast.FieldHide, plusSuper, tombstone bool) {
+	visibility = fast.FieldHide(m & MaskVisibility)
 	plusSuper = (m & FlagPlusSuper) != 0
 	tombstone = (m & FlagTombstone) != 0
 	return
@@ -513,15 +490,15 @@ type FieldPlan struct {
 }
 
 func (fp FieldPlan) IsHidden() bool {
-	return fp.Visibility == uint8(ast.ObjectFieldHidden)
+	return fp.Visibility == uint8(fast.FieldHidden)
 }
 
 func (fp FieldPlan) IsInherit() bool {
-	return fp.Visibility == uint8(ast.ObjectFieldInherit)
+	return fp.Visibility == uint8(fast.FieldInherit)
 }
 
 func (fp FieldPlan) IsVisible() bool {
-	return fp.Visibility == uint8(ast.ObjectFieldVisible)
+	return fp.Visibility == uint8(fast.FieldVisible)
 }
 
 type LayerRef struct {
@@ -604,7 +581,7 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 
 				plans = append(plans, FieldPlan{
 					KeyId:            keyID,
-					Visibility:       uint8(ast.ObjectFieldInherit),
+					Visibility:       uint8(fast.FieldInherit),
 					Layers:           lrs[:0],
 					ShadowUntilLayer: math.MaxUint16,
 				})
@@ -622,10 +599,10 @@ func compileObjectPlan(obj *Object, ctx Context) []FieldPlan {
 
 			if plan.IsInherit() {
 				switch vis {
-				case ast.ObjectFieldHidden:
-					plan.Visibility = uint8(ast.ObjectFieldHidden)
-				case ast.ObjectFieldVisible:
-					plan.Visibility = uint8(ast.ObjectFieldVisible)
+				case fast.FieldHidden:
+					plan.Visibility = uint8(fast.FieldHidden)
+				case fast.FieldVisible:
+					plan.Visibility = uint8(fast.FieldVisible)
 				}
 			}
 
@@ -817,8 +794,7 @@ func getValue(obj *Object, layerId, fieldId int, ctx Context) (Value, error) {
 	if l.Values != nil {
 		val = l.Values[fieldId]
 	} else {
-
-		n := l.Nodes[fieldId]
+		nodeOff := l.NodeOffsets[fieldId]
 
 		evalCtx := ctx
 		evalCtx.SuperOffset = uint32(len(layers) - 1 - layerId)
@@ -840,7 +816,7 @@ func getValue(obj *Object, layerId, fieldId int, ctx Context) (Value, error) {
 			}
 		}
 
-		val, err = EvaluateNode(n, scopeId, evalCtx)
+		val, err = EvaluateNode(l.Bp, nodeOff, scopeId, evalCtx)
 		if err != nil {
 			return ValueNone, err
 		}
@@ -865,8 +841,7 @@ func runAssertionsSlow(obj *Object, ctx Context) error {
 	for i := len(layers) - 1; i >= 0; i-- {
 		layer := layers[i]
 
-		asserts := layer.unpackAsserts()
-		if asserts == nil {
+		if layer.AssertCount == 0 {
 			continue
 		}
 
@@ -878,8 +853,9 @@ func runAssertionsSlow(obj *Object, ctx Context) error {
 			return err
 		}
 
-		for _, n := range asserts {
-			val, err := EvaluateNode(n, scopeId, evalCtx)
+		for a := range layer.AssertCount {
+			assertOff := fast.ReadU32(layer.Bp, layer.AssertOffset+a)
+			val, err := EvaluateNode(layer.Bp, assertOff, scopeId, evalCtx)
 			if err != nil {
 				return err
 			}
@@ -1055,7 +1031,7 @@ func (t *Object) Prune(ctx Context) (Value, error) {
 
 		layer.Keys[index] = plan.KeyId
 		layer.Values[index] = prunedVal
-		layer.Meta[index] = CreateFieldMeta(ast.ObjectFieldHide(plan.Visibility), false)
+		layer.Meta[index] = CreateFieldMeta(fast.FieldHide(plan.Visibility), false)
 
 		if useMap {
 			layer.Index.Append(plan.KeyId)

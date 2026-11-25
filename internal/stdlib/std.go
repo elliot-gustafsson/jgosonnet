@@ -11,6 +11,10 @@ import (
 	"github.com/elliot-gustafsson/jgosonnet/internal/utils"
 )
 
+func init() {
+	evaluator.StdFormatFunc = std_format
+}
+
 var constants = []struct {
 	name string
 	val  evaluator.Value
@@ -264,7 +268,7 @@ func std_extVar(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 			return val, nil
 		}
 
-		n, err := importer.ResolveSnippet(name, s)
+		prog, err := importer.ResolveSnippet(name, s)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}
@@ -275,7 +279,7 @@ func std_extVar(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.V
 
 		scopeId := evaluator.CreateFileScope(name, importer.BaseStd, importCtx)
 
-		val, err = evaluator.EvaluateNode(n, scopeId, ctx)
+		val, err = evaluator.EvaluateNode(prog.Base(), prog.RootIdx, scopeId, importCtx)
 		if err != nil {
 			return evaluator.ValueNone, err
 		}

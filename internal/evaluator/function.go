@@ -2,20 +2,19 @@ package evaluator
 
 import (
 	"fmt"
+	"unsafe"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
-	"github.com/google/go-jsonnet/ast"
+	fast "github.com/elliot-gustafsson/jgosonnet/internal/ast"
 )
 
 type Func = func(args []NamedValue, ctx Context) (Value, error)
 
 type Function struct {
-	Node     *ast.Function
-	ScopePtr uintptr
-
-	ParamKeyIds []uint32
-
+	Bp          unsafe.Pointer
+	ScopePtr    uintptr
 	Self        Value
+	Offset      uint32
 	SuperOffset uint32
 }
 
@@ -25,17 +24,12 @@ type NativeFunction struct {
 	OptStart uint32
 }
 
-// func (t *Function) Noop() bool {
-// 	return t.Node == nil
-// }
-
-// Length of a function is the number of required args
+// Length of a function is the number of required args.
 func (t *Function) Length() int {
-	params := t.Node.Parameters
-
+	paramCount := fast.ReadU32(t.Bp, t.Offset+1)
 	var n int
-	for _, p := range params {
-		if p.DefaultArg == nil {
+	for i := range paramCount {
+		if fast.ReadU32(t.Bp, t.Offset+4+i*2) == fast.NoNode {
 			n++
 		}
 	}
@@ -59,9 +53,11 @@ func execFunction(funcVal Value, args []NamedValue, ctx Context, tailstrict bool
 //go:noinline
 func execUserFunction(funcVal Value, args []NamedValue, callCtx Context, tailstrict bool) (Value, error) {
 	f := funcVal.Function()
-	paramCount := len(f.Node.Parameters)
-	paramKeyIds := f.ParamKeyIds
-	node := f.Node
+	bp := f.Bp
+	off := f.Offset
+	paramCount := int(fast.ReadU32(bp, off+1))
+	bodyOffset := fast.ReadU32(bp, off+2)
+	paramsBase := off + 3
 	scopePtr := f.ScopePtr
 
 	ctx := callCtx
@@ -78,7 +74,7 @@ func execUserFunction(funcVal Value, args []NamedValue, callCtx Context, tailstr
 
 	if paramCount == 0 {
 		if argsLen == 0 {
-			return EvaluateNode(node.Body, scopePtr, ctx)
+			return EvaluateNode(bp, bodyOffset, scopePtr, ctx)
 		}
 		if args[0].Key == 0 {
 			return errTooManyPositional(0, countPositional(args))
@@ -109,13 +105,13 @@ func execUserFunction(funcVal Value, args []NamedValue, callCtx Context, tailstr
 				return ValueNone, err
 			}
 		}
-		a.Key = paramKeyIds[posIdx]
+		a.Key = fast.ReadU32(bp, paramsBase+uint32(posIdx)*2)
 		s.Bindings[posIdx] = a
 		posIdx++
 	}
 
 	if posIdx == argsLen && posIdx == paramCount {
-		return EvaluateNode(node.Body, childScopeId, ctx)
+		return EvaluateNode(bp, bodyOffset, childScopeId, ctx)
 	}
 
 	// bind named args
@@ -136,7 +132,7 @@ func execUserFunction(funcVal Value, args []NamedValue, callCtx Context, tailstr
 			}
 
 			for j := range paramCount {
-				if paramKeyIds[j] == na.Key {
+				if fast.ReadU32(bp, paramsBase+uint32(j)*2) == na.Key {
 					if !s.Bindings[j].IsNone() {
 						return errArgAlreadyProvided(na.Key, ctx)
 					}
@@ -155,12 +151,12 @@ func execUserFunction(funcVal Value, args []NamedValue, callCtx Context, tailstr
 			continue
 		}
 
-		n := node.Parameters[i].DefaultArg
-		if n == nil {
-			return errMissingArg(paramKeyIds[i], ctx)
+		defOff := fast.ReadU32(bp, paramsBase+uint32(i)*2+1)
+		if defOff == fast.NoNode {
+			return errMissingArg(fast.ReadU32(bp, paramsBase+uint32(i)*2), ctx)
 		}
 
-		da, err := evaluateNodeLazy(n, childScopeId, ctx)
+		da, err := evaluateNodeLazy(bp, defOff, childScopeId, ctx)
 		if err != nil {
 			return ValueNone, err
 		}
@@ -172,15 +168,11 @@ func execUserFunction(funcVal Value, args []NamedValue, callCtx Context, tailstr
 			}
 		}
 
-		s.Bindings[i] = NamedValue{paramKeyIds[i], da}
+		s.Bindings[i] = NamedValue{fast.ReadU32(bp, paramsBase+uint32(i)*2), da}
 	}
 
-	return EvaluateNode(node.Body, childScopeId, ctx)
+	return EvaluateNode(bp, bodyOffset, childScopeId, ctx)
 }
-
-// func (t NativeFunction) Noop() bool {
-// 	return t.fn == nil
-// }
 
 func (t *NativeFunction) Length() int {
 	return int(t.OptStart)

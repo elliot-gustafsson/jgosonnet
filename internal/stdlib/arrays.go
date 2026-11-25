@@ -5,7 +5,6 @@ import (
 	"slices"
 	"strings"
 	"unicode/utf8"
-	"unsafe"
 
 	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
@@ -73,7 +72,7 @@ func std_makeArray(args []evaluator.NamedValue, ctx evaluator.Context) (evaluato
 			Args:    allArgs[i : i+1],
 		}
 
-		res[i] = evaluator.NewThunk(evaluator.ThunkTypeGoCallback, unsafe.Pointer(n), 0, ctx)
+		res[i] = evaluator.NewCallbackThunk(n, ctx)
 
 	}
 
@@ -634,7 +633,7 @@ func std_map(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Valu
 			Args:    allArgs[i : i+1],
 		}
 
-		res[i] = evaluator.NewThunk(evaluator.ThunkTypeGoCallback, unsafe.Pointer(n), 0, ctx)
+		res[i] = evaluator.NewCallbackThunk(n, ctx)
 
 	}
 
@@ -671,7 +670,7 @@ func std_mapWithIndex(args []evaluator.NamedValue, ctx evaluator.Context) (evalu
 			Args:    allArgs[idx : idx+2],
 		}
 
-		res[i] = evaluator.NewThunk(evaluator.ThunkTypeGoCallback, unsafe.Pointer(n), 0, ctx)
+		res[i] = evaluator.NewCallbackThunk(n, ctx)
 
 	}
 

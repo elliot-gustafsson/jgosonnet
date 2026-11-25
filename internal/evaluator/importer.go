@@ -1,12 +1,11 @@
 package evaluator
 
 import (
-	"os"
 	"sync"
 	"unsafe"
 
-	"github.com/google/go-jsonnet"
-	"github.com/google/go-jsonnet/ast"
+	fast "github.com/elliot-gustafsson/jgosonnet/internal/ast"
+	"github.com/elliot-gustafsson/jgosonnet/internal/interner"
 )
 
 var parseCallPool = sync.Pool{
@@ -23,7 +22,7 @@ type Importer struct {
 
 type parseCall struct {
 	done chan struct{}
-	node ast.Node
+	prog *fast.Program
 	err  error
 }
 
@@ -33,8 +32,10 @@ type inFlightParse struct {
 }
 
 type AstImporter struct {
+	interner  *interner.Interner
 	mu        sync.RWMutex
-	astCache  map[string]ast.Node
+	astCache  map[string]*fast.Program
+	byBase    map[uintptr]*fast.Program
 	inFlights []inFlightParse
 }
 
@@ -47,9 +48,11 @@ func NewImporter(jPaths []string, baseStd Value, astImporter *AstImporter) *Impo
 	}
 }
 
-func NewAstImporter() *AstImporter {
+func NewAstImporter(in *interner.Interner) *AstImporter {
 	return &AstImporter{
-		astCache:  make(map[string]ast.Node, 64),
+		interner:  in,
+		astCache:  make(map[string]*fast.Program, 64),
+		byBase:    make(map[uintptr]*fast.Program, 64),
 		inFlights: make([]inFlightParse, 0, 16),
 	}
 }
@@ -62,75 +65,79 @@ func (i *Importer) Get(path string) Value {
 	return i.cache[path]
 }
 
-func (i *Importer) ResolveSnippet(name, data string) (ast.Node, error) {
+func (i *Importer) ResolveSnippet(name, data string) (*fast.Program, error) {
 	return i.astImporter.ResolveSnippet(name, data)
 }
 
-func (i *Importer) ResolveImport(filePath string) (ast.Node, error) {
+func (i *Importer) ResolveImport(filePath string) (*fast.Program, error) {
 	return i.astImporter.ResolveImport(filePath)
 }
 
-func (t *AstImporter) ResolveImport(filePath string) (ast.Node, error) {
+func (i *Importer) LookupProgram(bp unsafe.Pointer) *fast.Program {
+	if i == nil || i.astImporter == nil {
+		return nil
+	}
+	return i.astImporter.LookupProgram(bp)
+}
+
+func (t *AstImporter) LookupProgram(bp unsafe.Pointer) *fast.Program {
 	t.mu.RLock()
-	node, exist := t.astCache[filePath]
+	prog := t.byBase[uintptr(bp)]
+	t.mu.RUnlock()
+	return prog
+}
+
+func (t *AstImporter) ResolveImport(filePath string) (*fast.Program, error) {
+	t.mu.RLock()
+	prog, exist := t.astCache[filePath]
 	t.mu.RUnlock()
 	if exist {
-		return node, nil
+		return prog, nil
 	}
 	return t.resolveImportSlow(filePath)
 }
 
 //go:noinline
-func (t *AstImporter) resolveImportSlow(filePath string) (node ast.Node, err error) {
-
-	node, slot, call, isLeader, err := t.claim(filePath)
+func (t *AstImporter) resolveImportSlow(filePath string) (prog *fast.Program, err error) {
+	prog, slot, call, isLeader, err := t.claim(filePath)
 	if !isLeader {
 		return
 	}
 	defer func() {
-		t.release(slot, filePath, call, node, err)
+		t.release(slot, filePath, call, prog, err)
 	}()
 
-	fileData, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, err
-	}
-
-	dataStr := unsafe.String(unsafe.SliceData(fileData), len(fileData))
-
-	node, err = jsonnet.SnippetToAST(filePath, dataStr)
+	prog, err = fast.ParseProgram(filePath, t.interner)
 	return
 }
 
-func (t *AstImporter) ResolveSnippet(name, data string) (ast.Node, error) {
+func (t *AstImporter) ResolveSnippet(name, data string) (*fast.Program, error) {
 	t.mu.RLock()
-	node, exist := t.astCache[name]
+	prog, exist := t.astCache[name]
 	t.mu.RUnlock()
 	if exist {
-		return node, nil
+		return prog, nil
 	}
 
 	return t.resolveSnippetSlow(name, data)
 }
 
 //go:noinline
-func (t *AstImporter) resolveSnippetSlow(name, data string) (node ast.Node, err error) {
-	node, slot, call, isLeader, err := t.claim(name)
+func (t *AstImporter) resolveSnippetSlow(name, data string) (prog *fast.Program, err error) {
+	prog, slot, call, isLeader, err := t.claim(name)
 	if !isLeader {
 		return
 	}
 	defer func() {
-		t.release(slot, name, call, node, err)
+		t.release(slot, name, call, prog, err)
 	}()
 
-	node, err = jsonnet.SnippetToAST(name, data)
+	prog, err = fast.ParseProgramSnippet(name, data, t.interner)
 	return
 }
 
-func (t *AstImporter) claim(key string) (cached ast.Node, slot int, call *parseCall, isLeader bool, err error) {
-	// slow path
+func (t *AstImporter) claim(key string) (cached *fast.Program, slot int, call *parseCall, isLeader bool, err error) {
 	t.mu.Lock()
-	// double check cache under write lock
 	if existing, exist := t.astCache[key]; exist {
 		t.mu.Unlock()
 		return existing, 0, nil, false, nil
@@ -139,22 +146,19 @@ func (t *AstImporter) claim(key string) (cached ast.Node, slot int, call *parseC
 	freeSlot := -1
 	for i := range t.inFlights {
 		if t.inFlights[i].key == key {
-			// create channel on first waiter
 			if t.inFlights[i].call.done == nil {
 				t.inFlights[i].call.done = make(chan struct{})
 			}
-			// an in flight parse is running, wait for it
 			waitingCall := t.inFlights[i].call
 			t.mu.Unlock()
 			<-waitingCall.done
-			return waitingCall.node, 0, nil, false, waitingCall.err
+			return waitingCall.prog, 0, nil, false, waitingCall.err
 		}
 		if freeSlot == -1 && t.inFlights[i].key == "" {
 			freeSlot = i
 		}
 	}
 
-	// register an in flight parse, use first free slot or append to the end
 	call = parseCallPool.Get().(*parseCall)
 	entry := inFlightParse{key: key, call: call}
 	slot = freeSlot
@@ -169,25 +173,23 @@ func (t *AstImporter) claim(key string) (cached ast.Node, slot int, call *parseC
 	return nil, slot, call, true, nil
 }
 
-func (t *AstImporter) release(slot int, key string, call *parseCall, node ast.Node, err error) {
-	call.node = node
+func (t *AstImporter) release(slot int, key string, call *parseCall, prog *fast.Program, err error) {
+	call.prog = prog
 	call.err = err
 
-	// register in cache and clear in flight parse slot
 	t.mu.Lock()
-	if err == nil {
-		t.astCache[key] = node
+	if err == nil && prog != nil {
+		t.astCache[key] = prog
+		t.byBase[uintptr(prog.Base())] = prog
 	}
 	t.inFlights[slot] = inFlightParse{}
 	t.mu.Unlock()
 
-	// release waiters if any
 	if call.done != nil {
 		close(call.done)
 		return
 	}
 
-	// recycle call if noone waited
 	*call = parseCall{}
 	parseCallPool.Put(call)
 }

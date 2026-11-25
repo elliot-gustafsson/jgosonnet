@@ -57,11 +57,12 @@ type FileOutput struct {
 }
 
 func NewEvaluator() *Evaluator {
+	in := interner.NewInterner()
 	return &Evaluator{
 		traceOut:    os.Stderr,
 		maxStack:    10000,
-		interner:    interner.NewInterner(),
-		astImporter: evaluator.NewAstImporter(),
+		interner:    in,
+		astImporter: evaluator.NewAstImporter(in),
 		extVars:     make(map[string]string),
 		extCodes:    make(map[string]string),
 		tlaVars:     make(map[string]string),
@@ -268,7 +269,7 @@ var enginePool = sync.Pool{
 
 func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, func(), error) {
 
-	node, err := t.astImporter.ResolveImport(file)
+	prog, err := t.astImporter.ResolveImport(file)
 	if err != nil {
 		return evaluator.ValueNone, evaluator.Context{}, func() {}, evaluator.MakeRuntimeError(fmt.Errorf("%w\n", err))
 	}
@@ -320,7 +321,7 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 
 	scopeId := evaluator.CreateFileScope(file, std, ctx)
 
-	value, err := evaluator.EvaluateNode(node, scopeId, ctx)
+	value, err := evaluator.EvaluateNode(prog.Base(), prog.RootIdx, scopeId, ctx)
 	if err != nil {
 		return evaluator.ValueNone, evaluator.Context{}, cleanup, err
 	}
@@ -338,11 +339,11 @@ func (t *Evaluator) evaluate(file string) (evaluator.Value, evaluator.Context, f
 				})
 			}
 			for k, code := range t.tlaCodes {
-				codeNode, err := t.astImporter.ResolveSnippet("<tla:"+k+">", code)
+				codeProg, err := t.astImporter.ResolveSnippet("<tla:"+k+">", code)
 				if err != nil {
 					return evaluator.ValueNone, evaluator.Context{}, cleanup, err
 				}
-				val, err := evaluator.EvaluateNode(codeNode, scopeId, ctx)
+				val, err := evaluator.EvaluateNode(codeProg.Base(), codeProg.RootIdx, scopeId, ctx)
 				if err != nil {
 					return evaluator.ValueNone, evaluator.Context{}, cleanup, err
 				}

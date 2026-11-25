@@ -911,7 +911,7 @@ func Test_go_jsonnet_bitwise_or(t *testing.T) {
 
 func Test_go_jsonnet_bitwise_or10(t *testing.T) {
 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/bitwise_or10.jsonnet")
-	expected := `unhandled binary operation string | number
+	expected := `RUNTIME ERROR: Unexpected type string, expected number
 	testdata/bitwise_or10.jsonnet:1:1-11	$
 	During evaluation`
 	extVars := map[string]string(nil)
@@ -5690,7 +5690,7 @@ func Test_go_jsonnet_nonexistent_import_crazy(t *testing.T) {
 
 func Test_go_jsonnet_number_divided_by_string(t *testing.T) {
 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/number_divided_by_string.jsonnet")
-	expected := `unhandled binary operation number / string
+	expected := `RUNTIME ERROR: Unexpected type string, expected number
 	testdata/number_divided_by_string.jsonnet:1:1-11	$
 	During evaluation`
 	extVars := map[string]string(nil)
@@ -5724,7 +5724,7 @@ func Test_go_jsonnet_number_leading_zero(t *testing.T) {
 
 func Test_go_jsonnet_number_times_string(t *testing.T) {
 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/number_times_string.jsonnet")
-	expected := `unhandled binary operation number * string
+	expected := `RUNTIME ERROR: Unexpected type string, expected number
 	testdata/number_times_string.jsonnet:1:1-11	$
 	During evaluation`
 	extVars := map[string]string(nil)
@@ -7224,7 +7224,7 @@ func Test_go_jsonnet_or4(t *testing.T) {
 
 func Test_go_jsonnet_or5(t *testing.T) {
 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/or5.jsonnet")
-	expected := `unexpected type string for || op, expected boolean
+	expected := `RUNTIME ERROR: Unexpected type string, expected boolean
 	testdata/or5.jsonnet:1:1-14	$
 	During evaluation`
 	extVars := map[string]string(nil)
@@ -7241,7 +7241,7 @@ func Test_go_jsonnet_or5(t *testing.T) {
 
 func Test_go_jsonnet_or6(t *testing.T) {
 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/or6.jsonnet")
-	expected := `unexpected type string for || op, expected boolean
+	expected := `RUNTIME ERROR: Unexpected type string, expected boolean
 	testdata/or6.jsonnet:1:1-15	$
 	During evaluation`
 	extVars := map[string]string(nil)
@@ -10488,7 +10488,7 @@ func Test_go_jsonnet_string_comparison7(t *testing.T) {
 
 func Test_go_jsonnet_string_divided_by_number(t *testing.T) {
 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/string_divided_by_number.jsonnet")
-	expected := `unhandled binary operation string / number
+	expected := `RUNTIME ERROR: Unexpected type string, expected number
 	testdata/string_divided_by_number.jsonnet:1:1-11	$
 	During evaluation`
 	extVars := map[string]string(nil)
@@ -10569,7 +10569,7 @@ func Test_go_jsonnet_string_index_out_of_bounds(t *testing.T) {
 
 func Test_go_jsonnet_string_minus_number(t *testing.T) {
 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/string_minus_number.jsonnet")
-	expected := `unhandled binary operation string - number
+	expected := `RUNTIME ERROR: Unexpected type string, expected number
 	testdata/string_minus_number.jsonnet:1:1-9	$
 	During evaluation`
 	extVars := map[string]string(nil)
@@ -10603,7 +10603,7 @@ func Test_go_jsonnet_string_plus_function(t *testing.T) {
 
 func Test_go_jsonnet_string_times_number(t *testing.T) {
 	snippet := mustReadFile(t, "resources/go-jsonnet/testdata/string_times_number.jsonnet")
-	expected := `unhandled binary operation string * number
+	expected := `RUNTIME ERROR: Unexpected type string, expected number
 	testdata/string_times_number.jsonnet:1:1-9	$
 	During evaluation`
 	extVars := map[string]string(nil)

@@ -5,8 +5,9 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+	"unsafe"
 
-	"github.com/google/go-jsonnet/ast"
+	fast "github.com/elliot-gustafsson/jgosonnet/internal/ast"
 )
 
 type TraceSignal struct {
@@ -18,10 +19,21 @@ func (t *TraceSignal) Error() string {
 	return "TRACE: " + t.Str
 }
 
-func (t *TraceSignal) Print(w io.Writer, n ast.Node) error {
-	loc := n.Loc()
-	if loc == nil {
-		// Set filename to <unknown> here?
+func lookupProgram(bp unsafe.Pointer, ctx Context) *fast.Program {
+	if ctx.State == nil || ctx.State.Environment == nil || ctx.State.Environment.Importer == nil {
+		return nil
+	}
+	return ctx.State.Environment.Importer.LookupProgram(bp)
+}
+
+func (t *TraceSignal) Print(w io.Writer, bp unsafe.Pointer, offset uint32, ctx Context) error {
+	prog := lookupProgram(bp, ctx)
+	if prog == nil {
+		_, err := fmt.Fprintf(w, "TRACE: %s\n", t.Str)
+		return err
+	}
+	loc, _ := prog.NodeInfo(offset)
+	if !loc.IsSet() {
 		_, err := fmt.Fprintf(w, "TRACE: %s\n", t.Str)
 		return err
 	}
@@ -60,9 +72,12 @@ type Frame struct {
 	Pos  string
 }
 
-func WrapError(err error, node ast.Node) error {
+func WrapError(err error, bp unsafe.Pointer, offset uint32, ctx Context) error {
 	if err == nil {
 		return nil
+	}
+	if _, ok := err.(*TraceSignal); ok {
+		return err
 	}
 
 	traceErr, ok := err.(*TraceError)
@@ -73,19 +88,22 @@ func WrapError(err error, node ast.Node) error {
 		}
 	}
 
-	if node == nil || node.Loc() == nil {
+	prog := lookupProgram(bp, ctx)
+	if prog == nil {
 		return traceErr
 	}
 
-	pos := node.Loc().String()
+	loc, ctxName := prog.NodeInfo(offset)
+	if !loc.IsSet() {
+		return traceErr
+	}
+
+	pos := loc.String()
 	if pos == "" {
 		return traceErr
 	}
 
-	frame := Frame{Pos: pos}
-	if ctx := node.Context(); ctx != nil {
-		frame.Name = *ctx
-	}
+	frame := Frame{Pos: pos, Name: ctxName}
 
 	// always append first frame or when new context boundary.
 	numFrames := len(traceErr.Frames)

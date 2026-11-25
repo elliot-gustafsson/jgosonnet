@@ -1190,8 +1190,7 @@ func Test_jsonnet_error_obj_recursive_manifest(t *testing.T) {
 func Test_jsonnet_error_overflow(t *testing.T) {
 	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.overflow.jsonnet")
 	// Expected file: resources/jsonnet-cpp/test_suite/error.overflow.jsonnet.golden
-	expected := `(*ast.LiteralNumber) failed to parse float val (1e309), err: strconv.ParseFloat: parsing "1e309": value out of range
-	error.overflow.jsonnet:17:1-6	$
+	expected := `RUNTIME ERROR: error.overflow.jsonnet:17:1-6 failed to parse float val (1e309), err: strconv.ParseFloat: parsing "1e309": value out of range
 	During evaluation`
 	extVars := map[string]string{"var1": "test"}
 	extCodes := map[string]string{"var2": `{"x": 1, "y": 2}`}
@@ -1225,8 +1224,7 @@ func Test_jsonnet_error_overflow2(t *testing.T) {
 func Test_jsonnet_error_overflow3(t *testing.T) {
 	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.overflow3.jsonnet")
 	// Expected file: resources/jsonnet-cpp/test_suite/error.overflow3.jsonnet.golden
-	expected := `(*ast.LiteralNumber) failed to parse float val (1e309), err: strconv.ParseFloat: parsing "1e309": value out of range
-	error.overflow3.jsonnet:17:1-6	$
+	expected := `RUNTIME ERROR: error.overflow3.jsonnet:17:1-6 failed to parse float val (1e309), err: strconv.ParseFloat: parsing "1e309": value out of range
 	During evaluation`
 	extVars := map[string]string{"var1": "test"}
 	extCodes := map[string]string{"var2": `{"x": 1, "y": 2}`}
@@ -1440,7 +1438,7 @@ func Test_jsonnet_error_parse_static_error_bad_number(t *testing.T) {
 
 func Test_jsonnet_error_parse_string_invalid_escape(t *testing.T) {
 	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.parse.string.invalid_escape.jsonnet")
-	expected := `RUNTIME ERROR: error.parse.string.invalid_escape.jsonnet:17:1-5 error.parse.string.invalid_escape.jsonnet:17:1-5 Unknown escape sequence in string literal: \o
+	expected := `RUNTIME ERROR: error.parse.string.invalid_escape.jsonnet:17:1-5 Unknown escape sequence in string literal: \o
 	During evaluation`
 	extVars := map[string]string{"var1": "test"}
 	extCodes := map[string]string{"var2": `{"x": 1, "y": 2}`}
@@ -1456,7 +1454,7 @@ func Test_jsonnet_error_parse_string_invalid_escape(t *testing.T) {
 
 func Test_jsonnet_error_parse_string_invalid_escape_unicode_non_hex(t *testing.T) {
 	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.parse.string.invalid_escape_unicode_non_hex.jsonnet")
-	expected := `RUNTIME ERROR: error.parse.string.invalid_escape_unicode_non_hex.jsonnet:17:1-9 error.parse.string.invalid_escape_unicode_non_hex.jsonnet:17:1-9 Unicode escape sequence was malformed: \u00
+	expected := `RUNTIME ERROR: error.parse.string.invalid_escape_unicode_non_hex.jsonnet:17:1-9 Unicode escape sequence was malformed: 000t
 	During evaluation`
 	extVars := map[string]string{"var1": "test"}
 	extCodes := map[string]string{"var2": `{"x": 1, "y": 2}`}
@@ -1490,7 +1488,7 @@ func Test_jsonnet_error_parse_string_invalid_escape_unicode_short(t *testing.T) 
 func Test_jsonnet_error_parse_string_invalid_escape_unicode_short2(t *testing.T) {
 	snippet := mustReadFile(t, "resources/jsonnet-cpp/test_suite/error.parse.string.invalid_escape_unicode_short2.jsonnet")
 	// Expected file: resources/jsonnet-cpp/test_suite/error.parse.string.invalid_escape_unicode_short2.jsonnet.golden
-	expected := `RUNTIME ERROR: error.parse.string.invalid_escape_unicode_short2.jsonnet:17:1-8 error.parse.string.invalid_escape_unicode_short2.jsonnet:17:1-8 Truncated unicode escape sequence in string literal.
+	expected := `RUNTIME ERROR: error.parse.string.invalid_escape_unicode_short2.jsonnet:17:1-8 Truncated unicode escape sequence in string literal.
 	During evaluation`
 	extVars := map[string]string{"var1": "test"}
 	extCodes := map[string]string{"var2": `{"x": 1, "y": 2}`}

@@ -9,7 +9,6 @@ import (
 	"github.com/elliot-gustafsson/jgosonnet/internal/arena"
 	"github.com/elliot-gustafsson/jgosonnet/internal/evaluator"
 	"github.com/elliot-gustafsson/jgosonnet/internal/utils"
-	"github.com/google/go-jsonnet/ast"
 )
 
 func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context) (evaluator.Value, error) {
@@ -25,8 +24,7 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 	layer := arena.Create[evaluator.Layer](allocator)
 	arena.Memclr(layer)
 	layer.Keys = arena.Alloc[uint32](allocator, n)
-	layer.Nodes = arena.Alloc[ast.Node](allocator, n)
-	arena.MemclrSlice(layer.Nodes)
+	layer.NodeOffsets = arena.Alloc[uint32](allocator, n)
 	layer.Meta = arena.Alloc[uint8](allocator, n)
 
 	scopes := arena.Alloc[uintptr](allocator, n)
@@ -73,8 +71,9 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 			}
 		}
 
+		layer.Bp = innerLayer.Bp
 		layer.Keys[index] = key
-		layer.Nodes[index] = innerLayer.Nodes[0]
+		layer.NodeOffsets[index] = innerLayer.NodeOffsets[0]
 		layer.Meta[index] = innerLayer.Meta[0]
 
 		scopes[index] = innerLayer.ParentScopePtr
@@ -84,7 +83,7 @@ func builtin_objectFlatMerge(args []evaluator.NamedValue, ctx evaluator.Context)
 
 	if index < n {
 		layer.Keys = layer.Keys[:index]
-		layer.Nodes = layer.Nodes[:index]
+		layer.NodeOffsets = layer.NodeOffsets[:index]
 		layer.Meta = layer.Meta[:index]
 	}
 

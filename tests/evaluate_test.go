@@ -6,6 +6,7 @@ import (
 	"log"
 	"log/slog"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -52,6 +53,51 @@ func TestEvaluator(t *testing.T) {
 		println(stuff)
 	}
 
+}
+
+func TestConcurrentEvaluator(t *testing.T) {
+	files := []string{
+		filepath.Join("resources", "test.jsonnet"),
+		filepath.Join("resources", "jsonnet-cpp", "test_suite", "object.jsonnet"),
+		filepath.Join("resources", "jsonnet-cpp", "test_suite", "array.jsonnet"),
+		filepath.Join("resources", "jsonnet-cpp", "test_suite", "oop.jsonnet"),
+		filepath.Join("resources", "jsonnet-cpp", "test_suite", "functions.jsonnet"),
+	}
+
+	ev := jgosonnet.NewEvaluator()
+	ev.ExtVar("var1", "test")
+	ev.ExtCode("var2", `{"x": 1, "y": 2}`)
+
+	const goroutines = 8
+	const iters = 10
+
+	var wg sync.WaitGroup
+	errs := make(chan error, goroutines*iters*len(files))
+
+	wg.Add(goroutines)
+	for g := range goroutines {
+		go func(g int) {
+			defer wg.Done()
+			for i := range iters {
+				f := files[(g+i)%len(files)]
+				out, err := ev.EvaluateJson(f)
+				if err != nil {
+					errs <- err
+					return
+				}
+				if len(out) == 0 {
+					errs <- assert.AnError
+					return
+				}
+			}
+		}(g)
+	}
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Fatalf("concurrent evaluation failed: %v", err)
+	}
 }
 
 func GetExpected(file string, jpaths ...string) (string, error) {

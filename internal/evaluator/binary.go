@@ -6,15 +6,19 @@ import (
 	"math"
 	"unsafe"
 
-	"github.com/google/go-jsonnet/ast"
+	fast "github.com/elliot-gustafsson/jgosonnet/internal/ast"
 )
 
+// StdFormatFunc is wired by stdlib during package init to support `"..." % vals`
+// without creating an import cycle between evaluator and stdlib.
+var StdFormatFunc Func
+
 func extractBinaryArgs(bp unsafe.Pointer, offset uint32, scopePtr uintptr, ctx Context) (left, right Value, err error) {
-	left, err = EvaluateNode(bp, offset, scopePtr, ctx)
+	left, err = EvaluateNode(bp, fast.ReadU32(bp, offset), scopePtr, ctx)
 	if err != nil {
 		return
 	}
-	right, err = EvaluateNode(bp, offset+1, scopePtr, ctx)
+	right, err = EvaluateNode(bp, fast.ReadU32(bp, offset+1), scopePtr, ctx)
 	if err != nil {
 		return
 	}
@@ -49,103 +53,7 @@ func makeCheckedNumber(val float64) (Value, error) {
 	return MakeNumber(val), nil
 }
 
-func handleBinaryOp(op ast.BinaryOp, left, right Value, ctx Context) (Value, error) {
-	if left.IsNumber() && right.IsNumber() {
-		ln, rn := left.Number(), right.Number()
-		switch op {
-		case ast.BopPlus:
-			val := ln + rn
-			if val > math.MaxFloat64 || val < -math.MaxFloat64 {
-				return ValueNone, OverflowErr
-			}
-			return MakeNumber(val), nil
-		case ast.BopMinus:
-			val := ln - rn
-			if val > math.MaxFloat64 || val < -math.MaxFloat64 {
-				return ValueNone, OverflowErr
-			}
-			return MakeNumber(val), nil
-		case ast.BopMult:
-			val := ln * rn
-			if val > math.MaxFloat64 || val < -math.MaxFloat64 {
-				return ValueNone, OverflowErr
-			}
-			return MakeNumber(val), nil
-		case ast.BopLess:
-			return MakeBool(ln < rn), nil
-		case ast.BopLessEq:
-			return MakeBool(ln <= rn), nil
-		case ast.BopGreater:
-			return MakeBool(ln > rn), nil
-		case ast.BopGreaterEq:
-			return MakeBool(ln >= rn), nil
-		case ast.BopManifestEqual:
-			return MakeBool(ln == rn), nil
-		case ast.BopManifestUnequal:
-			return MakeBool(ln != rn), nil
-		default:
-			res, err := handleNumberOp(ln, rn, op)
-			if err != nil {
-				return ValueNone, err
-			}
-			return MakeNumber(res), nil
-		}
-	}
-
-	switch op {
-	case ast.BopPlus:
-		return bopPlus(left, right, ctx)
-	case ast.BopManifestEqual:
-		eq, err := left.Equal(right, ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-		return MakeBool(eq), nil
-	case ast.BopManifestUnequal:
-		eq, err := left.Equal(right, ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-		return MakeBool(!eq), nil
-	case ast.BopGreater:
-		x, err := left.Compare(right, ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-		return MakeBool(x > 0), nil
-	case ast.BopGreaterEq:
-		x, err := left.Compare(right, ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-		return MakeBool(x >= 0), nil
-	case ast.BopLess:
-		x, err := left.Compare(right, ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-		return MakeBool(x < 0), nil
-	case ast.BopLessEq:
-		x, err := left.Compare(right, ctx)
-		if err != nil {
-			return ValueNone, err
-		}
-		return MakeBool(x <= 0), nil
-	}
-
-	if left.IsNumber() && right.IsNumber() {
-		res, err := handleNumberOp(left.Number(), right.Number(), op)
-		if err != nil {
-			return ValueNone, err
-		}
-		return MakeNumber(res), nil
-	}
-
-	return ValueNone, fmt.Errorf("unhandled binary operation %s %s %s", left.Type().String(), op.String(), right.Type().String())
-}
-
 func bopPlus(left, right Value, ctx Context) (Value, error) {
-
 	// Allow 123 + '123', should return '123123'
 	if left.IsString() {
 		rs, err := right.ToString(ctx)
@@ -207,40 +115,6 @@ func bopPlus(left, right Value, ctx Context) (Value, error) {
 	default:
 		return ValueNone, fmt.Errorf("bop plus: unexpected type %s", left.Type().String())
 	}
-}
-
-func handleNumberOp(left, right float64, op ast.BinaryOp) (val float64, err error) {
-
-	switch op {
-	default:
-		return 0, fmt.Errorf("unhandled number operation: %s", op.String())
-	case ast.BopMinus:
-		val = left - right
-	case ast.BopDiv:
-		if right == 0 {
-			return 0, DivisionByZeroErr
-		}
-		val = left / right
-	case ast.BopMult:
-		val = left * right
-	case ast.BopBitwiseAnd:
-		val, err = builtinBitwiseAnd(left, right)
-	case ast.BopBitwiseOr:
-		val, err = builtinBitwiseOr(left, right)
-	case ast.BopBitwiseXor:
-		val, err = builtinBitwiseXor(left, right)
-	case ast.BopShiftL:
-		val, err = builtinShiftL(left, right)
-	case ast.BopShiftR:
-		val, err = builtinShiftR(left, right)
-	}
-	if math.IsInf(val, 0) {
-		return 0, OverflowErr
-	}
-	if math.IsNaN(val) {
-		return 0, NanErr
-	}
-	return
 }
 
 const (

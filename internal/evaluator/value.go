@@ -354,7 +354,7 @@ func (v Value) Eval(ctx Context) (rv Value, err error) {
 func (v Value) evalThunk(ctx Context) (Value, error) {
 	thunk := v.Thunk()
 
-	if thunk.EvalState == -1 {
+	if thunk.EvalState == ThunkEvaled {
 		return thunk.Value, nil
 	}
 
